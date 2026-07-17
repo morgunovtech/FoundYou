@@ -72,8 +72,14 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({ fileInfo, metadata
           label={t('sizeLabelSource')}
           value={formatBytes(fileInfo.originalSizeBytes ?? fileInfo.sizeBytes)}
         />
-        <MetadataItem label={t('resolutionLabel')} value={formatDimensions(fileInfo.width, fileInfo.height)} />
-        <MetadataItem label={t('megapixelsLabel')} value={formatMegapixels(fileInfo.width, fileInfo.height)} />
+        <MetadataItem
+          label={t('resolutionLabel')}
+          value={formatDimensions(fileInfo.originalWidth ?? fileInfo.width, fileInfo.originalHeight ?? fileInfo.height)}
+        />
+        <MetadataItem
+          label={t('megapixelsLabel')}
+          value={formatMegapixels(fileInfo.originalWidth ?? fileInfo.width, fileInfo.originalHeight ?? fileInfo.height)}
+        />
         <MetadataItem label={t('orientationLabel')} value={t(orientationKey as MessageKey)} />
         <MetadataItem label={t('metadataFieldsLabel')} value={formattedFieldCount} />
         <MetadataItem label={t('shotDate')} value={shotDate ?? t('emptyValue')} />

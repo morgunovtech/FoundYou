@@ -1,26 +1,13 @@
 import type { StructuredMetadata } from '../types/metadata';
 
+// Браузер уже применяет EXIF Orientation при декодировании (image-orientation:
+// from-image), поэтому width/height здесь всегда «визуальные» — повторно
+// разворачивать их по тегу нельзя, иначе портрет и пейзаж меняются местами.
 export function inferOrientation(
   width: number,
-  height: number,
-  orientationTag?: number | string
+  height: number
 ): StructuredMetadata['orientation'] {
-  let normalizedTag: number | undefined;
-  if (typeof orientationTag === 'string') {
-    const parsed = Number.parseInt(orientationTag, 10);
-    if (Number.isFinite(parsed)) {
-      normalizedTag = parsed;
-    } else if (orientationTag.toLowerCase().includes('90')) {
-      normalizedTag = 6;
-    }
-  } else {
-    normalizedTag = orientationTag;
-  }
-  if (normalizedTag === 6 || normalizedTag === 8) {
-    [width, height] = [height, width];
-  }
+  if (!width || !height) return 'unknown';
   if (width === height) return 'square';
-  if (width > height) return 'landscape';
-  if (height > width) return 'portrait';
-  return 'unknown';
+  return width > height ? 'landscape' : 'portrait';
 }

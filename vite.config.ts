@@ -83,6 +83,7 @@ export default defineConfig({
   plugins: [react(), functionsDevProxy()],
   build: {
     outDir: 'dist',
-    sourcemap: true
+    // Карты исходников не публикуем: 19 МБ в dist и раскрытие исходного кода
+    sourcemap: false
   }
 });

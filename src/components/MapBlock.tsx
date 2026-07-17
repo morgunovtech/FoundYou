@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type maplibregl from 'maplibre-gl';
 import type { FeatureCollection, Polygon } from 'geojson';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -9,9 +9,29 @@ interface MapBlockProps {
   accuracy?: number;
 }
 
+// Демо-стиль maplibre содержит только контуры стран — на zoom 15 карта была
+// пустой. Растровые тайлы OSM дают реальную картографию без API-ключа.
+const OSM_RASTER_STYLE = {
+  version: 8,
+  sources: {
+    osm: {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: '© OpenStreetMap contributors'
+    }
+  },
+  layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
+} as unknown as maplibregl.StyleSpecification;
+
 export const MapBlock: React.FC<MapBlockProps> = ({ lat, lon, accuracy }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const markerRef = useRef<maplibregl.Marker | null>(null);
+  // Флаг готовности: карта создаётся асинхронно, и эффекты центра/точности
+  // должны сработать после её инициализации, а не только при смене пропсов.
+  const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
     let map: maplibregl.Map | null = null;
@@ -22,18 +42,10 @@ export const MapBlock: React.FC<MapBlockProps> = ({ lat, lon, accuracy }) => {
       if (!containerRef.current) return;
       try {
         const maplibre = await import('maplibre-gl');
-        const supportedFn = (maplibre as any)?.supported;
-        if (typeof supportedFn === 'function') {
-          const ok = supportedFn({ failIfMajorPerformanceCaveat: false });
-          if (!ok) {
-            console.warn('maplibre unsupported: no WebGL');
-            return;
-          }
-        }
-        if (cancelled) return;
+        if (cancelled || !containerRef.current) return;
         map = new maplibre.Map({
           container: containerRef.current,
-          style: 'https://demotiles.maplibre.org/style.json',
+          style: OSM_RASTER_STYLE,
           center: [lon, lat],
           zoom: 15,
           attributionControl: true
@@ -41,6 +53,12 @@ export const MapBlock: React.FC<MapBlockProps> = ({ lat, lon, accuracy }) => {
         mapRef.current = map;
         map.addControl(new maplibre.NavigationControl({ visualizePitch: true }));
         marker = new maplibre.Marker({ color: '#38bdf8' }).setLngLat([lon, lat]).addTo(map);
+        markerRef.current = marker;
+        map.on('load', () => {
+          if (!cancelled) {
+            setMapReady(true);
+          }
+        });
       } catch (error) {
         console.warn('maplibre-init', error);
         mapRef.current = null;
@@ -57,26 +75,24 @@ export const MapBlock: React.FC<MapBlockProps> = ({ lat, lon, accuracy }) => {
         map.remove();
       }
       mapRef.current = null;
+      markerRef.current = null;
+      setMapReady(false);
     };
+    // Карта инициализируется один раз; центр и точность обновляют эффекты ниже.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (mapRef.current) {
-      mapRef.current.setCenter([lon, lat]);
-    }
-  }, [lat, lon]);
+    if (!mapReady || !mapRef.current) return;
+    mapRef.current.setCenter([lon, lat]);
+    markerRef.current?.setLngLat([lon, lat]);
+  }, [mapReady, lat, lon]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
-    if (map.isStyleLoaded()) {
-      applyAccuracy(map, lat, lon, accuracy);
-    } else {
-      const handler = () => applyAccuracy(map, lat, lon, accuracy);
-      map.once('load', handler);
-    }
-  }, [lat, lon, accuracy]);
+    if (!mapReady || !map) return;
+    applyAccuracy(map, lat, lon, accuracy);
+  }, [mapReady, lat, lon, accuracy]);
 
   return <div ref={containerRef} className="map-container" />;
 };

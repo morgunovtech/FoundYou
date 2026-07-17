@@ -27,6 +27,8 @@ export interface MetadataGroups {
 export interface StructuredMetadata {
   groups: MetadataGroups;
   shotDate?: string;
+  /** Локальное время съёмки из EXIF без часового пояса (YYYY-MM-DDTHH:mm:ss) */
+  shotDateLocal?: string;
   cameraMake?: string;
   cameraModel?: string;
   lensModel?: string;
@@ -43,7 +45,6 @@ export interface StructuredMetadata {
     accuracy?: number;
     heading?: number;
   };
-  completeness: number;
   orientation?: 'portrait' | 'landscape' | 'square' | 'unknown';
 }
 

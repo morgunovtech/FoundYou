@@ -13,6 +13,7 @@ import type { ManualCoordinates } from './types/metadata';
 import { useI18n, useT } from './i18n';
 import { ThemeSwitcher } from './components/ThemeSwitcher';
 import type { AntiSearchParams, CleanupPreviewDimensions, ManualMask, QualityMode } from './types/cleanup';
+import { qualityForMode } from './utils/quality';
 import {
   applyAntiSearch,
   applyColorReduction,
@@ -45,19 +46,16 @@ async function loadImageElement(src: string): Promise<HTMLImageElement> {
 const blurDefault = 28;
 const PREVIEW_MAX_DIMENSION = 2400;
 
-const RU_PLURAL_RANGE = { few: [2, 3, 4], many: [0, 5, 6, 7, 8, 9] };
+// Лимит площади canvas: iOS Safari отдаёт null из toBlob (или пустой кадр)
+// при площади больше ~16.7 МП; на остальных платформах ограничиваем 32 МП,
+// чтобы попиксельные проходы (PRNU, анти-поиск) не убивали вкладку.
+const IS_IOS =
+  typeof navigator !== 'undefined' &&
+  (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+const EXPORT_MAX_PIXELS = IS_IOS ? 16_000_000 : 32_000_000;
 
-function qualityForMode(mode: QualityMode): number {
-  switch (mode) {
-    case 'low':
-      return 0.82;
-    case 'medium':
-      return 0.9;
-    case 'original':
-    default:
-      return 0.98;
-  }
-}
+const RU_PLURAL_RANGE = { few: [2, 3, 4], many: [0, 5, 6, 7, 8, 9] };
 
 function createAnonymisedName(extension: string): string {
   const random = Math.random().toString(36).slice(2, 8);
@@ -99,6 +97,7 @@ const App: React.FC = () => {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [estimatedSize, setEstimatedSize] = useState<number | null>(null);
   const [previewDimensions, setPreviewDimensions] = useState<CleanupPreviewDimensions | null>(null);
+  const decodedImageRef = React.useRef<{ url: string; image: HTMLImageElement } | null>(null);
   const reduceColor = antiSearchEnabled && antiSearchLevel === 3;
   const prnuCleanup = removeMetadata;
   const watermark = watermarkEnabled;
@@ -148,8 +147,6 @@ const App: React.FC = () => {
       setBlurStrength(blurDefault);
       setNotice(null);
       setQualityMode('medium');
-      setPreviewDataUrl(null);
-      setPreviewLoading(true);
       setEstimatedSize(null);
       setRenameFile(false);
       setManualMasks([]);
@@ -168,11 +165,21 @@ const App: React.FC = () => {
     async (options?: { maxDimension?: number }) => {
       if (!fileInfo) return null;
       const longest = Math.max(fileInfo.width, fileInfo.height) || 1;
-      const targetScale = options?.maxDimension ? Math.min(1, options.maxDimension / longest) : 1;
+      const dimensionScale = options?.maxDimension ? Math.min(1, options.maxDimension / longest) : 1;
+      const areaScale = Math.sqrt(EXPORT_MAX_PIXELS / Math.max(1, fileInfo.width * fileInfo.height));
+      const targetScale = Math.min(1, dimensionScale, areaScale);
       const targetWidth = Math.max(1, Math.round(fileInfo.width * targetScale));
       const targetHeight = Math.max(1, Math.round(fileInfo.height * targetScale));
 
-      const image = await loadImageElement(fileInfo.dataUrl);
+      // Кэш декодированного изображения: каждое движение слайдера перегенерирует
+      // превью, и повторный decode полноразмерного фото занимал сотни мс.
+      let image: HTMLImageElement;
+      if (decodedImageRef.current && decodedImageRef.current.url === fileInfo.dataUrl) {
+        image = decodedImageRef.current.image;
+      } else {
+        image = await loadImageElement(fileInfo.dataUrl);
+        decodedImageRef.current = { url: fileInfo.dataUrl, image };
+      }
       const baseCanvas = document.createElement('canvas');
       baseCanvas.width = targetWidth;
       baseCanvas.height = targetHeight;
@@ -255,24 +262,17 @@ const App: React.FC = () => {
       }
       const mime = fileInfo.mimeType;
       const extension = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg';
-      const jpegQuality = qualityForMode(qualityMode);
+      const exportType = mime === 'image/png' ? 'image/png' : mime === 'image/webp' ? 'image/webp' : 'image/jpeg';
+      const exportQuality = exportType === 'image/png' ? undefined : qualityForMode(qualityMode);
       const blob: Blob = await new Promise((resolve, reject) => {
-        if (mime === 'image/png') {
-          canvas.toBlob((result) => {
+        canvas.toBlob(
+          (result) => {
             if (result) resolve(result);
             else reject(new Error('export-failed'));
-          }, 'image/png');
-        } else if (mime === 'image/webp') {
-          canvas.toBlob((result) => {
-            if (result) resolve(result);
-            else reject(new Error('export-failed'));
-          }, 'image/webp', jpegQuality);
-        } else {
-          canvas.toBlob((result) => {
-            if (result) resolve(result);
-            else reject(new Error('export-failed'));
-          }, 'image/jpeg', jpegQuality);
-        }
+          },
+          exportType,
+          exportQuality
+        );
       });
 
       const link = document.createElement('a');
@@ -304,60 +304,53 @@ const App: React.FC = () => {
       setPreviewLoading(false);
       setEstimatedSize(null);
       setPreviewDimensions(null);
+      decodedImageRef.current = null;
       return;
     }
     let cancelled = false;
     setPreviewLoading(true);
     const longestSide = Math.max(fileInfo.width, fileInfo.height) || 1;
     const previewScale = Math.min(1, PREVIEW_MAX_DIMENSION / longestSide);
-    createProcessedCanvas({ maxDimension: PREVIEW_MAX_DIMENSION })
-      .then((canvas) => {
-        if (!canvas || cancelled) {
-          return;
-        }
-        const mime = fileInfo.mimeType.includes('png') ? 'image/png' : 'image/jpeg';
-        const quality = mime === 'image/jpeg' ? qualityForMode(qualityMode) : undefined;
-        const dataUrl = canvas.toDataURL(mime, quality);
-        if (!cancelled) {
-          setPreviewDataUrl(dataUrl);
-          setEstimatedSize(estimateDataUrlBytes(dataUrl));
-          setPreviewDimensions({
-            width: Math.round(canvas.width / previewScale),
-            height: Math.round(canvas.height / previewScale)
-          });
-        }
-      })
-      .catch((err) => {
-        console.error('cleanup-preview', err);
-        if (!cancelled) {
-          setPreviewDataUrl(null);
-          setEstimatedSize(null);
-          setPreviewDimensions(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setPreviewLoading(false);
-        }
-      });
+    // Debounce: перегенерация — это полный canvas-пайплайн (блюр + PRNU +
+    // кодирование), а слайдеры шлют событие на каждый тик.
+    const timer = window.setTimeout(() => {
+      createProcessedCanvas({ maxDimension: PREVIEW_MAX_DIMENSION })
+        .then((canvas) => {
+          if (!canvas || cancelled) {
+            return;
+          }
+          const mime = fileInfo.mimeType.includes('png') ? 'image/png' : 'image/jpeg';
+          const quality = mime === 'image/jpeg' ? qualityForMode(qualityMode) : undefined;
+          const dataUrl = canvas.toDataURL(mime, quality);
+          if (!cancelled) {
+            setPreviewDataUrl(dataUrl);
+            setEstimatedSize(estimateDataUrlBytes(dataUrl));
+            setPreviewDimensions({
+              width: Math.round(canvas.width / previewScale),
+              height: Math.round(canvas.height / previewScale)
+            });
+          }
+        })
+        .catch((err) => {
+          console.error('cleanup-preview', err);
+          if (!cancelled) {
+            setPreviewDataUrl(null);
+            setEstimatedSize(null);
+            setPreviewDimensions(null);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setPreviewLoading(false);
+          }
+        });
+    }, 200);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [
-    fileInfo,
-    blurFaces,
-    manualMasks,
-    blurStrength,
-    antiSearchEnabled,
-    antiSearchParams,
-    reduceColor,
-    watermark,
-    watermarkEnabled,
-    prnuCleanup,
-    qualityMode,
-    createProcessedCanvas
-  ]);
+  }, [fileInfo, qualityMode, createProcessedCanvas]);
 
   const handleManualMaskAdd = useCallback((mask: Omit<ManualMask, 'id'>) => {
     setManualMasks((current) => {
@@ -374,9 +367,7 @@ const App: React.FC = () => {
     if (!analysisSummary) {
       if (analysisLoading) return t('sceneDescriptionLoading');
       if (analysisError) return t('sceneDescriptionUnavailable');
-      return detections.length > 0
-        ? t('sceneDescriptionDetected', { items: t('previewObjectsFound', { count: detections.length }) })
-        : t('sceneDescriptionEmpty');
+      return t('sceneDescriptionEmpty');
     }
     const segments: string[] = [];
     if (analysisSummary.people > 0) {
@@ -392,7 +383,7 @@ const App: React.FC = () => {
       return t('sceneDescriptionEmpty');
     }
     return t('sceneDescriptionDetected', { items: segments.join('; ') });
-  }, [analysisSummary, analysisLoading, analysisError, detections.length, formatCountLabel, t]);
+  }, [analysisSummary, analysisLoading, analysisError, formatCountLabel, t]);
 
   return (
     <div className="app-shell">
@@ -416,7 +407,7 @@ const App: React.FC = () => {
               sceneDescription={sceneDescription}
               progress={
                 analysisLoading && detectionStatus
-                  ? { label: detectionStatus.label, value: detectionStatus.progress }
+                  ? { label: t(detectionStatus.key), value: detectionStatus.progress }
                   : null
               }
             />

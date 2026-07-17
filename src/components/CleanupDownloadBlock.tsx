@@ -5,6 +5,7 @@ import type { CleanupPreviewDimensions, ManualMask, QualityMode } from '../types
 import { useT } from '../i18n';
 import { formatBytesPrecise } from '../utils/format';
 import { buildCleanupSummary } from '../utils/cleanupSummary';
+import { qualityPercent } from '../utils/quality';
 
 interface CleanupDownloadBlockProps {
   fileInfo: BasicFileInfo | null;
@@ -41,12 +42,6 @@ interface CleanupDownloadBlockProps {
 
 const BRUSH_RADIUS = 18;
 const MIN_POINT_DISTANCE = 4;
-
-const QUALITY_PERCENT: Record<QualityMode, number> = {
-  low: Math.round(0.82 * 100),
-  medium: Math.round(0.9 * 100),
-  original: Math.round(0.98 * 100)
-};
 
 export const CleanupDownloadBlock: React.FC<CleanupDownloadBlockProps> = ({
   fileInfo,
@@ -158,7 +153,7 @@ export const CleanupDownloadBlock: React.FC<CleanupDownloadBlockProps> = ({
         renameSummary,
         watermarkEnabled,
         qualityMode,
-        qualityPercent: QUALITY_PERCENT[qualityMode],
+        qualityPercent: qualityPercent(qualityMode),
         t
       }),
     [
@@ -364,7 +359,7 @@ export const CleanupDownloadBlock: React.FC<CleanupDownloadBlockProps> = ({
           </label>
           <p className="cleanup-select__helper">{t('qualityHelper')}</p>
           <span className="cleanup-select__meta">
-            {t('qualityPercentLabel', { percent: QUALITY_PERCENT[qualityMode], size: estimatedLabel })}
+            {t('qualityPercentLabel', { percent: qualityPercent(qualityMode), size: estimatedLabel })}
           </span>
         </div>
         <label className="cleanup-checkbox">

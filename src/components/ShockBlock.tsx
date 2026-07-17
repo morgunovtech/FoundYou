@@ -3,7 +3,7 @@ import { useT } from '../i18n';
 import type { StructuredMetadata, ManualCoordinates } from '../types/metadata';
 import type { ReverseGeocodeResult, HistoricalWeatherResult, PoiResult } from '../types/api';
 import { useAPIFetch } from '../hooks/useAPIFetch';
-import { inferMovement, summarizeWeather } from '../utils/insights';
+import { inferMovement } from '../utils/insights';
 import { dedupeByNameAndDistance, localizeCategoryKey } from '../utils/insightsCompact';
 import { DataInsightsCompact } from './DataInsightsCompact';
 
@@ -18,53 +18,62 @@ export const ShockBlock: React.FC<ShockBlockProps> = ({ metadata, manualCoords, 
   const [latInput, setLatInput] = useState('');
   const [lonInput, setLonInput] = useState('');
   const gpsHeading = metadata?.gps?.heading;
+  const gpsLat = metadata?.gps?.lat;
+  const gpsLon = metadata?.gps?.lon;
 
   useEffect(() => {
     if (manualCoords) {
       setLatInput(manualCoords.lat.toFixed(5));
       setLonInput(manualCoords.lon.toFixed(5));
-    } else if (metadata?.gps) {
-      setLatInput(metadata.gps.lat.toFixed(5));
-      setLonInput(metadata.gps.lon.toFixed(5));
+    } else if (gpsLat != null && gpsLon != null) {
+      setLatInput(gpsLat.toFixed(5));
+      setLonInput(gpsLon.toFixed(5));
     } else {
       setLatInput('');
       setLonInput('');
     }
-  }, [manualCoords, metadata?.gps?.lat, metadata?.gps?.lon]);
+  }, [manualCoords, gpsLat, gpsLon]);
 
   const coords = useMemo(() => {
     if (manualCoords) return manualCoords;
-    if (metadata?.gps) {
-      return { lat: metadata.gps.lat, lon: metadata.gps.lon };
+    if (gpsLat != null && gpsLon != null) {
+      return { lat: gpsLat, lon: gpsLon };
     }
     return null;
-  }, [manualCoords, metadata?.gps?.lat, metadata?.gps?.lon]);
+  }, [manualCoords, gpsLat, gpsLon]);
 
-  const timestamp = useMemo(() => metadata?.shotDate ?? new Date().toISOString(), [metadata?.shotDate]);
+  // Без даты съёмки историческую погоду не запрашиваем: подстановка «сейчас»
+  // выдавала сегодняшнюю погоду за данные снимка. Наивное локальное время
+  // (shotDateLocal) позволяет серверу сопоставить час в поясе места съёмки.
+  const timestamp = metadata?.shotDateLocal ?? metadata?.shotDate;
 
   const reverseFetch = useAPIFetch<ReverseGeocodeResult>();
   const weatherFetch = useAPIFetch<HistoricalWeatherResult>();
   const poiFetch = useAPIFetch<PoiResult[]>();
   const surveillanceFetch = useAPIFetch<PoiResult[]>();
+  const { request: requestReverse } = reverseFetch;
+  const { request: requestWeather } = weatherFetch;
+  const { request: requestPoi } = poiFetch;
+  const { request: requestSurveillance } = surveillanceFetch;
 
   useEffect(() => {
     if (!coords) return;
-    reverseFetch.request(`/api/reverse-geocode?lat=${coords.lat}&lon=${coords.lon}`);
-  }, [coords]);
+    requestReverse(`/api/reverse-geocode?lat=${coords.lat}&lon=${coords.lon}`);
+  }, [coords, requestReverse]);
 
   useEffect(() => {
     if (!coords || !timestamp) return;
-    weatherFetch.request(`/api/historical-weather?lat=${coords.lat}&lon=${coords.lon}&timestamp=${encodeURIComponent(timestamp)}`);
-  }, [coords, timestamp]);
+    requestWeather(`/api/historical-weather?lat=${coords.lat}&lon=${coords.lon}&timestamp=${encodeURIComponent(timestamp)}`);
+  }, [coords, timestamp, requestWeather]);
 
   useEffect(() => {
     if (!coords) return;
-    poiFetch.request(`/api/nearby-poi?lat=${coords.lat}&lon=${coords.lon}`);
-    surveillanceFetch.request(`/api/surveillance-candidates?lat=${coords.lat}&lon=${coords.lon}`);
-  }, [coords]);
+    requestPoi(`/api/nearby-poi?lat=${coords.lat}&lon=${coords.lon}`);
+    requestSurveillance(`/api/surveillance-candidates?lat=${coords.lat}&lon=${coords.lon}`);
+  }, [coords, requestPoi, requestSurveillance]);
 
   const movement = useMemo(() => inferMovement(metadata), [metadata]);
-  const weatherSummary = useMemo(() => summarizeWeather(weatherFetch.data ?? null), [weatherFetch.data]);
+  const weatherSummary = weatherFetch.data ?? null;
   const reverseData = reverseFetch.data ?? null;
 
   const accuracyMeters = useMemo(() => {
@@ -96,20 +105,20 @@ export const ShockBlock: React.FC<ShockBlockProps> = ({ metadata, manualCoords, 
       <DataInsightsCompact
         reverseData={reverseData}
         reverseLoading={reverseFetch.loading}
-        reverseError={reverseFetch.error}
+        reverseError={reverseFetch.error != null}
         coords={coords}
         accuracyMeters={accuracyMeters}
         shotDate={metadata?.shotDate}
         movement={movement}
         weather={weatherSummary}
         weatherLoading={weatherFetch.loading}
-        weatherError={weatherFetch.error}
+        weatherError={weatherFetch.error != null}
         poiItems={poiItems}
         poiLoading={poiFetch.loading}
-        poiError={poiFetch.error}
+        poiError={poiFetch.error != null}
         surveillanceItems={surveillanceItems}
         surveillanceLoading={surveillanceFetch.loading}
-        surveillanceError={surveillanceFetch.error}
+        surveillanceError={surveillanceFetch.error != null}
         gpsHeading={gpsHeading}
       />
 

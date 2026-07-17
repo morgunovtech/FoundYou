@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useT } from '../i18n';
+import type { MessageKey } from '../i18n';
 import type { BoundingBox, DetectionSummary } from '../types/detection';
 import type { BasicFileInfo } from '../types/metadata';
 
@@ -23,10 +23,11 @@ async function loadModel() {
 }
 
 export function useImageAnalysis(fileInfo: BasicFileInfo | null) {
-  const t = useT();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [detectionStatus, setDetectionStatus] = useState<{ label: string; progress: number } | null>(null);
+  // Ключ перевода вместо готовой строки: локализация происходит при рендере,
+  // поэтому смена языка не перезапускает детекцию.
+  const [detectionStatus, setDetectionStatus] = useState<{ key: MessageKey; progress: number } | null>(null);
   const [detections, setDetections] = useState<BoundingBox[]>([]);
   const [summary, setSummary] = useState<DetectionSummary | null>(null);
   const modelRef = useRef<any | null>(null);
@@ -71,7 +72,7 @@ export function useImageAnalysis(fileInfo: BasicFileInfo | null) {
 
     if (!hasWebGL && !('OffscreenCanvas' in window)) {
       if (!capabilityCheckedRef.current) {
-        setError(t('contentUnavailable'));
+        setError('contentUnavailable');
         capabilityCheckedRef.current = true;
       }
       reset();
@@ -81,25 +82,23 @@ export function useImageAnalysis(fileInfo: BasicFileInfo | null) {
       };
     }
 
-    const abortController = new AbortController();
-
     const detect = async () => {
       setLoading(true);
       setError(null);
-      setDetectionStatus({ label: t('detectionStagePrep'), progress: 0 });
+      setDetectionStatus({ key: 'detectionStagePrep', progress: 0 });
       let decoded: DecodedSource | null = null;
       try {
         if (import.meta.env.DEV) {
           console.info('[pipeline] analyze:start');
         }
         if (!modelRef.current) {
-          setDetectionStatus({ label: t('detectionStageModel'), progress: 0.15 });
+          setDetectionStatus({ key: 'detectionStageModel', progress: 0.15 });
           modelRef.current = await loadModel();
           if (!modelRef.current && import.meta.env.DEV) {
             console.info('[pipeline] analyze:skip-detection (model unavailable)');
           }
         }
-        setDetectionStatus({ label: t('detectionStageDecode'), progress: 0.3 });
+        setDetectionStatus({ key: 'detectionStageDecode', progress: 0.3 });
         decoded = await decodeForAnalysis(fileInfo);
         if (!decoded) {
           throw new Error('analysis-image');
@@ -116,13 +115,13 @@ export function useImageAnalysis(fileInfo: BasicFileInfo | null) {
           width: decoded.baseWidth,
           height: decoded.baseHeight
         });
-        setDetectionStatus({ label: t('detectionStageDetect'), progress: 0.55 });
+        setDetectionStatus({ key: 'detectionStageDetect', progress: 0.55 });
         const predictions =
           modelRef.current?.detect && scaledForDetection.canvas.width > 1 && scaledForDetection.canvas.height > 1
             ? await modelRef.current.detect(scaledForDetection.canvas, undefined, 0.2)
             : [];
         if (cancelled) return;
-        setDetectionStatus({ label: t('detectionStageProcess'), progress: 0.8 });
+        setDetectionStatus({ key: 'detectionStageProcess', progress: 0.8 });
         const boxes: BoundingBox[] = predictions.map((pred: any) => ({
           x: pred.bbox[0] * scaledForDetection.scaleX,
           y: pred.bbox[1] * scaledForDetection.scaleY,
@@ -135,18 +134,14 @@ export function useImageAnalysis(fileInfo: BasicFileInfo | null) {
         setDetections(boxes);
         setSummary(summaryValue);
         if (import.meta.env.DEV) {
-          console.info('[pipeline] analyze:done', {
-            objects: boxes.length,
-            textBoxes: 0,
-            lines: 0
-          });
+          console.info('[pipeline] analyze:done', { objects: boxes.length });
         }
         capabilityCheckedRef.current = true;
-        setDetectionStatus({ label: t('detectionStageDone'), progress: 1 });
+        setDetectionStatus({ key: 'detectionStageDone', progress: 1 });
       } catch (err) {
         console.error('analysis', err);
         if (!cancelled) {
-          setError(t('contentUnavailable'));
+          setError('contentUnavailable');
           reset();
         }
       } finally {
@@ -161,9 +156,8 @@ export function useImageAnalysis(fileInfo: BasicFileInfo | null) {
 
     return () => {
       cancelled = true;
-      abortController.abort();
     };
-  }, [fileInfo, t]);
+  }, [fileInfo]);
 
   return {
     loading,
@@ -187,10 +181,12 @@ type DecodedSource = {
 };
 
 async function decodeForAnalysis(fileInfo: BasicFileInfo): Promise<DecodedSource | null> {
+  // Детекции отдаются в координатах рабочего файла (fileInfo.width/height):
+  // именно в этом пространстве живут превью и канвас очистки.
   const workingWidth = fileInfo.width;
   const workingHeight = fileInfo.height;
-  const baseWidth = fileInfo.originalWidth ?? workingWidth;
-  const baseHeight = fileInfo.originalHeight ?? workingHeight;
+  const baseWidth = workingWidth;
+  const baseHeight = workingHeight;
 
   const longestSide = Math.max(workingWidth, workingHeight) || 1;
   const pixelScale = Math.sqrt(MAX_ANALYSIS_PIXELS / Math.max(1, workingWidth * workingHeight));
@@ -279,7 +275,6 @@ function summarizeDetections(detections: BoundingBox[]): DetectionSummary {
 
   detections.forEach((d) => {
     if (d.score < 0.5) return;
-    if (d.label.startsWith('text')) return;
     if (d.label === 'person') people += 1;
     if (vehiclesSet.has(d.label)) vehicles += 1;
     if (animalsSet.has(d.label)) animals += 1;

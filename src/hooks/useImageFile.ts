@@ -63,6 +63,9 @@ export function useImageFile() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const objectUrlRef = useRef<string | null>(null);
+  // Счётчик поколений: при быстрой повторной загрузке результат устаревшей
+  // обработки игнорируется, а её objectURL освобождается.
+  const generationRef = useRef(0);
 
   const revokeObjectUrl = useCallback(() => {
     if (objectUrlRef.current) {
@@ -73,27 +76,24 @@ export function useImageFile() {
 
   useEffect(() => revokeObjectUrl, [revokeObjectUrl]);
 
-  const reset = useCallback(() => {
-    setFileInfo(null);
-    setError(null);
-    revokeObjectUrl();
-  }, [revokeObjectUrl]);
-
   const processFile = useCallback(
     async (file: File) => {
+      const generation = ++generationRef.current;
+      const isCurrent = () => generation === generationRef.current;
       setLoading(true);
       setError(null);
-      revokeObjectUrl();
       if (import.meta.env.DEV) {
         console.info('[pipeline] upload:start', { name: file.name, type: file.type, size: file.size });
       }
       let inferredType = file.type || inferMimeFromName(file.name) || '';
+      let objectUrl: string | null = null;
       try {
         if (!inferredType || !SUPPORTED_TYPES.includes(inferredType)) {
           if (await sniffHeic(file)) {
             inferredType = 'image/heic';
           }
         }
+        if (!isCurrent()) return;
 
         if (file.size > MAX_SIZE_BYTES) {
           setError(t('fileTooLarge', { limit: 20 }));
@@ -111,15 +111,23 @@ export function useImageFile() {
         const heicDecoded = needsHeicConversion ? await decodeHeicToJpegForPreview(file) : null;
         const workingFile = heicDecoded?.file ?? file;
         const mimeType = workingFile.type || inferredType || 'image/jpeg';
-        const objectUrl = URL.createObjectURL(workingFile);
-        objectUrlRef.current = objectUrl;
+        objectUrl = URL.createObjectURL(workingFile);
         const { url: thumbnailUrl, width, height } = await makeThumbnail(objectUrl);
+        if (!isCurrent()) {
+          URL.revokeObjectURL(objectUrl);
+          return;
+        }
         const pixelCount = width * height;
         if (pixelCount > MAX_PIXEL_COUNT) {
+          URL.revokeObjectURL(objectUrl);
           setError(t('fileTooLargeResolution'));
           setLoading(false);
           return;
         }
+        // Успех: только теперь заменяем предыдущий objectURL — при отклонённой
+        // загрузке текущее фото остаётся рабочим.
+        revokeObjectUrl();
+        objectUrlRef.current = objectUrl;
         const info: BasicFileInfo = {
           file: workingFile,
           dataUrl: objectUrl,
@@ -149,6 +157,10 @@ export function useImageFile() {
         }
       } catch (err) {
         console.error('file-processing', err);
+        if (objectUrl && objectUrlRef.current !== objectUrl) {
+          URL.revokeObjectURL(objectUrl);
+        }
+        if (!isCurrent()) return;
         if (HEIC_TYPES.includes(inferredType)) {
           setError(t('heicConversionFailed'));
         } else if (inferredType === 'image/avif') {
@@ -156,9 +168,10 @@ export function useImageFile() {
         } else {
           setError(t('corruptedFile'));
         }
-        revokeObjectUrl();
       } finally {
-        setLoading(false);
+        if (isCurrent()) {
+          setLoading(false);
+        }
       }
     },
     [revokeObjectUrl, t]
@@ -168,7 +181,6 @@ export function useImageFile() {
     fileInfo,
     error,
     loading,
-    processFile,
-    reset
+    processFile
   };
 }

@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run test:format && npm run test:summary && npm run test:insights",
     "test:format": "tsx scripts/formatBytes.test.ts",
     "test:summary": "tsx scripts/cleanupSummary.test.ts",
     "test:insights": "tsx scripts/insightsCompact.test.ts"

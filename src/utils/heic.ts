@@ -9,24 +9,27 @@ type RawMetadata = {
 };
 
 export async function extractMetadataFromOriginal(file: File): Promise<RawMetadata> {
-  const [exifData, xmpData, iptcData, iccData, gpsRaw] = await Promise.all([
-    exifr.parse(file, {
-      exif: true,
-      gps: true,
-      translateKeys: true
-    }),
-    safeExtract(() => exifr.xmp(file)),
-    safeExtract(() => exifr.iptc(file)),
-    safeExtract(() => exifr.icc(file)),
-    safeExtract(() => exifr.gps(file))
-  ]);
+  // Один сегментированный проход вместо пяти: exifr.xmp/iptc/icc не существуют
+  // в exifr@7, а mergeOutput:false отдаёт те же сегменты из одного парса.
+  const segments = (await exifr.parse(file, {
+    ifd0: {},
+    exif: true,
+    gps: true,
+    xmp: true,
+    iptc: true,
+    icc: true,
+    translateKeys: true,
+    mergeOutput: false
+  })) as Record<string, Record<string, unknown> | undefined> | undefined;
+
+  const exifData = { ...(segments?.ifd0 ?? {}), ...(segments?.exif ?? {}) };
 
   return {
-    exifData: (exifData ?? {}) as Record<string, unknown>,
-    xmpData: (xmpData ?? {}) as Record<string, unknown>,
-    iptcData: (iptcData ?? {}) as Record<string, unknown>,
-    iccData: (iccData ?? {}) as Record<string, unknown>,
-    gpsRaw: (gpsRaw ?? {}) as Record<string, unknown>
+    exifData,
+    xmpData: segments?.xmp ?? {},
+    iptcData: segments?.iptc ?? {},
+    iccData: segments?.icc ?? {},
+    gpsRaw: segments?.gps ?? {}
   };
 }
 
@@ -56,7 +59,8 @@ function createImageFromBlob(blob: Blob): Promise<HTMLImageElement> {
 }
 
 export async function decodeHeicToJpegForPreview(sourceFile: File): Promise<HeicDecodeResult> {
-  const heic2any = (await import('heic2any')) as unknown as (options: {
+  const heic2anyModule = await import('heic2any');
+  const heic2any = (heic2anyModule.default ?? heic2anyModule) as unknown as (options: {
     blob: Blob;
     toType?: string;
     quality?: number;
@@ -104,13 +108,4 @@ export async function decodeHeicToJpegForPreview(sourceFile: File): Promise<Heic
     width: image.naturalWidth,
     height: image.naturalHeight
   };
-}
-
-async function safeExtract<T>(fn: () => Promise<T>): Promise<T | undefined> {
-  try {
-    return await fn();
-  } catch (error) {
-    console.warn('metadata-optional-extract', error);
-    return undefined;
-  }
 }

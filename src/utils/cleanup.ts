@@ -11,6 +11,54 @@ interface BlurRegion {
 const MIN_MASK_SIZE = 12;
 const MIN_MASK_POINTS = 3;
 
+// ctx.filter появился в Safari только в 18-й версии; на старых iOS присваивание
+// молча игнорируется и «размытый» регион копируется как есть. Проверяем один раз
+// и при отсутствии поддержки размываем даунскейлом с апскейлом.
+let filterSupportCache: boolean | null = null;
+
+function canvasFilterSupported(): boolean {
+  if (filterSupportCache != null) return filterSupportCache;
+  const probe = document.createElement('canvas').getContext('2d');
+  if (!probe) {
+    filterSupportCache = false;
+    return false;
+  }
+  probe.filter = 'blur(2px)';
+  filterSupportCache = probe.filter !== 'none';
+  return filterSupportCache;
+}
+
+function paintBlurred(
+  target: CanvasRenderingContext2D,
+  source: CanvasImageSource,
+  sx: number,
+  sy: number,
+  sWidth: number,
+  sHeight: number,
+  dx: number,
+  dy: number,
+  strength: number
+) {
+  if (canvasFilterSupported()) {
+    target.filter = `blur(${Math.round(strength)}px)`;
+    target.drawImage(source, sx, sy, sWidth, sHeight, dx, dy, sWidth, sHeight);
+    target.filter = 'none';
+    return;
+  }
+  const factor = Math.max(2, Math.round(strength / 2));
+  const smallWidth = Math.max(1, Math.round(sWidth / factor));
+  const smallHeight = Math.max(1, Math.round(sHeight / factor));
+  const tmp = document.createElement('canvas');
+  tmp.width = smallWidth;
+  tmp.height = smallHeight;
+  const tmpCtx = tmp.getContext('2d');
+  if (!tmpCtx) return;
+  tmpCtx.imageSmoothingEnabled = true;
+  tmpCtx.drawImage(source, sx, sy, sWidth, sHeight, 0, 0, smallWidth, smallHeight);
+  target.imageSmoothingEnabled = true;
+  target.drawImage(tmp, 0, 0, smallWidth, smallHeight, dx, dy, sWidth, sHeight);
+}
+
 function clampRect(rect: BlurRegion, maxWidth: number, maxHeight: number): BlurRegion | null {
   const x = Math.max(0, Math.min(rect.x, maxWidth));
   const y = Math.max(0, Math.min(rect.y, maxHeight));
@@ -48,19 +96,7 @@ export function blurDetections(
     ctx.beginPath();
     ctx.rect(clamped.x, clamped.y, clamped.width, clamped.height);
     ctx.clip();
-    ctx.filter = `blur(${Math.round(strength)}px)`;
-    ctx.drawImage(
-      source,
-      clamped.x,
-      clamped.y,
-      clamped.width,
-      clamped.height,
-      clamped.x,
-      clamped.y,
-      clamped.width,
-      clamped.height
-    );
-    ctx.filter = 'none';
+    paintBlurred(ctx, source, clamped.x, clamped.y, clamped.width, clamped.height, clamped.x, clamped.y, strength);
     ctx.restore();
   });
 }
@@ -106,9 +142,9 @@ export function blurManualMasks(
     const blurCtx = blurLayer.getContext('2d');
     if (!blurCtx) return;
 
-    blurCtx.filter = `blur(${Math.round(strength)}px)`;
-    blurCtx.drawImage(source, 0, 0, ctx.canvas.width, ctx.canvas.height);
-    blurCtx.filter = 'none';
+    const sourceWidth = typeof (source as { width?: unknown }).width === 'number' ? (source as { width: number }).width : ctx.canvas.width;
+    const sourceHeight = typeof (source as { height?: unknown }).height === 'number' ? (source as { height: number }).height : ctx.canvas.height;
+    paintBlurred(blurCtx, source, 0, 0, sourceWidth, sourceHeight, 0, 0, strength);
     blurCtx.globalCompositeOperation = 'destination-in';
     blurCtx.drawImage(maskCanvas, 0, 0);
 
@@ -343,9 +379,7 @@ export function applyPrnuCleanup(canvas: HTMLCanvasElement): HTMLCanvasElement {
   if (!bctx) {
     throw new Error('canvas');
   }
-  bctx.filter = 'blur(1.8px)';
-  bctx.drawImage(canvas, 0, 0);
-  bctx.filter = 'none';
+  paintBlurred(bctx, canvas, 0, 0, width, height, 0, 0, 1.8);
   const blurred = bctx.getImageData(0, 0, width, height);
   const blurredData = blurred.data;
 

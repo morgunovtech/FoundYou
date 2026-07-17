@@ -1,6 +1,7 @@
 import type { QualityMode } from '../types/cleanup';
+import type { MessageKey } from '../i18n';
 
-type Translate = (key: string, params?: Record<string, string | number>) => string;
+type Translate = (key: MessageKey, params?: Record<string, string | number>) => string;
 
 interface CleanupSummaryInput {
   removeMetadata: boolean;

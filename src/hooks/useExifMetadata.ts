@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useT } from '../i18n';
 import type { BasicFileInfo, StructuredMetadata } from '../types/metadata';
 import { inferOrientation } from '../utils/orientation';
-import { computeMetadataCompleteness } from '../utils/metadataScore';
 import { extractMetadataFromOriginal } from '../utils/heic';
 
 interface UseExifMetadataResult {
@@ -35,10 +34,11 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
         if (!active) return;
 
         const exifRecord = (exifData ?? {}) as Record<string, unknown>;
-        const shotDateIso = normalizeDateValue(
+        const shotDateValue = normalizeDateValue(
           pickFirst(exifRecord, ['DateTimeOriginal', 'dateTimeOriginal', 'CreateDate', 'createDate']),
           pickFirst(exifRecord, ['OffsetTimeOriginal', 'offsetTimeOriginal', 'OffsetTime'])
         );
+        const shotDateIso = shotDateValue?.iso;
         const cameraMake = pickFirst<string>(exifRecord, ['Make', 'make']);
         const cameraModel = pickFirst<string>(exifRecord, ['Model', 'model']);
         const lensModel = pickFirst<string>(exifRecord, ['LensModel', 'lensModel']);
@@ -53,7 +53,6 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
         const focalLength = pickFirst<number>(exifRecord, ['FocalLength', 'focalLength']);
         const focalLength35mm = pickFirst<number>(exifRecord, ['FocalLengthIn35mmFormat', 'focalLengthIn35MmFormat']);
         const gps = normalizeGps(exifRecord, gpsRaw as Record<string, unknown> | undefined);
-        const orientationTag = pickFirst<number | string>(exifRecord, ['Orientation', 'orientation']);
 
         const structured: StructuredMetadata = {
           groups: {
@@ -63,6 +62,7 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
             icc: (iccData as Record<string, unknown>) ?? {}
           },
           shotDate: shotDateIso,
+          shotDateLocal: shotDateValue?.naive,
           cameraMake,
           cameraModel,
           lensModel,
@@ -73,24 +73,14 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
           focalLength,
           focalLength35mm,
           gps,
-          completeness: computeMetadataCompleteness({
-            shotDate: shotDateIso,
-            cameraMake,
-            cameraModel,
-            lensModel,
-            exposureTime: rawExposure,
-            aperture,
-            iso,
-            focalLength,
-            gps
-          }),
-          orientation: inferOrientation(fileInfo.width, fileInfo.height, orientationTag)
+          orientation: inferOrientation(fileInfo.width, fileInfo.height)
         };
 
         setMetadata(structured);
       } catch (err) {
         console.error('metadata-parse', err);
-        setError(t('corruptedFile'));
+        if (!active) return;
+        setError(t('metadataUnavailable'));
         setMetadata(null);
       } finally {
         if (active) {
@@ -106,9 +96,7 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
     };
   }, [fileInfo, t]);
 
-  const resultError = useMemo(() => error, [error]);
-
-  return { metadata, loading, error: resultError };
+  return { metadata, loading, error };
 }
 
 function pickFirst<T>(source: Record<string, unknown> | undefined, keys: string[]): T | undefined {
@@ -137,11 +125,18 @@ function pickFirstFromSources<T>(
   return undefined;
 }
 
-function normalizeDateValue(value: unknown, offsetValue?: unknown): string | undefined {
+// iso — для отображения; naive — локальное время съёмки без пояса, как в EXIF
+// (нужно погодному API: пересчёт через пояс браузера смещал час на чужой).
+function normalizeDateValue(
+  value: unknown,
+  offsetValue?: unknown
+): { iso: string; naive: string } | undefined {
   if (!value) return undefined;
   if (value instanceof Date) {
     if (Number.isNaN(value.getTime())) return undefined;
-    return value.toISOString();
+    // exifr парсит наивную EXIF-строку в поясе браузера — локальные компоненты
+    // восстанавливают исходное «время на часах» в месте съёмки.
+    return { iso: value.toISOString(), naive: toNaiveString(value) };
   }
   if (typeof value === 'string') {
     const trimmed = value.trim();
@@ -151,10 +146,18 @@ function normalizeDateValue(value: unknown, offsetValue?: unknown): string | und
     const candidate = offset ? `${normalized}${offset}` : normalized;
     const parsed = new Date(candidate);
     if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toISOString();
+      return { iso: parsed.toISOString(), naive: normalized.slice(0, 19) };
     }
   }
   return undefined;
+}
+
+function toNaiveString(date: Date): string {
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  );
 }
 
 function formatExposure(value: string | number | undefined): string | undefined {
@@ -289,7 +292,7 @@ function toNumber(value: unknown): number | undefined {
     if (numbers.length >= 3) {
       return numbers[0] + numbers[1] / 60 + numbers[2] / 3600;
     }
-    return numbers.reduce((acc, item) => acc + item, 0);
+    return numbers[0] + numbers[1] / 60;
   }
   if (typeof value === 'object') {
     const result = rationalToNumber(value);

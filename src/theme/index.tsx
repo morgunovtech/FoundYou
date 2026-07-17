@@ -23,9 +23,15 @@ function getStoredMode(): ThemeMode {
   if (typeof window === 'undefined') {
     return 'system';
   }
-  const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (stored === 'light' || stored === 'dark' || stored === 'system' || stored === 'accessible') {
-    return stored;
+  // Заблокированное хранилище (политики приватности) не должно ронять всё
+  // приложение: провайдер монтируется выше ErrorBoundary.
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (stored === 'light' || stored === 'dark' || stored === 'system' || stored === 'accessible') {
+      return stored;
+    }
+  } catch (error) {
+    console.warn('theme-storage-read', error);
   }
   return 'system';
 }
@@ -64,7 +70,11 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const setMode = useCallback((next: ThemeMode) => {
     setModeState(next);
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(STORAGE_KEY, next);
+      try {
+        window.localStorage.setItem(STORAGE_KEY, next);
+      } catch (error) {
+        console.warn('theme-storage-write', error);
+      }
     }
   }, []);
 

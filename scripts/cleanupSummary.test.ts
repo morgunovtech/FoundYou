@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { buildCleanupSummary } from '../src/utils/cleanupSummary';
 
+// Стаб возвращает ключ и значения параметров: реальный t подставляет параметры
+// в шаблон словаря, которого здесь нет, поэтому просто делаем значения видимыми
+// для assert'ов (прошлая версия интерполировала в сам ключ и теряла {mode}).
 const t = (key: string, params?: Record<string, string | number>) => {
   if (!params) return key;
-  return Object.entries(params).reduce(
-    (acc, [paramKey, paramValue]) => acc.replace(`{${paramKey}}`, String(paramValue)),
-    key
-  );
+  return `${key} ${Object.values(params).map(String).join(' ')}`;
 };
 
 const summary = buildCleanupSummary({

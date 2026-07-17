@@ -1,4 +1,5 @@
 import type { ReverseGeocodeResult, HistoricalWeatherResult, PoiResult } from '../types/api';
+import type { MessageKey } from '../i18n';
 
 const RU_PLACE_MAP: Record<string, string> = {
   "o'zbekiston": 'Узбекистан',
@@ -61,7 +62,7 @@ export function localizePlaceParts(
 
 export function localizeCategoryKey(
   category: string,
-  t: (key: string, params?: Record<string, string | number>) => string
+  t: (key: MessageKey, params?: Record<string, string | number>) => string
 ): string {
   const normalized = category.toLowerCase();
   const key = CATEGORY_KEYS[normalized];
@@ -89,12 +90,14 @@ export function dedupeByNameAndDistance(items: PoiResult[]): PoiResult[] {
 export function formatWeatherLine(weather: HistoricalWeatherResult | null | undefined, locale: string): string | null {
   if (!weather) return null;
   const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  const speedUnit = locale === 'ru' ? 'км/ч' : locale === 'uz' ? 'km/soat' : 'km/h';
+  const pressureUnit = locale === 'ru' ? 'гПа' : 'hPa';
   return `${number.format(Math.round(weather.temperature))}°C · ${number.format(
     Math.round(weather.cloudCover)
-  )}% · ${number.format(Math.round(weather.windSpeed))} км/ч · ${number.format(Math.round(weather.pressure))} гПа`;
+  )}% · ${number.format(Math.round(weather.windSpeed))} ${speedUnit} · ${number.format(Math.round(weather.pressure))} ${pressureUnit}`;
 }
 
-const CATEGORY_KEYS: Record<string, string> = {
+const CATEGORY_KEYS: Record<string, MessageKey> = {
   cafe: 'poiCategory_cafe',
   restaurant: 'poiCategory_restaurant',
   bank: 'poiCategory_bank',
