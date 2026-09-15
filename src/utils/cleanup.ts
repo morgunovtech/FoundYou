@@ -576,6 +576,32 @@ export function blurOcrRegions(
   }
 }
 
+/* ── licence plates ─────────────────────────────────────── */
+
+/**
+ * Plates get a generous margin (a quarter of the width, a third of the height each side):
+ * OCR boxes hug the glyphs, the plate frame is wider than the characters.
+ */
+export function blurPlates(
+  ctx: CanvasRenderingContext2D,
+  source: CanvasImageSource,
+  plates: Array<{ x: number; y: number; width: number; height: number }>,
+  strength: number,
+  scale: number
+) {
+  for (const plate of plates) {
+    const padX = plate.width * scale * 0.25;
+    const padY = plate.height * scale * 0.35;
+    const rect: BlurRegion = {
+      x: plate.x * scale - padX,
+      y: plate.y * scale - padY,
+      width: plate.width * scale + padX * 2,
+      height: plate.height * scale + padY * 2,
+    };
+    blurRegion(ctx, source, rect, strength);
+  }
+}
+
 /* ── horizontal flip (mirror) ───────────────────────────── */
 
 export function applyMirror(canvas: HTMLCanvasElement): HTMLCanvasElement {

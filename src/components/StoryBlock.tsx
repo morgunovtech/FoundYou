@@ -8,6 +8,9 @@ import { useI18n, useT, type MessageKey } from '../i18n';
 import { useGeoContext, type RemoteStatus } from '../hooks/useGeoContext';
 import { buildStory, buildVerdict } from '../utils/story';
 import { buildProGroups } from '../utils/proTable';
+import { geotagTipKey } from '../utils/geotagTips';
+import type { PlateCandidate } from '../utils/plates';
+import type { ContentCredentialsState } from '../hooks/useContentCredentials';
 import {
   formatCoords,
   formatDistance,
@@ -35,6 +38,8 @@ interface StoryBlockProps {
   ocrError: string | null;
   ocrProgressLabel: string | null;
   onMakeSafeCopy: () => void;
+  credentials: ContentCredentialsState;
+  plates: PlateCandidate[];
 }
 
 const PRO_ROW_CAP = 200;
@@ -57,7 +62,9 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   ocrLoading,
   ocrError,
   ocrProgressLabel,
-  onMakeSafeCopy
+  onMakeSafeCopy,
+  credentials,
+  plates
 }) => {
   const t = useT();
   const { lang } = useI18n();
@@ -98,9 +105,11 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
         place,
         accuracyLabel,
         weatherLine,
-        holidayNames
+        holidayNames,
+        plates,
+        credentials: credentials.data
       }),
-    [t, lang, metadata, profile, proData, detections, ocrResult, place, accuracyLabel, weatherLine, holidayNames]
+    [t, lang, metadata, profile, proData, detections, ocrResult, place, accuracyLabel, weatherLine, holidayNames, plates, credentials.data]
   );
 
   const proGroups = useMemo(
@@ -265,6 +274,10 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
           </div>
         </div>
       ) : null}
+      <p className="fy-tip">
+        <b>{t('geotagTipTitle')}</b>
+        <span>{t(geotagTipKey(metadata?.cameraMake, metadata?.cameraModel, proData?.filename.platform))}</span>
+      </p>
       <p className="fy-geo-note">
         <span>{geo.enabled ? t('geoDisclosure') : t('geoDisabledNote')}</span>
         <button type="button" className="fy-link-btn" onClick={() => geo.setEnabled(!geo.enabled)}>
@@ -303,6 +316,34 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     );
   })();
 
+  // Content Credentials, when the file carries them: who signed, with what, and whether it held.
+  const credentialsDetails = (() => {
+    if (credentials.status !== 'found' || !credentials.data) return null;
+    const c = credentials.data;
+    const rows: Array<[string, string]> = [];
+    if (c.generator) rows.push([t('credGenerator'), c.generator]);
+    if (c.producer) rows.push([t('credProducer'), c.producer]);
+    if (c.issuer) rows.push([t('credIssuer'), c.issuer]);
+    if (c.signedAt) rows.push([t('credSignedAt'), formatDetailedDate(c.signedAt, lang) ?? c.signedAt]);
+    if (c.actions.length > 0) rows.push([t('credActions'), c.actions.map((a) => a.replace(/^c2pa\./, '')).join(', ')]);
+    if (c.ingredients > 0) rows.push([t('credIngredients'), String(c.ingredients)]);
+    return (
+      <div className="fy-fact-details fy-cred">
+        <dl className="fy-spec fy-spec--tight">
+          {rows.map(([label, value]) => (
+            <React.Fragment key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </React.Fragment>
+          ))}
+        </dl>
+        <p className="fy-hint" role={c.valid ? undefined : 'alert'}>
+          {c.valid ? t('credValid') : t('credInvalid', { codes: c.failures.join(', ') })}
+        </p>
+      </div>
+    );
+  })();
+
   const displayMime = fileInfo.originalMimeType ?? fileInfo.mimeType;
   const { typeKey, format } = describeFileType(displayMime, fileInfo.originalName ?? fileInfo.file.name);
   const metadataFieldCount = useMemo(() => {
@@ -330,7 +371,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
 
   /* ── fact order and extras ────────────────────────────── */
 
-  const factOrder: ProfileSectionKind[] = ['location', 'time', 'device', 'people', 'text', 'serial', 'hash', 'origin', 'editing', 'ai', 'content'];
+  const factOrder: ProfileSectionKind[] = ['location', 'time', 'device', 'people', 'text', 'plates', 'serial', 'hash', 'origin', 'editing', 'ai', 'content'];
 
   const renderFact = (kind: ProfileSectionKind) => {
     const section = sectionsByKind.get(kind);
@@ -345,7 +386,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       }
       return null;
     }
-    const details = kind === 'location' ? locationDetails : kind === 'text' ? textDetails : null;
+    const details = kind === 'location' ? locationDetails : kind === 'text' ? textDetails : kind === 'ai' ? credentialsDetails : null;
     return (
       <FactRow
         key={kind}

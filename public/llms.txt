@@ -11,16 +11,18 @@ Found You (formerly Meta Data Insight) extracts hidden metadata from a photo, de
 - **Metadata extraction**: EXIF, XMP, IPTC and ICC from JPEG, PNG, WebP, AVIF, GIF, BMP and HEIC/HEIF; PNG text chunks (tEXt/zTXt/iTXt, e.g. AI-generation prompts). HEIC is decoded locally.
 - **Face and object detection**: MediaPipe Tasks Vision — FaceDetector (BlazeFace short-range) for faces, ObjectDetector (EfficientDet-Lite0, COCO labels) for people and objects; the WASM runtime and models are self-hosted. The cleanup option "Hide faces (and people without a detected face)" blurs each detected face box (padded); a person without a detected face gets the upper part of the person box blurred as a fallback.
 - **OCR**: Tesseract.js (Russian + English) with region-level bounding boxes; recognized text regions can be blurred. Runtime and language data are self-hosted.
-- **Verdict and story**: one section answers "can I share this?" — a verdict by leak level (share / better clean it first / do not send without cleanup) with the main leaks and a button to the safe copy; a short paragraph about the owner reconstructed from the single photo (when, where, device, habits, weather, people, text, origin); a list of facts, each with a plain-language "so what" and its details inline; a Pro mode with the raw metadata table.
+- **Verdict and story**: one section answers "can I share this?" — a verdict by leak level (share / better clean it first / do not send without cleanup) with the main leaks and a button to the safe copy; a short paragraph about the owner reconstructed from the single photo (when, where, device, habits, weather, people, text, origin); a list of facts, each with a plain-language "so what" and its details inline; a device-specific recipe for turning geotags off; a Pro mode with the raw metadata table.
+- **Licence plates**: candidates are found without a dedicated model — OCR tokens that read like a plate (letters + digits in a wide box) and short alphanumeric tokens on a detected vehicle — and can be blurred with one switch.
+- **Content Credentials (C2PA)**: manifest presence is detected by parsing the container (JPEG APP11 JUMBF, PNG caBX, WebP C2PA, HEIC/AVIF uuid); only then the self-hosted c2pa toolkit parses and validates it. The AI fact shows the generator, author, signer, actions and validation result; files without a manifest are labelled honestly as "metadata-only check".
 - **Place context**: when the photo carries GPS, rounded coordinates (~11 m) and the capture date/time are sent to the site's own Cloudflare Pages Functions, which proxy Nominatim (address), Open-Meteo (historical weather for the hour of capture), Nager.Date (public holidays, with a static fallback for Uzbekistan) and Overpass (nearby places, likely surveillance cameras). The section states exactly what was sent; a "Do not request place context" switch stops these requests and is remembered. A MapLibre map with OpenStreetMap tiles is shown alongside.
-- **Cleanup and export**: re-encoding through canvas removes source metadata; container-level metadata added by the browser (ICC profile, comments) is stripped as well; the exported file is re-parsed and the UI reports "N metadata fields before, 0 left". Options: blur faces (with a person-box fallback), blur OCR text, manual brush masks, weaken camera sensor fingerprint (PRNU), anti-reverse-image-search transforms, mirror, downscale, watermark, output format (original/JPEG/PNG/WebP) and quality, neutral filename by default.
+- **Cleanup and export**: re-encoding through canvas removes source metadata; container-level metadata added by the browser (ICC profile, comments) is stripped as well; the exported file is re-parsed and the UI reports "N metadata fields before, 0 left". Options: blur faces (with a person-box fallback), blur OCR text, blur licence plates, manual brush masks, weaken camera sensor fingerprint (PRNU), anti-reverse-image-search transforms, mirror, downscale, watermark, output format (original/JPEG/PNG/WebP) and quality, neutral filename by default. Where the browser can share files (Web Share API on iOS, Android, macOS Safari) the cleaned copy can go straight to a messenger without touching the gallery.
 - **Limits**: 20 MB and 40 megapixels per file; export capped at 40 MP (16 MP on iOS/iPadOS).
 
 ## Privacy Architecture
 
 - The image, its pixels, filename and full metadata never leave the device.
 - Only 4-decimal rounded coordinates and the capture date/time ever reach a server — the site's own functions, which forward them to the upstream services (the user's IP is not exposed to those services). The UI discloses this next to the result, and one switch turns it off for good.
-- Models and OCR runtime are served from the site's own domain; no third-party CDN at run time.
+- Models, the OCR runtime and the Content Credentials toolkit are served from the site's own domain; no third-party CDN at run time.
 - No accounts, no cookies, no analytics or tracking. Strict Content-Security-Policy and other security headers.
 
 ## Supported Formats
@@ -33,7 +35,7 @@ Russian, English, Uzbek. Interface themes: light, dark, auto, high-contrast.
 
 ## Technology
 
-React, TypeScript, Vite, MediaPipe Tasks Vision (FaceDetector + ObjectDetector), Tesseract.js, exifr, libheif-js, MapLibre GL. Hosted on Cloudflare Pages with Pages Functions. Source repository: https://github.com/morgunovtech/meta-data
+React, TypeScript, Vite, MediaPipe Tasks Vision (FaceDetector + ObjectDetector), Tesseract.js, c2pa (Content Credentials), exifr, libheif-js, MapLibre GL. Hosted on Cloudflare Pages with Pages Functions. Source repository: https://github.com/morgunovtech/meta-data
 
 ## URL
 
@@ -43,7 +45,8 @@ https://foundyou.morgunov.tech/
 
 - Check what metadata a phone camera embeds before posting to social media
 - Remove GPS location and device information from photos before sharing
-- Blur faces, people, text, license plates or documents in a photo
+- Blur faces, people, text and licence plates in a photo; cover documents with the brush
+- Check whether a photo carries Content Credentials and whether it is signed as AI-generated
 - Inspect camera and editing-software metadata, including AI-generation prompts in PNG files
 - Prepare photos for work chats, listings or publication with a verified-clean copy
 
