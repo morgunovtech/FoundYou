@@ -1,16 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { BoundingBox } from '../types/detection';
 import type { BasicFileInfo } from '../types/metadata';
-import type { CleanupPreviewDimensions, ManualMask, QualityMode } from '../types/cleanup';
-import { useI18n, useT } from '../i18n';
+import type { CleanupPreviewDimensions, ManualMask, OutputFormat, QualityMode, VerifyResult } from '../types/cleanup';
+import { useT } from '../i18n';
 import { formatBytesPrecise } from '../utils/format';
 import { buildCleanupSummary } from '../utils/cleanupSummary';
-
-type OutputFormat = 'original' | 'jpeg' | 'png' | 'webp';
+import { canvasBlurMode } from '../utils/cleanup';
+import { SectionHead } from './SectionHead';
 
 interface CleanupDownloadBlockProps {
   fileInfo: BasicFileInfo | null;
-  removeMetadata: boolean;
+  /** Sensor-noise (PRNU) softening. Metadata is always stripped by the canvas re-encode. */
+  prnuCleanup: boolean;
   blurFaces: boolean;
   blurStrength: number;
   qualityMode: QualityMode;
@@ -21,7 +21,7 @@ interface CleanupDownloadBlockProps {
   antiSearchLevel: number;
   watermarkEnabled: boolean;
   previewDimensions: CleanupPreviewDimensions | null;
-  setRemoveMetadata: (value: boolean) => void;
+  setPrnuCleanup: (value: boolean) => void;
   setBlurFaces: (value: boolean) => void;
   setBlurStrength: (value: number) => void;
   setQualityMode: (mode: QualityMode) => void;
@@ -47,9 +47,18 @@ interface CleanupDownloadBlockProps {
   processing: boolean;
   previewDataUrl: string | null;
   previewLoading: boolean;
+  /** Approximate output size, extrapolated from the preview encode. */
   estimatedSize: number | null;
-  personDetections: BoundingBox[];
+  /** Number of regions "hide faces" will blur: detected faces plus head-area fallbacks for people without a face. */
+  blurTargetCount: number;
   originalPreviewUrl: string | null;
+  /** True when the platform canvas limit reduced the export below the chosen resolution. */
+  platformCapped?: boolean;
+  platformCapMegapixels?: number;
+  /** Post-export re-parse of the downloaded file. */
+  verifyResult?: VerifyResult | null;
+  /** True when the person detector could not run on this device; disables the people toggle. */
+  detectionUnavailable?: boolean;
 }
 
 const BRUSH_RADIUS = 18;
@@ -61,9 +70,19 @@ const QUALITY_PERCENT: Record<QualityMode, number> = {
   original: Math.round(0.98 * 100)
 };
 
-export const CleanupDownloadBlock: React.FC<CleanupDownloadBlockProps> = ({
+/** Design-system colour token as rgba() for canvas strokes; falls back to the light-theme value. */
+function tokenRgba(name: string, alpha: number, fallback: string): string {
+  if (typeof document === 'undefined') return fallback;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const match = /^#([0-9a-f]{6})$/i.exec(raw);
+  if (!match) return fallback;
+  const n = parseInt(match[1], 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
   fileInfo,
-  removeMetadata,
+  prnuCleanup,
   blurFaces,
   blurStrength,
   qualityMode,
@@ -74,7 +93,7 @@ export const CleanupDownloadBlock: React.FC<CleanupDownloadBlockProps> = ({
   antiSearchLevel,
   watermarkEnabled,
   previewDimensions,
-  setRemoveMetadata,
+  setPrnuCleanup,
   setBlurFaces,
   setBlurStrength,
   setQualityMode,
@@ -101,16 +120,20 @@ export const CleanupDownloadBlock: React.FC<CleanupDownloadBlockProps> = ({
   previewDataUrl,
   previewLoading,
   estimatedSize,
-  personDetections,
-  originalPreviewUrl
+  blurTargetCount,
+  originalPreviewUrl,
+  platformCapped = false,
+  platformCapMegapixels,
+  verifyResult = null,
+  detectionUnavailable = false
 }) => {
   const t = useT();
-  const { lang } = useI18n();
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [draftStroke, setDraftStroke] = useState<ManualMask | null>(null);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
   const [overlayRedrawKey, setOverlayRedrawKey] = useState(0);
+  const blurMode = useMemo(() => canvasBlurMode(), []);
 
   const estimatedLabel = useMemo(() => {
     if (estimatedSize != null) {
@@ -144,23 +167,18 @@ export const CleanupDownloadBlock: React.FC<CleanupDownloadBlockProps> = ({
     return t('privacyDiffResolutionChanged', { before, after });
   }, [fileInfo, finalDimensions, t]);
 
-  const peopleCount = useMemo(
-    () => personDetections.filter((det) => det.label === 'person').length,
-    [personDetections]
-  );
-
   const blurSummary = useMemo(() => {
     if (manualMasks.length > 0) {
       return t('privacyDiffBlurManual', { count: manualMasks.length });
     }
-    if (blurFaces && peopleCount > 0) {
-      return t('privacyDiffBlurFaces', { count: peopleCount });
+    if (blurFaces && blurTargetCount > 0) {
+      return t('privacyDiffBlurFaces', { count: blurTargetCount });
     }
     if (blurFaces) {
       return t('privacyDiffBlurFacesNoDetections');
     }
     return t('privacyDiffBlurNone');
-  }, [blurFaces, manualMasks.length, peopleCount, t]);
+  }, [blurFaces, manualMasks.length, blurTargetCount, t]);
 
   const renameSummary = useMemo(() => {
     if (!fileInfo) return t('privacyDiffRenameOff', { name: t('emptyValue') });
@@ -172,12 +190,18 @@ export const CleanupDownloadBlock: React.FC<CleanupDownloadBlockProps> = ({
     return t('privacyDiffRenameOff', { name: `${baseName}.${extension}` });
   }, [fileInfo, renameFile, t]);
 
+  const blurActive = (blurFaces && blurTargetCount > 0) || (blurText && ocrRegionCount > 0) || manualMasks.length > 0;
+
   const summaryItems = useMemo(
     () =>
       buildCleanupSummary({
-        removeMetadata,
+        prnuCleanup,
         resolutionSummary,
         blurSummary,
+        blurActive,
+        blurMode,
+        platformCapped,
+        platformCapMegapixels,
         antiSearchEnabled,
         antiSearchLevel,
         renameSummary,
@@ -189,9 +213,13 @@ export const CleanupDownloadBlock: React.FC<CleanupDownloadBlockProps> = ({
     [
       antiSearchEnabled,
       antiSearchLevel,
+      blurActive,
+      blurMode,
       blurSummary,
+      platformCapMegapixels,
+      platformCapped,
+      prnuCleanup,
       qualityMode,
-      removeMetadata,
       renameSummary,
       resolutionSummary,
       t,
@@ -199,17 +227,10 @@ export const CleanupDownloadBlock: React.FC<CleanupDownloadBlockProps> = ({
     ]
   );
 
-  const handleAntiSearchToggle = useCallback(
-    (checked: boolean) => {
-      setAntiSearchEnabled(checked);
-    },
-    [setAntiSearchEnabled]
-  );
-
   const handleApplyAll = useCallback(() => {
-    setRemoveMetadata(true);
+    setPrnuCleanup(true);
     setRenameFile(true);
-    setBlurFaces(true);
+    if (!detectionUnavailable) setBlurFaces(true);
     setBlurText(true);
     setManualMaskMode(true);
     setAntiSearchEnabled(true);
@@ -218,6 +239,7 @@ export const CleanupDownloadBlock: React.FC<CleanupDownloadBlockProps> = ({
     setMirrorEnabled(false); // mirror is destructive, not in "apply all"
     setDownscaleMax(1920);
   }, [
+    detectionUnavailable,
     setAntiSearchEnabled,
     setAntiSearchLevel,
     setBlurFaces,
@@ -225,7 +247,7 @@ export const CleanupDownloadBlock: React.FC<CleanupDownloadBlockProps> = ({
     setDownscaleMax,
     setManualMaskMode,
     setMirrorEnabled,
-    setRemoveMetadata,
+    setPrnuCleanup,
     setRenameFile,
     setWatermarkEnabled
   ]);
@@ -292,9 +314,7 @@ export const CleanupDownloadBlock: React.FC<CleanupDownloadBlockProps> = ({
         return;
       }
       lastPointRef.current = nextPoint;
-      setDraftStroke((prev) =>
-        prev ? { ...prev, points: [...prev.points, nextPoint] } : prev
-      );
+      setDraftStroke((prev) => (prev ? { ...prev, points: [...prev.points, nextPoint] } : prev));
       event.preventDefault();
     },
     [draftStroke, manualMaskMode, toImagePoint]
@@ -372,233 +392,303 @@ export const CleanupDownloadBlock: React.FC<CleanupDownloadBlockProps> = ({
       ctx.restore();
     };
 
-    manualMasks.forEach((mask) => drawStroke(mask, 'rgba(59, 130, 246, 0.45)'));
+    // Committed masks in ink, the stroke being drawn in the brand accent.
+    const inkColor = tokenRgba('--v4-fg', 0.9, 'rgba(20, 17, 13, 0.9)');
+    const accent = tokenRgba('--v4-orange', 1, 'rgba(217, 83, 30, 1)');
+    manualMasks.forEach((mask) => drawStroke(mask, inkColor));
     if (draftStroke) {
-      drawStroke(draftStroke, 'rgba(255, 99, 71, 0.6)');
+      drawStroke(draftStroke, accent);
     }
-  }, [draftStroke, fileInfo, manualMasks, mapStrokeToOverlay, overlayRedrawKey]);
+  }, [draftStroke, fileInfo, manualMasks, mapStrokeToOverlay, overlayRedrawKey, previewDataUrl]);
+
+  const showBlurStrength = blurFaces || blurText || manualMaskMode;
+
+  const verifyMessage = useMemo(() => {
+    if (!verifyResult) return null;
+    if (verifyResult.after == null) {
+      return { tone: 'neutral' as const, text: t('verifyUnavailable', { before: verifyResult.before }) };
+    }
+    if (verifyResult.after > 0) {
+      return {
+        tone: 'negative' as const,
+        text: t('verifyResultWarning', { before: verifyResult.before, after: verifyResult.after })
+      };
+    }
+    return { tone: 'positive' as const, text: t('verifyResult', { before: verifyResult.before }) };
+  }, [t, verifyResult]);
 
   return (
-    <section className="panel cleanup-panel">
-      <div className="cleanup-panel__header">
-        <div className="cleanup-panel__title">
-          <h2 className="section-title">{t('cleanupTitle')}</h2>
-          <button type="button" className="button button--ghost" onClick={handleApplyAll}>
-            {t('cleanupApplyAll')}
-          </button>
-        </div>
-        <p className="cleanup-panel__hint">{t('cleanupHint')}</p>
-      </div>
-
-      <div className="cleanup-options cleanup-options--grid">
-        {/* ── Card 1: Quality + Resolution + Format ── */}
-        <div className="cleanup-card cleanup-card--compound">
-          <strong>{t('qualityLabel')}</strong>
-          <div className="cleanup-slider">
-            <select value={qualityMode} onChange={(event) => setQualityMode(event.target.value as QualityMode)}>
-              <option value="low">{t('qualityMode_low')}</option>
-              <option value="medium">{t('qualityMode_medium')}</option>
-              <option value="original">{t('qualityMode_original')}</option>
-            </select>
-          </div>
-          <div className="cleanup-slider">
-            <label>{lang === 'ru' ? 'Разрешение' : 'Resolution'}</label>
-            <select value={downscaleMax} onChange={(event) => setDownscaleMax(Number(event.target.value))}>
-              <option value={0}>{lang === 'ru' ? 'Оригинал' : 'Original'}</option>
-              <option value={1280}>{lang === 'ru' ? 'Мессенджер (1280px)' : 'Messenger (1280px)'}</option>
-              <option value={1920}>{lang === 'ru' ? 'Соцсети (1920px)' : 'Social (1920px)'}</option>
-              <option value={2560}>{lang === 'ru' ? 'Умеренное (2560px)' : 'Moderate (2560px)'}</option>
-            </select>
-          </div>
-          <div className="cleanup-slider">
-            <label>{lang === 'ru' ? 'Формат' : 'Format'}</label>
-            <select value={outputFormat} onChange={(event) => setOutputFormat(event.target.value as OutputFormat)}>
-              <option value="original">{lang === 'ru' ? 'Как в оригинале' : 'Original'}</option>
-              <option value="jpeg">JPEG</option>
-              <option value="png">PNG</option>
-              <option value="webp">WebP</option>
-            </select>
-          </div>
-          <span className="cleanup-select__meta">
-            {t('qualityPercentLabel', { percent: QUALITY_PERCENT[qualityMode], size: estimatedLabel })}
-          </span>
-        </div>
-
-        {/* ── Card 2: Metadata ── */}
-        <div className="cleanup-card cleanup-card--compound">
-          <strong>{lang === 'ru' ? 'Метаданные' : 'Metadata'}</strong>
-          <label className="cleanup-checkbox cleanup-checkbox--nested">
-            <input type="checkbox" checked={removeMetadata} onChange={(event) => setRemoveMetadata(event.target.checked)} />
-            <span>{t('removeMetadata')}</span>
-          </label>
-          <label className="cleanup-checkbox cleanup-checkbox--nested">
-            <input type="checkbox" checked={renameFile} onChange={(event) => setRenameFile(event.target.checked)} />
-            <span>{t('renameCheckbox')}</span>
-          </label>
-          <label className="cleanup-checkbox cleanup-checkbox--nested">
-            <input type="checkbox" checked={watermarkEnabled} onChange={(event) => setWatermarkEnabled(event.target.checked)} />
-            <span>{t('watermarkToggle')}</span>
-          </label>
-          {watermarkEnabled ? (
-            <input
-              type="text"
-              className="cleanup-text-input"
-              placeholder={t('watermarkText')}
-              value={watermarkText}
-              onChange={(event) => setWatermarkText(event.target.value)}
-            />
-          ) : null}
-        </div>
-
-        {/* ── Card 3: Hide (faces + text + manual mask) ── */}
-        <div className="cleanup-card cleanup-card--compound">
-          <strong>{lang === 'ru' ? 'Скрыть' : lang === 'uz' ? 'Yashirish' : 'Hide'}</strong>
-          <label className="cleanup-checkbox cleanup-checkbox--nested">
-            <input type="checkbox" checked={blurFaces} onChange={(event) => setBlurFaces(event.target.checked)} />
-            <span>{t('blurFaces')}</span>
-          </label>
-          <label className="cleanup-checkbox cleanup-checkbox--nested">
-            <input type="checkbox" checked={blurText} onChange={(event) => setBlurText(event.target.checked)} />
-            <span>{lang === 'ru' ? `Текст (${ocrRegionCount})` : `Text (${ocrRegionCount})`}</span>
-          </label>
-          <label className="cleanup-checkbox cleanup-checkbox--nested">
-            <input type="checkbox" checked={manualMaskMode} onChange={(event) => setManualMaskMode(event.target.checked)} />
-            <span>{t('manualMaskToggle')}</span>
-          </label>
-          {(blurFaces || blurText || manualMaskMode) ? (
-            <div className="cleanup-slider">
-              <label htmlFor="blur-strength">{t('blurStrengthLabel')}</label>
-              <input
-                id="blur-strength"
-                type="range"
-                min="8"
-                max="64"
-                step="1"
-                value={blurStrength}
-                onChange={(event) => setBlurStrength(Number(event.target.value))}
-              />
-              <span className="cleanup-slider__meta">{t('blurStrengthValue', { value: Math.round(blurStrength) })}</span>
-            </div>
-          ) : null}
-        </div>
-
-        {/* ── Card 4: Anti-search protection ── */}
-        <div className="cleanup-card cleanup-card--compound">
-          <strong>{lang === 'ru' ? 'Защита от поиска' : 'Search protection'}</strong>
-          <label className="cleanup-checkbox cleanup-checkbox--nested">
-            <input type="checkbox" checked={antiSearchEnabled} onChange={(event) => handleAntiSearchToggle(event.target.checked)} />
-            <span>{t('antiSearchLabel')}</span>
-          </label>
-          {antiSearchEnabled ? (
-            <div className="cleanup-slider">
-              <label htmlFor="anti-search-level">{t('antiSearchLevelLabel')}</label>
-              <input
-                id="anti-search-level"
-                type="range"
-                min="1"
-                max="3"
-                step="1"
-                value={antiSearchLevel}
-                onChange={(event) => setAntiSearchLevel(Number(event.target.value))}
-              />
-              <span className="cleanup-slider__meta">{t('antiSearchLevelValue', { value: antiSearchLevel })}</span>
-            </div>
-          ) : null}
-          <label className="cleanup-checkbox cleanup-checkbox--nested">
-            <input type="checkbox" checked={mirrorEnabled} onChange={(event) => setMirrorEnabled(event.target.checked)} />
-            <span>{lang === 'ru' ? 'Отзеркалить' : 'Mirror'}</span>
-          </label>
-        </div>
-      </div>
-
-      {manualMaskMode ? <p className="cleanup-preview__hint">{t('manualMaskDrawingHint')}</p> : null}
-
-      {antiSearchEnabled ? (
-        <p className="notice notice--muted">{t('antiSearchActiveHint')}</p>
-      ) : (
-        <p className="notice notice--muted">{t('antiSearchOffHint')}</p>
-      )}
-
-
-      <div className="cleanup-diff-grid">
-        <figure className="cleanup-diff-grid__preview">
-          <figcaption>{t('previewOriginal')}</figcaption>
-          {originalPreviewUrl ? (
-            <img src={originalPreviewUrl} alt={t('previewOriginalAlt')} className="cleanup-preview__image" />
-          ) : (
-            <p className="notice">{t('cleanupPreviewUnavailable')}</p>
-          )}
-        </figure>
-        <figure className="cleanup-diff-grid__preview">
-          <figcaption>{t('previewProcessed')}</figcaption>
-          {previewLoading ? (
-            <p className="notice">{t('cleanupPreviewGenerating')}</p>
-          ) : previewDataUrl ? (
-            <div className="cleanup-preview__frame">
-              <img src={previewDataUrl} alt={t('cleanupPreviewAlt')} className="cleanup-preview__image" />
-              <div
-                className={`cleanup-preview__overlay ${manualMaskMode ? 'is-drawing' : ''}`}
-                ref={overlayRef}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerLeave}
-                onPointerLeave={handlePointerLeave}
-                role={manualMaskMode ? 'img' : 'presentation'}
-                aria-label={manualMaskMode ? t('manualMaskDrawingHint') : undefined}
-                style={{ pointerEvents: manualMaskMode ? 'auto' : 'none' }}
-              >
-                <canvas ref={overlayCanvasRef} className="cleanup-preview__overlay-canvas" />
-              </div>
-            </div>
-          ) : (
-            <p className="notice">{t('cleanupPreviewUnavailable')}</p>
-          )}
-        </figure>
-        <div className="cleanup-summary">
-          <h3 className="cleanup-summary__title">{t('privacyDiffTitle')}</h3>
-          <ul>
-            {summaryItems.map((item, index) => (
-              <li key={`${index}-${item}`}>{item}</li>
-            ))}
-          </ul>
-          <p className="cleanup-summary__hint">{t('privacyDiffHint')}</p>
-        </div>
-      </div>
-
-      {manualMasks.length > 0 ? (
-        <div className="cleanup-mask-list">
-          <div className="cleanup-mask-list__header">
-            <span>{t('manualMaskCount', { count: manualMasks.length })}</span>
-          </div>
-          <ul>
-            {manualMasks.map((mask, index) => (
-              <li key={mask.id}>
-                <span>{t('manualMaskItem', { index: index + 1 })}</span>
-                <button type="button" className="button button--ghost" onClick={() => onManualMaskRemove(mask.id)}>
-                  {t('manualMaskRemove')}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {blurFaces && peopleCount === 0 ? <p className="notice">{t('facesMissing')}</p> : null}
-
-      <div className="cleanup-actions">
-        <button
-          type="button"
-          className="button button--primary"
-          onClick={() => {
-            void onClean();
-          }}
-          disabled={!fileInfo || processing}
-        >
-          {processing ? t('processing') : t('downloadClean')}
+    <section className="v4-section" aria-labelledby="sec-cleanup">
+      <SectionHead num="05" title={t('cleanupTitle')} id="sec-cleanup">
+        <button type="button" className="v4-btn fy-btn-sm" onClick={handleApplyAll}>
+          {t('cleanupApplyAll')}
         </button>
-        {!fileInfo ? <p className="notice">{t('cleanUnavailable')}</p> : null}
+      </SectionHead>
+      <p className="fy-section-lead">{t('cleanupHint')}</p>
+
+      <div className="fy-cleanup">
+        <div className="fy-grid-cards">
+          {/* Card 1: quality, resolution, format */}
+          <div className="fy-card">
+            <h3 className="v4-h3">{t('outputGroupTitle')}</h3>
+            <div className="fy-field">
+              <label className="fy-field-label" htmlFor="cleanup-quality">
+                {t('qualityLabel')}
+              </label>
+              <select
+                id="cleanup-quality"
+                className="fy-select"
+                value={qualityMode}
+                onChange={(event) => setQualityMode(event.target.value as QualityMode)}
+              >
+                <option value="low">{t('qualityMode_low')}</option>
+                <option value="medium">{t('qualityMode_medium')}</option>
+                <option value="original">{t('qualityMode_original')}</option>
+              </select>
+            </div>
+            <div className="fy-field">
+              <label className="fy-field-label" htmlFor="cleanup-resolution">
+                {t('resolutionLabel')}
+              </label>
+              <select
+                id="cleanup-resolution"
+                className="fy-select"
+                value={downscaleMax}
+                onChange={(event) => setDownscaleMax(Number(event.target.value))}
+              >
+                <option value={0}>{t('resolutionOriginal')}</option>
+                <option value={1280}>{t('resolutionMessenger')}</option>
+                <option value={1920}>{t('resolutionSocial')}</option>
+                <option value={2560}>{t('resolutionModerate')}</option>
+              </select>
+            </div>
+            <div className="fy-field">
+              <label className="fy-field-label" htmlFor="cleanup-format">
+                {t('formatLabel')}
+              </label>
+              <select
+                id="cleanup-format"
+                className="fy-select"
+                value={outputFormat}
+                onChange={(event) => setOutputFormat(event.target.value as OutputFormat)}
+              >
+                <option value="original">{t('formatOriginal')}</option>
+                <option value="jpeg">JPEG</option>
+                <option value="png">PNG</option>
+                <option value="webp">WebP</option>
+              </select>
+            </div>
+            <span className="fy-field-meta">
+              {t('qualityPercentLabel', { percent: QUALITY_PERCENT[qualityMode], size: estimatedLabel })}
+            </span>
+          </div>
+
+          {/* Card 2: metadata */}
+          <div className="fy-card">
+            <h3 className="v4-h3">{t('metadataGroupTitle')}</h3>
+            <p className="fy-hint">{t('metadataAlwaysRemoved')}</p>
+            <label className="fy-check">
+              <input type="checkbox" checked={prnuCleanup} onChange={(event) => setPrnuCleanup(event.target.checked)} />
+              <span>{t('prnuToggle')}</span>
+            </label>
+            <label className="fy-check">
+              <input type="checkbox" checked={renameFile} onChange={(event) => setRenameFile(event.target.checked)} />
+              <span>{t('renameCheckbox')}</span>
+            </label>
+            <label className="fy-check">
+              <input type="checkbox" checked={watermarkEnabled} onChange={(event) => setWatermarkEnabled(event.target.checked)} />
+              <span>{t('watermarkToggle')}</span>
+            </label>
+            {watermarkEnabled ? (
+              <input
+                type="text"
+                className="fy-input"
+                aria-label={t('watermarkText')}
+                placeholder={t('watermarkText')}
+                value={watermarkText}
+                onChange={(event) => setWatermarkText(event.target.value)}
+              />
+            ) : null}
+          </div>
+
+          {/* Card 3: hide people, text, manual masks */}
+          <div className="fy-card">
+            <h3 className="v4-h3">{t('hideGroupTitle')}</h3>
+            <label className="fy-check">
+              <input
+                type="checkbox"
+                checked={blurFaces && !detectionUnavailable}
+                disabled={detectionUnavailable}
+                onChange={(event) => setBlurFaces(event.target.checked)}
+              />
+              <span>{t('blurFaces')}</span>
+            </label>
+            {detectionUnavailable ? <p className="fy-hint">{t('detectionUnavailableHint')}</p> : null}
+            <label className="fy-check">
+              <input type="checkbox" checked={blurText} onChange={(event) => setBlurText(event.target.checked)} />
+              <span>{t('textWithCount', { count: ocrRegionCount })}</span>
+            </label>
+            <label className="fy-check">
+              <input type="checkbox" checked={manualMaskMode} onChange={(event) => setManualMaskMode(event.target.checked)} />
+              <span>{t('manualMaskToggle')}</span>
+            </label>
+            {showBlurStrength ? (
+              <div className="fy-field">
+                <label className="fy-field-label" htmlFor="blur-strength">
+                  {t('blurStrengthLabel')}
+                </label>
+                <input
+                  id="blur-strength"
+                  className="fy-range"
+                  type="range"
+                  min="8"
+                  max="64"
+                  step="1"
+                  value={blurStrength}
+                  onChange={(event) => setBlurStrength(Number(event.target.value))}
+                />
+                <span className="fy-field-meta">{t('blurStrengthValue', { value: Math.round(blurStrength) })}</span>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Card 4: anti-search protection */}
+          <div className="fy-card">
+            <h3 className="v4-h3">{t('searchProtectionTitle')}</h3>
+            <label className="fy-check">
+              <input type="checkbox" checked={antiSearchEnabled} onChange={(event) => setAntiSearchEnabled(event.target.checked)} />
+              <span>{t('antiSearchLabel')}</span>
+            </label>
+            {antiSearchEnabled ? (
+              <div className="fy-field">
+                <label className="fy-field-label" htmlFor="anti-search-level">
+                  {t('antiSearchLevelLabel')}
+                </label>
+                <input
+                  id="anti-search-level"
+                  className="fy-range"
+                  type="range"
+                  min="1"
+                  max="3"
+                  step="1"
+                  value={antiSearchLevel}
+                  onChange={(event) => setAntiSearchLevel(Number(event.target.value))}
+                />
+                <span className="fy-field-meta">{t('antiSearchLevelValue', { value: antiSearchLevel })}</span>
+              </div>
+            ) : null}
+            <label className="fy-check">
+              <input type="checkbox" checked={mirrorEnabled} onChange={(event) => setMirrorEnabled(event.target.checked)} />
+              <span>{t('mirrorLabel')}</span>
+            </label>
+          </div>
+        </div>
+
+        {manualMaskMode ? <p className="fy-hint">{t('manualMaskDrawingHint')}</p> : null}
+        <p className="fy-notice">{antiSearchEnabled ? t('antiSearchActiveHint') : t('antiSearchOffHint')}</p>
+
+        <div className="fy-diff">
+          <figure>
+            <figcaption>{t('previewOriginal')}</figcaption>
+            {originalPreviewUrl ? (
+              <div className="fy-diff-frame">
+                <img src={originalPreviewUrl} alt={t('previewOriginalAlt')} />
+              </div>
+            ) : (
+              <p className="fy-notice">{t('cleanupPreviewUnavailable')}</p>
+            )}
+          </figure>
+          <figure>
+            <figcaption>{t('previewProcessed')}</figcaption>
+            {/* The frame stays mounted while a new preview renders: unmounting it
+                would drop pointer capture mid-stroke and lose the mask being drawn. */}
+            {previewDataUrl ? (
+              <div className="fy-diff-frame" aria-busy={previewLoading || undefined}>
+                <img src={previewDataUrl} alt={t('cleanupPreviewAlt')} />
+                <div
+                  className={`fy-mask-overlay ${manualMaskMode ? 'is-drawing' : ''}`}
+                  ref={overlayRef}
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onPointerCancel={handlePointerLeave}
+                  onPointerLeave={handlePointerLeave}
+                  role={manualMaskMode ? 'img' : 'presentation'}
+                  aria-label={manualMaskMode ? t('manualMaskDrawingHint') : undefined}
+                  style={{ pointerEvents: manualMaskMode ? 'auto' : 'none' }}
+                >
+                  <canvas ref={overlayCanvasRef} />
+                </div>
+              </div>
+            ) : (
+              <p className="fy-notice">{previewLoading ? t('cleanupPreviewGenerating') : t('cleanupPreviewUnavailable')}</p>
+            )}
+            {previewDataUrl && previewLoading ? (
+              <p className="fy-notice" role="status">
+                {t('cleanupPreviewGenerating')}
+              </p>
+            ) : null}
+          </figure>
+          <div className="fy-card fy-summary">
+            <h3 className="v4-h3">{t('privacyDiffTitle')}</h3>
+            <ul className="v4-list">
+              {summaryItems.map((item, index) => (
+                <li key={`${index}-${item}`}>{item}</li>
+              ))}
+            </ul>
+            <p className="fy-hint">{t('privacyDiffHint')}</p>
+          </div>
+        </div>
+
+        {manualMasks.length > 0 ? (
+          <div className="fy-card fy-masks">
+            <h3 className="v4-h3">{t('manualMaskCount', { count: manualMasks.length })}</h3>
+            <ul className="fy-rows">
+              {manualMasks.map((mask, index) => (
+                <li key={mask.id}>
+                  <span>{t('manualMaskItem', { index: index + 1 })}</span>
+                  <button type="button" className="v4-btn fy-btn-sm" onClick={() => onManualMaskRemove(mask.id)}>
+                    {t('manualMaskRemove')}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {blurFaces && !detectionUnavailable && blurTargetCount === 0 ? <p className="fy-notice">{t('facesMissing')}</p> : null}
+
+        <div className="fy-actions">
+          <button
+            type="button"
+            className="v4-btn v4-btn-primary"
+            onClick={() => {
+              void onClean();
+            }}
+            disabled={!fileInfo || processing}
+          >
+            {processing ? t('processing') : t('downloadClean')}
+          </button>
+          {!fileInfo ? <p className="fy-notice">{t('cleanUnavailable')}</p> : null}
+        </div>
+        {verifyMessage ? (
+          <p
+            className={`fy-notice fy-verify${
+              verifyMessage.tone === 'positive'
+                ? ' fy-notice--positive'
+                : verifyMessage.tone === 'negative'
+                  ? ' fy-notice--negative'
+                  : ''
+            }`}
+            role="status"
+          >
+            {verifyMessage.text}
+          </p>
+        ) : null}
       </div>
     </section>
   );
 };
+
+export const CleanupDownloadBlock = React.memo(CleanupDownloadBlockInner);
+CleanupDownloadBlock.displayName = 'CleanupDownloadBlock';

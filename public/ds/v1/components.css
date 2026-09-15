@@ -1,0 +1,778 @@
+/* ============================================================
+   morgunov.tech design system — v1 — components.css
+   Reusable chrome + atoms shared across morgunov.tech services:
+   top bar, language switch, theme switcher, buttons, section heads,
+   lists, prose, footer, scroll chrome, focus ring, page shell.
+   Depends on tokens.css + base.css. Page-specific layout (hero, stats,
+   career, ventures, cards, /uses, /collaborate, contact) lives in each
+   site's own stylesheet, loaded after this file.
+   ============================================================ */
+
+.v4-root {
+  background: var(--v4-bg);
+  color: var(--v4-fg);
+  padding: 36px 56px 56px;
+  max-width: 1280px;
+  margin: 0 auto;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* --- Top bar --- */
+
+.v4-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 0 14px;
+  margin-bottom: 32px;
+  border-bottom: 1px solid var(--v4-fg);
+  font-size: var(--v4-label-size);
+  text-transform: uppercase;
+  letter-spacing: var(--v4-label-tracking);
+}
+
+.v4-bar-mid {
+  display: flex;
+  gap: 6px 22px;
+  /* Wrapped rows (641–~900px) align with the content edge, not centred
+     under the first row — the list is a flex item inside .v4-nav. */
+  justify-content: flex-start;
+  color: var(--v4-muted);
+  /* Wrap to a second row when 7 links don't fit (around 768–960 px).
+     Without wrap, flex squishes labels and breaks them inside words
+     («ОБО / МНЕ»). */
+  flex-wrap: wrap;
+}
+
+.v4-bar-mid a {
+  color: inherit;
+  text-decoration: none;
+  padding: 8px 4px;
+  /* Keep multi-word labels («Обо мне», «Своё дело») on one line —
+     they should break between links, not inside a label. */
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+
+.v4-bar-mid a:hover,
+.v4-bar-mid a:focus-visible {
+  color: var(--v4-fg);
+  text-decoration: underline;
+  text-decoration-color: var(--v4-orange);
+  text-underline-offset: 4px;
+}
+
+.v4-bar-right {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  align-items: center;
+  /* Keeps the controls on the right edge even when the bar has no nav
+     (404 page) — space-between alone would park a lone child on the left. */
+  margin-left: auto;
+  color: var(--v4-fg);
+}
+
+/* The <nav> wraps the mobile toggle + the link list; it is a .v4-dropdown
+   so the mobile panel anchors to it. */
+.v4-nav {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* --- Bar buttons (language, mobile nav toggle) ---
+   Text buttons that sit in the top bar next to the icon-only theme button.
+   Same height as .v4-icon-btn so the three controls align on one row. */
+
+.v4-bar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 8px;
+  border: none;
+  background: transparent;
+  color: var(--v4-fg);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--v4-label-size);
+  font-weight: var(--v4-label-weight);
+  letter-spacing: var(--v4-label-tracking);
+  text-transform: uppercase;
+  transition: color 0.15s ease;
+}
+
+.v4-bar-btn:hover,
+.v4-bar-btn:focus-visible {
+  color: var(--v4-orange-text);
+}
+
+/* Chevron on the text buttons — flips while the dropdown is open. */
+.v4-bar-btn .v4-chevron {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.v4-dropdown.is-open > .v4-bar-btn .v4-chevron {
+  transform: rotate(180deg);
+}
+
+/* Mobile-only: hidden on desktop, where the nav links render inline. */
+.v4-nav-toggle {
+  display: none;
+}
+
+/* --- Dropdown (shared by the language menu, the theme menu and, on mobile,
+   the section nav). One mechanism, one look: a toggle button + a paper panel.
+   JS toggles .is-open on the container and aria-expanded on the toggle. --- */
+
+.v4-dropdown {
+  position: relative;
+}
+
+.v4-menu {
+  position: absolute;
+  right: 0;
+  /* Anchored to the 36px control; the bar's 14px padding + 1px rule sit
+     below it, so +15px lands the panel just under the header rule. */
+  top: calc(100% + 15px);
+  display: none;
+  flex-direction: column;
+  background: var(--v4-paper);
+  border: 1px solid var(--v4-line);
+  padding: 6px;
+  min-width: 170px;
+  z-index: 50;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.v4-dropdown.is-open > .v4-menu {
+  display: flex;
+}
+
+/* Progressive enhancement: script.js stamps data-js on <html> and takes over.
+   Until then (or with JS blocked) focusing the toggle reveals the panel, so
+   the language switch and the mobile nav never depend on JavaScript. */
+html:not([data-js]) .v4-dropdown:is(:focus-within, :hover) > .v4-menu {
+  display: flex;
+}
+
+.v4-menu-item {
+  display: block;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--v4-fg);
+  padding: 10px 10px;
+  font-size: var(--v4-label-size);
+  font-weight: var(--v4-label-weight);
+  text-transform: uppercase;
+  letter-spacing: var(--v4-label-tracking);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.v4-menu-item:hover,
+.v4-menu-item:focus-visible {
+  background: var(--v4-bg);
+  color: var(--v4-orange-text);
+}
+
+.v4-menu-item[aria-checked="true"] {
+  color: var(--v4-orange-text);
+  border-color: var(--v4-orange);
+}
+
+/* --- Theme button (icon-only) --- */
+
+.v4-icon-btn {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--v4-fg);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  transition: color 0.15s ease;
+}
+
+.v4-icon-btn:hover,
+.v4-icon-btn:focus-visible {
+  color: var(--v4-orange-text);
+}
+
+.v4-icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Theme icons: only one visible at a time, driven by [data-theme] on <html>.
+   Sun is the fallback if no data-theme is set yet (e.g. JS disabled). */
+.v4-icon-btn .v4-icon-moon,
+.v4-icon-btn .v4-icon-contrast {
+  display: none;
+}
+
+[data-theme="dark"] .v4-icon-btn .v4-icon-sun {
+  display: none;
+}
+
+[data-theme="dark"] .v4-icon-btn .v4-icon-moon {
+  display: block;
+}
+
+[data-theme="high-contrast"] .v4-icon-btn .v4-icon-sun {
+  display: none;
+}
+
+[data-theme="high-contrast"] .v4-icon-btn .v4-icon-contrast {
+  display: block;
+}
+
+.v4-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 16px;
+  min-height: 40px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  cursor: pointer;
+  border: 1px solid var(--v4-fg);
+  background: transparent;
+  color: var(--v4-fg);
+  font-family: inherit;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.v4-btn:hover,
+.v4-btn:focus-visible {
+  background: var(--v4-fg);
+  color: var(--v4-bg);
+}
+
+.v4-btn-primary {
+  background: var(--v4-orange);
+  color: var(--v4-on-accent);
+  border-color: var(--v4-orange);
+}
+
+.v4-btn-primary:hover,
+.v4-btn-primary:focus-visible {
+  /* Lighten, don't darken: dark text on the darkened orange fell to 3.9:1 in
+     the light theme (AA needs 4.5:1 for 12px caps). */
+  filter: brightness(1.06);
+  background: var(--v4-orange);
+  color: var(--v4-on-accent);
+  border-color: var(--v4-orange);
+}
+
+/* --- Mobile top bar: one row ---
+   Below 640px the seven nav links no longer wrap into two rows: the nav
+   collapses into a «Меню» dropdown (left) while the language and theme
+   dropdowns keep the right edge. All three controls share .v4-dropdown /
+   .v4-menu, so the header reads as one system on every viewport. */
+@media (max-width: 640px) {
+  .v4-bar {
+    padding-bottom: 10px;
+    margin-bottom: 22px;
+  }
+  .v4-nav-toggle {
+    display: inline-flex;
+    min-height: 44px;
+    margin-left: -8px;
+  }
+  /* The link list becomes a panel with exactly the .v4-menu / .v4-menu-item
+     metrics (11px / 500 / 10px padding / 170px), so the three dropdowns open
+     identical rows side by side. 44px control + 10px padding + 1px rule →
+     +11px drops the panels just under the header rule. */
+  .v4-bar-mid {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 11px);
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    margin: 0;
+    background: var(--v4-paper);
+    border: 1px solid var(--v4-line);
+    padding: 6px;
+    min-width: 170px;
+    z-index: 50;
+  }
+  .v4-nav.is-open > .v4-bar-mid,
+  html:not([data-js]) .v4-nav:is(:focus-within, :hover) > .v4-bar-mid {
+    display: flex;
+  }
+  .v4-bar-mid a {
+    padding: 10px 10px;
+    border: 1px solid transparent;
+    color: var(--v4-fg);
+    font-size: var(--v4-label-size);
+    font-weight: var(--v4-label-weight);
+    letter-spacing: var(--v4-label-tracking);
+  }
+  .v4-bar-mid a:hover,
+  .v4-bar-mid a:focus-visible {
+    background: var(--v4-bg);
+    color: var(--v4-orange-text);
+    text-decoration: none;
+  }
+  .v4-menu {
+    top: calc(100% + 11px);
+  }
+  .v4-bar-btn {
+    min-height: 44px;
+  }
+  .v4-icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* --- Sections --- */
+
+.v4-section {
+  margin-bottom: 36px;
+  scroll-margin-top: 40px;
+}
+
+/* Defer rendering of below-fold sections until they're scrolled near.
+   First section (#about) renders immediately so the page feels snappy.
+   `auto 800px`: 800px is only the pre-render estimate — once a section has
+   been rendered the browser remembers its real height, so scrollHeight
+   stops drifting and anchor jumps across unrendered sections land true. */
+.v4-section + .v4-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 800px;
+}
+
+/* Mono section number sits on the title's baseline («01  Обо мне») —
+   one line instead of two, same idiom as the right-column section nav. */
+.v4-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--v4-fg);
+}
+
+.v4-section-num {
+  font-family: var(--v4-mono);
+  font-size: var(--v4-label-size);
+  color: var(--v4-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--v4-label-tracking);
+  font-weight: var(--v4-label-weight);
+  flex-shrink: 0;
+}
+
+.v4-h2 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.015em;
+}
+
+.v4-h3 {
+  font-size: var(--v4-label-size);
+  text-transform: uppercase;
+  letter-spacing: var(--v4-label-tracking);
+  color: var(--v4-muted);
+  margin: 18px 0 8px;
+  font-weight: var(--v4-label-weight);
+}
+
+.v4-h3:first-child {
+  margin-top: 0;
+}
+
+.v4-body {
+  display: block;
+}
+
+.v4-body-aside {
+  display: none;
+}
+
+/* --- Lists --- */
+
+.v4-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.v4-list li {
+  padding-left: 18px;
+  position: relative;
+  line-height: 1.5;
+  margin-bottom: 0;
+}
+
+.v4-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.65em;
+  width: 8px;
+  height: 1px;
+  background: var(--v4-fg);
+}
+
+.v4-list a {
+  color: var(--v4-fg);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--v4-line);
+  transition: color 0.15s ease, text-decoration-color 0.15s ease;
+}
+
+.v4-list a:hover,
+.v4-list a:focus-visible {
+  color: var(--v4-orange-text);
+  text-decoration-color: var(--v4-orange-text);
+}
+
+.v4-list--spaced {
+  margin-top: 12px;
+}
+
+/* --- Prose --- */
+
+.v4-prose p {
+  margin: 0 0 12px;
+  line-height: 1.55;
+}
+
+.v4-prose p:last-child {
+  margin-bottom: 0;
+}
+
+/* IBM Plex ships 400/500/600 only — UA-default 700 would be synthesized
+   (smeared) bold. base.css sets strong/b to 600 site-wide; the two rules
+   below keep the prose and list idioms explicit for the inline critical
+   copies. */
+.v4-prose strong,
+.v4-list strong {
+  font-weight: 600;
+}
+
+.v4-prose a {
+  color: var(--v4-fg);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--v4-line);
+  transition: color 0.15s ease, text-decoration-color 0.15s ease;
+}
+
+.v4-prose a:hover,
+.v4-prose a:focus-visible {
+  color: var(--v4-orange-text);
+  text-decoration-color: var(--v4-orange-text);
+}
+
+/* Inline code in prose — small mono pill with paper bg + soft border.
+   Used heavily on /about for build hashes, file paths, colour tokens,
+   English-loanwords («git log», «#FF6600», «SEMYON5076»). */
+.v4-prose code,
+.v4-list code,
+.v4-product-desc code,
+.v4-use-desc code {
+  font-family: var(--v4-mono);
+  font-size: 0.92em;
+  padding: 1px 5px;
+  background: var(--v4-bg);
+  border: 1px solid var(--v4-line-soft);
+  border-radius: 0;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* When a .v4-prose follows a .v4-list, keep a comfortable air-gap.
+   .v4-list itself has no bottom margin; without this rule the closing
+   paragraph would butt right up against the last list item. */
+.v4-list + .v4-prose {
+  margin-top: 18px;
+}
+
+.v4-terms {
+  font-style: italic;
+  color: var(--v4-muted);
+  font-size: 13px;
+  margin: 12px 0 0;
+}
+
+/* Live indicator dot (current role in #02 + active product in #05).
+   Pulses to suggest «вот это сейчас работает». Reduced-motion users get
+   a static dot via the global animation-duration: 0.001ms override. */
+.v4-live-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--v4-orange);
+  flex-shrink: 0;
+  animation: v4-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes v4-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* --- Footer --- */
+
+.v4-foot {
+  margin-top: 40px;
+  padding-top: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--v4-label-xs-size);
+  color: var(--v4-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--v4-label-xs-tracking);
+  flex-wrap: wrap;
+  gap: 12px;
+  font-weight: var(--v4-label-weight);
+}
+
+.v4-foot-privacy {
+  text-align: right;
+}
+
+.v4-foot a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--v4-line);
+  text-underline-offset: 2px;
+  transition: color 0.15s ease, text-decoration-color 0.15s ease;
+}
+
+.v4-foot a:hover,
+.v4-foot a:focus-visible {
+  color: var(--v4-orange-text);
+  text-decoration-color: var(--v4-orange-text);
+}
+
+.v4-foot code {
+  font-family: var(--v4-mono);
+  font-size: inherit;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* --- Scroll-to-top button --- */
+
+.v4-scroll-top {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--v4-fg);
+  background: var(--v4-paper);
+  color: var(--v4-fg);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  opacity: 0;
+  /* visibility (same pattern as .v4-section-nav) keeps the invisible button
+     out of the Tab order; the delayed switch lets the fade-out play. */
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.2s ease, visibility 0s linear 0.2s, color 0.15s ease, border-color 0.15s ease, background-color 0.2s ease;
+  z-index: 9;
+  font-family: var(--v4-mono);
+  font-size: 16px;
+  padding: 0;
+}
+
+.v4-scroll-top.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 0.2s ease, visibility 0s linear 0s, color 0.15s ease, border-color 0.15s ease, background-color 0.2s ease;
+}
+
+.v4-scroll-top:hover,
+.v4-scroll-top:focus-visible {
+  color: var(--v4-orange-text);
+}
+
+/* --- Mobile scroll progress bar ---
+   On ≤960px the right-column section nav is hidden, so a thin top-anchored
+   bar takes over as a "where am I in the document" cue. JS sets
+   transform: scaleX(scrollY / (scrollHeight - clientHeight)) — transform
+   stays on the compositor, unlike a width write which would force
+   layout + paint on every scroll frame. Above .v4-scroll-top (z:9) and
+   .v4-section-nav (z:9), below .skip-link (z:100). */
+
+.v4-scroll-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 2px;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  background: var(--v4-orange);
+  z-index: 11;
+  pointer-events: none;
+}
+
+@media (min-width: 961px) {
+  .v4-scroll-progress {
+    display: none;
+  }
+}
+
+/* --- Sticky section nav (right column, scroll-spy) --- */
+
+/* Hidden by default until the user has scrolled past 300px. We use
+   visibility (not the `inert` attribute) so JS doesn't need to toggle
+   anything beyond a single class — and so old WebKit doesn't choke on
+   inert-driven layer suppression. visibility transitions instantly on
+   show so the fade-in plays, and after the fade-out so links stop
+   accepting clicks/focus. */
+.v4-section-nav {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 9;
+  font-family: var(--v4-mono);
+  font-size: var(--v4-label-size);
+  /* Same glyph as .v4-section-num — same tracking and colour. */
+  letter-spacing: var(--v4-label-tracking);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease, visibility 0s linear 0.2s;
+}
+
+.v4-section-nav.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.2s ease, visibility 0s linear 0s;
+}
+
+.v4-section-nav a {
+  color: var(--v4-muted);
+  text-decoration: none;
+  padding: 2px 6px;
+  transition: color 0.15s ease;
+}
+
+.v4-section-nav a:hover,
+.v4-section-nav a:focus-visible {
+  color: var(--v4-fg);
+}
+
+.v4-section-nav a.is-active {
+  color: var(--v4-fg);
+}
+
+@media (max-width: 960px) {
+  .v4-section-nav {
+    display: none;
+  }
+}
+
+/* --- Responsive shell (moved from styles.css so the layer is self-contained) --- */
+
+@media (max-width: 960px) {
+  .v4-root {
+    padding: 28px 32px 40px;
+  }
+}
+
+@media (max-width: 640px) {
+  .v4-root {
+    padding: 20px 18px 32px;
+  }
+  /* Set on body (not .v4-root) so the high-contrast 16px rule in base.css
+     keeps winning by specificity — HC must not shrink on phones. */
+  body.v4-page {
+    font-size: 13.5px;
+  }
+  .v4-section {
+    margin-bottom: 28px;
+  }
+  .v4-section-head {
+    padding-bottom: 10px;
+    margin-bottom: 12px;
+  }
+  .v4-h2 {
+    font-size: 18px;
+  }
+  .v4-foot {
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+  }
+  .v4-foot-privacy {
+    text-align: left;
+  }
+}
+
+/* --- Print: interactive chrome has no meaning on paper --- */
+@media print {
+  .v4-bar-right,
+  .v4-nav-toggle,
+  .v4-scroll-top,
+  .v4-scroll-progress,
+  .v4-section-nav,
+  .skip-link {
+    display: none !important;
+  }
+
+  /* content-visibility: auto would print below-fold sections blank. */
+  .v4-section + .v4-section {
+    content-visibility: visible;
+  }
+}
+
+/* --- Focus ring --- */
+
+.v4-page :focus-visible {
+  outline: 2px solid var(--v4-orange);
+  outline-offset: 2px;
+}
+
+/* --- Reduced motion ---
+   Kept in the DS layer so a consumer that loads only ds/v1 still honours the
+   preference (this file declares v4-pulse and every chrome transition).
+   Page stylesheets may repeat this block last for cascade safety. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
