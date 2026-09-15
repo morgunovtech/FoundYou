@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useT } from '../i18n';
-import type { BasicFileInfo, StructuredMetadata } from '../types/metadata';
+import type { BasicFileInfo, MetadataGroups, StructuredMetadata } from '../types/metadata';
 import { inferOrientation } from '../utils/orientation';
 import { computeMetadataCompleteness } from '../utils/metadataScore';
 import { extractMetadataFromOriginal } from '../utils/heic';
+import { formatWallClock, parseWallClock, type WallClockParts } from '../utils/format';
 
 interface UseExifMetadataResult {
   metadata: StructuredMetadata | null;
@@ -30,20 +31,26 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
       setError(null);
       try {
         const sourceFile = fileInfo.originalFile ?? fileInfo.file;
-        const { exifData, xmpData, iptcData, iccData, gpsRaw } = await extractMetadataFromOriginal(sourceFile);
+        const { exifData, xmpData, iptcData, iccData, pngData, gpsRaw } = await extractMetadataFromOriginal(sourceFile);
 
         if (!active) return;
 
         const exifRecord = (exifData ?? {}) as Record<string, unknown>;
-        const shotDateIso = normalizeDateValue(
-          pickFirst(exifRecord, ['DateTimeOriginal', 'dateTimeOriginal', 'CreateDate', 'createDate']),
-          pickFirst(exifRecord, ['OffsetTimeOriginal', 'offsetTimeOriginal', 'OffsetTime'])
+        const xmpRecord = (xmpData ?? {}) as Record<string, unknown>;
+        const pngRecord = pngData as Record<string, unknown> | undefined;
+
+        const shot = resolveShotDate(
+          pickFirstFromSources(
+            [exifRecord, xmpRecord],
+            ['DateTimeOriginal', 'dateTimeOriginal', 'CreateDate', 'createDate', 'DateTimeDigitized']
+          ),
+          pickFirst(exifRecord, ['OffsetTimeOriginal', 'offsetTimeOriginal', 'OffsetTime', 'OffsetTimeDigitized'])
         );
         const cameraMake = pickFirst<string>(exifRecord, ['Make', 'make']);
         const cameraModel = pickFirst<string>(exifRecord, ['Model', 'model']);
         const lensModel = pickFirst<string>(exifRecord, ['LensModel', 'lensModel']);
         const software = pickFirstFromSources<string>(
-          [exifRecord, xmpData as Record<string, unknown> | undefined],
+          [exifRecord, xmpRecord, pngRecord],
           ['Software', 'software', 'CreatorTool', 'creatorTool']
         );
         const rawExposure = pickFirst<string | number>(exifRecord, ['ExposureTime', 'exposureTime']);
@@ -55,14 +62,21 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
         const gps = normalizeGps(exifRecord, gpsRaw as Record<string, unknown> | undefined);
         const orientationTag = pickFirst<number | string>(exifRecord, ['Orientation', 'orientation']);
 
+        const groups: MetadataGroups = {
+          exif: exifRecord,
+          xmp: xmpRecord,
+          iptc: (iptcData as Record<string, unknown>) ?? {},
+          icc: (iccData as Record<string, unknown>) ?? {}
+        };
+        if (pngRecord && Object.keys(pngRecord).length > 0) {
+          groups.png = pngRecord;
+        }
+
         const structured: StructuredMetadata = {
-          groups: {
-            exif: exifRecord,
-            xmp: (xmpData as Record<string, unknown>) ?? {},
-            iptc: (iptcData as Record<string, unknown>) ?? {},
-            icc: (iccData as Record<string, unknown>) ?? {}
-          },
-          shotDate: shotDateIso,
+          groups,
+          shotDate: shot?.iso,
+          shotDateLocal: shot?.local,
+          utcOffset: shot ? shot.utcOffset : undefined,
           cameraMake,
           cameraModel,
           lensModel,
@@ -74,11 +88,11 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
           focalLength35mm,
           gps,
           completeness: computeMetadataCompleteness({
-            shotDate: shotDateIso,
+            shotDate: shot?.iso,
             cameraMake,
             cameraModel,
             lensModel,
-            exposureTime: rawExposure,
+            exposureTime,
             aperture,
             iso,
             focalLength,
@@ -111,6 +125,59 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
   return { metadata, loading, error };
 }
 
+export interface ResolvedShotDate {
+  /** Wall-clock as the camera wrote it, `YYYY-MM-DDTHH:mm:ss`. This is what the UI shows. */
+  local: string;
+  /** `+05:00` when EXIF carried an offset tag (or the value itself was zoned); null when unknown. */
+  utcOffset: string | null;
+  /**
+   * ISO-8601 instant (UTC). With a known offset this is the true moment of capture. Without one
+   * the wall-clock is taken AS IF it were UTC — the real instant is unknowable from the file, and
+   * this keeps `shotDate` deterministic regardless of the viewer's time zone. Do not display it.
+   */
+  iso: string;
+}
+
+/**
+ * Turn an EXIF/XMP date value into wall-clock + offset + instant.
+ *
+ * - `string`: EXIF `YYYY:MM:DD HH:MM:SS` or ISO. A zone suffix on the string itself is honoured
+ *   when no explicit `offsetValue` is given.
+ * - `Date`: exifr revives EXIF dates via `new Date(y, m, d)` + `setHours(...)`, i.e. it stores the
+ *   camera digits in the *local* fields — so the local getters give the wall-clock back exactly.
+ */
+export function resolveShotDate(value: unknown, offsetValue?: unknown): ResolvedShotDate | undefined {
+  let parts: WallClockParts | null = null;
+  let zone: string | null = normalizeOffset(offsetValue) ?? null;
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return undefined;
+    parts = {
+      year: value.getFullYear(),
+      month: value.getMonth() + 1,
+      day: value.getDate(),
+      hour: value.getHours(),
+      minute: value.getMinutes(),
+      second: value.getSeconds()
+    };
+  } else if (typeof value === 'string') {
+    const trimmed = value.trim();
+    parts = parseWallClock(trimmed);
+    if (!zone) {
+      const zoneMatch = /(Z|[+-]\d{2}:?\d{2})$/i.exec(trimmed);
+      if (zoneMatch) {
+        zone = zoneMatch[1].toUpperCase() === 'Z' ? '+00:00' : normalizeOffset(zoneMatch[1]) ?? null;
+      }
+    }
+  }
+
+  if (!parts) return undefined;
+  const local = formatWallClock(parts);
+  const instant = new Date(`${local}${zone ?? 'Z'}`);
+  if (Number.isNaN(instant.getTime())) return undefined;
+  return { local, utcOffset: zone, iso: instant.toISOString() };
+}
+
 function pickFirst<T>(source: Record<string, unknown> | undefined, keys: string[]): T | undefined {
   if (!source) return undefined;
   for (const key of keys) {
@@ -132,26 +199,6 @@ function pickFirstFromSources<T>(
     const value = pickFirst<T>(source, keys);
     if (value != null) {
       return value;
-    }
-  }
-  return undefined;
-}
-
-function normalizeDateValue(value: unknown, offsetValue?: unknown): string | undefined {
-  if (!value) return undefined;
-  if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) return undefined;
-    return value.toISOString();
-  }
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) return undefined;
-    const normalized = trimmed.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3').replace(/\s+/, 'T');
-    const offset = normalizeOffset(offsetValue);
-    const candidate = offset ? `${normalized}${offset}` : normalized;
-    const parsed = new Date(candidate);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toISOString();
     }
   }
   return undefined;

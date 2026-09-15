@@ -1,3 +1,5 @@
+import { parseWallClock, wallClockAsUtcDate } from '../format';
+
 type Lang = 'ru' | 'en' | 'uz';
 
 export type Severity = 'low' | 'medium' | 'high';
@@ -8,6 +10,8 @@ export interface TemporalInsight {
   severity: Severity;
 }
 
+const DAY_MS = 1000 * 60 * 60 * 24;
+
 function pluralRu(n: number, one: string, few: string, many: string): string {
   const mod10 = n % 10;
   const mod100 = n % 100;
@@ -16,26 +20,24 @@ function pluralRu(n: number, one: string, few: string, many: string): string {
   return `${n} ${many}`;
 }
 
-function parseExifDate(value: string): Date | null {
-  // EXIF dates are often "YYYY:MM:DD HH:MM:SS" — normalize to ISO
-  const normalized = value.trim().replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3').replace(/\s+/, 'T');
-  const dt = new Date(normalized);
-  if (isNaN(dt.getTime())) {
-    // Fallback: try the original string
-    const fallback = new Date(value);
-    return isNaN(fallback.getTime()) ? null : fallback;
-  }
-  return dt;
-}
+/**
+ * Temporal heuristics from the camera wall-clock.
+ *
+ * @param shotDateLocal `StructuredMetadata.shotDateLocal` — the wall-clock exactly as written
+ *   by the camera (`YYYY-MM-DDTHH:mm:ss`; the EXIF `YYYY:MM:DD HH:MM:SS` form is accepted too).
+ *   Hour and weekday are read from these digits directly, so the result does not depend on the
+ *   viewer's time zone. A zoned ISO string is tolerated: its zone suffix is ignored and the digits
+ *   are taken as-is — pass the wall-clock whenever you have it.
+ */
+export function analyzeDateTime(shotDateLocal: string | undefined, lang: Lang): TemporalInsight[] {
+  if (!shotDateLocal) return [];
 
-export function analyzeDateTime(dateTimeOriginal: string | undefined, lang: Lang): TemporalInsight[] {
-  if (!dateTimeOriginal) return [];
+  const parts = parseWallClock(shotDateLocal);
+  if (!parts) return [];
 
-  const dt = parseExifDate(dateTimeOriginal);
-  if (!dt) return [];
-
-  const hour = dt.getHours();
-  const dayOfWeek = dt.getDay();
+  const asUtc = wallClockAsUtcDate(parts);
+  const hour = parts.hour;
+  const dayOfWeek = asUtc.getUTCDay();
   const insights: TemporalInsight[] = [];
 
   // Time of day
@@ -75,14 +77,16 @@ export function analyzeDateTime(dateTimeOriginal: string | undefined, lang: Lang
     });
   }
 
-  // Photo age
-  const ageMs = Date.now() - dt.getTime();
-  const ageDays = Math.floor(ageMs / (1000 * 60 * 60 * 24));
+  // Photo age. The wall-clock is compared as if it were UTC because the real offset is unknown
+  // here; that is at most ±14 h off, irrelevant for day/month/year buckets. It does mean a photo
+  // taken a few hours ago in a UTC+N zone can look slightly "in the future", hence the one-day
+  // grace before we blame the device clock.
+  const ageMs = Date.now() - asUtc.getTime();
+  const ageDays = Math.floor(ageMs / DAY_MS);
   const ageYears = Math.floor(ageDays / 365);
   const ageMonths = Math.floor(ageDays / 30);
 
-  if (ageDays < 0) {
-    // Future date — likely wrong clock
+  if (ageDays < -1) {
     insights.push({
       fact: lang === 'ru' ? 'Дата в будущем' : lang === 'uz' ? 'Kelajakdagi sana' : 'Future date',
       inference: lang === 'ru' ? 'Часы на устройстве были настроены неправильно' : lang === 'uz' ? 'Qurilma soati noto\'g\'ri sozlangan' : 'Device clock was set incorrectly',

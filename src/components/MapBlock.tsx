@@ -1,7 +1,7 @@
-import React, { useEffect, useRef } from 'react';
-import type maplibregl from 'maplibre-gl';
+import React, { useEffect, useRef, useState } from 'react';
+import type * as maplibregl from 'maplibre-gl';
 import type { FeatureCollection, Polygon } from 'geojson';
-import 'maplibre-gl/dist/maplibre-gl.css';
+import { useT } from '../i18n';
 
 interface MapBlockProps {
   lat: number;
@@ -9,10 +9,39 @@ interface MapBlockProps {
   accuracy?: number;
 }
 
+/** Brand accent read from the design-system tokens, so the marker follows the theme. */
+function accentColor(): string {
+  if (typeof document === 'undefined') return '#d9531e';
+  const value = getComputedStyle(document.documentElement).getPropertyValue('--v4-orange').trim();
+  return value || '#d9531e';
+}
+
+/**
+ * maplibre-gl 6 requires WebGL2 and does not ship `supported()`; probing a canvas ourselves is
+ * the only way to know before the Map constructor throws (and leaves an empty box behind).
+ */
+function hasWebGl2(): boolean {
+  if (typeof document === 'undefined') return false;
+  try {
+    const canvas = document.createElement('canvas');
+    return Boolean(canvas.getContext('webgl2'));
+  } catch {
+    return false;
+  }
+}
+
 export const MapBlock: React.FC<MapBlockProps> = ({ lat, lon, accuracy }) => {
+  const t = useT();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
+  // Latest props for the async setup: the chunk may still be downloading when they change.
+  // Declared before the setup effect so it is current by the time setup awaits the import.
+  const latestRef = useRef({ lat, lon, accuracy });
+  useEffect(() => {
+    latestRef.current = { lat, lon, accuracy };
+  }, [lat, lon, accuracy]);
+  const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
     let map: maplibregl.Map | null = null;
@@ -21,17 +50,16 @@ export const MapBlock: React.FC<MapBlockProps> = ({ lat, lon, accuracy }) => {
 
     const setup = async () => {
       if (!containerRef.current) return;
+      if (!hasWebGl2()) {
+        setUnavailable(true);
+        return;
+      }
       try {
-        const maplibre = await import('maplibre-gl');
-        const supportedFn = (maplibre as any)?.supported;
-        if (typeof supportedFn === 'function') {
-          const ok = supportedFn({ failIfMajorPerformanceCaveat: false });
-          if (!ok) {
-            console.warn('maplibre unsupported: no WebGL');
-            return;
-          }
-        }
-        if (cancelled) return;
+        // Both the library and its stylesheet are only needed when a photo
+        // carries GPS — keep them out of the critical path.
+        const [maplibre] = await Promise.all([import('maplibre-gl'), import('maplibre-gl/dist/maplibre-gl.css')]);
+        if (cancelled || !containerRef.current) return;
+        const { lat: initLat, lon: initLon } = latestRef.current;
         map = new maplibre.Map({
           container: containerRef.current,
           style: {
@@ -54,33 +82,44 @@ export const MapBlock: React.FC<MapBlockProps> = ({ lat, lon, accuracy }) => {
               }
             ]
           },
-          center: [lon, lat],
-          zoom: 15,
-          attributionControl: true
+          center: [initLon, initLat],
+          zoom: 15
         });
         mapRef.current = map;
         map.addControl(new maplibre.NavigationControl({ visualizePitch: true }));
-        marker = new maplibre.Marker({ color: '#38bdf8' }).setLngLat([lon, lat]).addTo(map);
+        marker = new maplibre.Marker({ color: accentColor() }).setLngLat([initLon, initLat]).addTo(map);
         markerRef.current = marker;
+        // The accuracy circle needs the style, so draw it on `load` — with whatever the props
+        // are by then. Later prop changes are handled by the effect below.
+        const loadedMap = map;
+        map.once('load', () => {
+          if (cancelled) return;
+          const { lat: currentLat, lon: currentLon, accuracy: currentAccuracy } = latestRef.current;
+          applyAccuracy(loadedMap, currentLat, currentLon, currentAccuracy);
+        });
       } catch (error) {
         console.warn('maplibre-init', error);
         mapRef.current = null;
+        if (!cancelled) setUnavailable(true);
       }
     };
 
-    setup();
+    void setup();
 
     return () => {
       cancelled = true;
       marker?.remove();
       markerRef.current = null;
       if (map) {
-        clearAccuracy(map);
+        try {
+          clearAccuracy(map);
+        } catch {
+          // Style may never have loaded; removal below is what matters.
+        }
         map.remove();
       }
       mapRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -94,16 +133,27 @@ export const MapBlock: React.FC<MapBlockProps> = ({ lat, lon, accuracy }) => {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map) return; // first draw happens in setup's `load` handler
     if (map.isStyleLoaded()) {
       applyAccuracy(map, lat, lon, accuracy);
-    } else {
-      const handler = () => applyAccuracy(map, lat, lon, accuracy);
-      map.once('load', handler);
+      return;
     }
+    const handler = () => applyAccuracy(map, lat, lon, accuracy);
+    map.once('load', handler);
+    return () => {
+      map.off('load', handler);
+    };
   }, [lat, lon, accuracy]);
 
-  return <div ref={containerRef} className="map-container" role="application" aria-label="Map" />;
+  if (unavailable) {
+    return (
+      <div className="fy-map fy-map--unavailable" role="note">
+        <p className="fy-hint">{t('mapUnavailable')}</p>
+      </div>
+    );
+  }
+
+  return <div ref={containerRef} className="fy-map" role="application" aria-label={t('mapLabel')} />;
 };
 
 const ACCURACY_SOURCE = 'accuracy-circle';
@@ -121,6 +171,7 @@ function applyAccuracy(map: maplibregl.Map, lat: number, lon: number, accuracy?:
     existingSource.setData(data);
     return;
   }
+  const color = accentColor();
   map.addSource(ACCURACY_SOURCE, {
     type: 'geojson',
     data
@@ -130,7 +181,7 @@ function applyAccuracy(map: maplibregl.Map, lat: number, lon: number, accuracy?:
     type: 'fill',
     source: ACCURACY_SOURCE,
     paint: {
-      'fill-color': '#38bdf8',
+      'fill-color': color,
       'fill-opacity': 0.18
     }
   });
@@ -139,7 +190,7 @@ function applyAccuracy(map: maplibregl.Map, lat: number, lon: number, accuracy?:
     type: 'line',
     source: ACCURACY_SOURCE,
     paint: {
-      'line-color': '#38bdf8',
+      'line-color': color,
       'line-width': 1.5,
       'line-opacity': 0.6
     }
@@ -166,7 +217,7 @@ function createCircleGeoJson(lat: number, lon: number, radiusMeters: number): Fe
   for (let i = 0; i <= steps; i += 1) {
     const angle = (i / steps) * 2 * Math.PI;
     const offsetLat = (radiusMeters / earthRadius) * Math.sin(angle);
-    const offsetLon = (radiusMeters / earthRadius) * Math.cos(angle) / Math.cos(centerLatRad);
+    const offsetLon = ((radiusMeters / earthRadius) * Math.cos(angle)) / Math.cos(centerLatRad);
     const pointLat = lat + (offsetLat * 180) / Math.PI;
     const pointLon = lon + (offsetLon * 180) / Math.PI;
     coordinates.push([pointLon, pointLat]);

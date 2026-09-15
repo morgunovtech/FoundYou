@@ -1,11 +1,21 @@
 import type { QualityMode } from '../types/cleanup';
+import type { MessageKey } from '../i18n';
 
-type Translate = (key: string, params?: Record<string, string | number>) => string;
+type Translate = (key: MessageKey, params?: Record<string, string | number>) => string;
 
 interface CleanupSummaryInput {
-  removeMetadata: boolean;
+  /** PRNU (sensor-noise) softening. Metadata itself is always dropped by the canvas re-encode. */
+  prnuCleanup: boolean;
   resolutionSummary: string;
   blurSummary: string;
+  /** True when at least one blur target (people, text, manual mask) is active. */
+  blurActive?: boolean;
+  /** 'pixelate' when the browser ignores canvas `filter` and regions are resampled instead. */
+  blurMode?: 'filter' | 'pixelate';
+  /** True when the platform canvas limit forced a smaller export than requested. */
+  platformCapped?: boolean;
+  /** Megapixel cap to quote in the platform note. */
+  platformCapMegapixels?: number;
   antiSearchEnabled: boolean;
   antiSearchLevel: number;
   renameSummary: string;
@@ -16,9 +26,13 @@ interface CleanupSummaryInput {
 }
 
 export function buildCleanupSummary({
-  removeMetadata,
+  prnuCleanup,
   resolutionSummary,
   blurSummary,
+  blurActive = false,
+  blurMode = 'filter',
+  platformCapped = false,
+  platformCapMegapixels,
   antiSearchEnabled,
   antiSearchLevel,
   renameSummary,
@@ -28,9 +42,20 @@ export function buildCleanupSummary({
   t
 }: CleanupSummaryInput): string[] {
   const items: string[] = [];
-  items.push(removeMetadata ? t('privacyDiffMetadataRemoved') : t('privacyDiffMetadataKept'));
+  // Re-encoding through a canvas never carries EXIF/XMP/IPTC/ICC over, so this
+  // line is unconditional; only the sensor-noise pass is optional.
+  items.push(t('privacyDiffMetadataRemoved'));
+  if (prnuCleanup) {
+    items.push(t('privacyDiffPrnuOn'));
+  }
   items.push(resolutionSummary);
+  if (platformCapped) {
+    items.push(t('privacyDiffPlatformCap', { mp: platformCapMegapixels ?? 16 }));
+  }
   items.push(blurSummary);
+  if (blurActive && blurMode === 'pixelate') {
+    items.push(t('privacyDiffBlurPixelate'));
+  }
   if (antiSearchEnabled) {
     items.push(t('privacyDiffAntiSearchOn', { level: antiSearchLevel }));
   } else {

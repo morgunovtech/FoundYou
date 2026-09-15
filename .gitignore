@@ -137,3 +137,15 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Generated runtime assets — `npm run prepare:assets` (also part of `npm run build`)
+public/ocr/*
+!public/ocr/.gitkeep
+public/mediapipe/
+
+# Cloudflare (wrangler / Pages Functions local secrets)
+.dev.vars
+.wrangler/
+
+# Local browser-smoke fixtures (HEIC/JPEG samples) — never commit
+public/test/

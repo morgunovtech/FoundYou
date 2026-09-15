@@ -1,32 +1,36 @@
 import React from 'react';
-import clsx from 'clsx';
-import { useI18n, useT } from '../i18n';
+import { useI18n, useT, type Language } from '../i18n';
+import { Chevron, Dropdown } from './Dropdown';
 
-const languages: { code: 'ru' | 'en' | 'uz'; flag: string; label: string }[] = [
-  { code: 'ru', flag: '🇷🇺', label: 'Русский' },
-  { code: 'en', flag: '🇺🇸', label: 'English' },
-  { code: 'uz', flag: '🇺🇿', label: 'Oʻzbekcha' }
+const LANGUAGES: Array<{ code: Language; label: string }> = [
+  { code: 'ru', label: 'Русский' },
+  { code: 'en', label: 'English' },
+  { code: 'uz', label: 'Oʻzbekcha' }
 ];
 
+/** Text toggle showing the current code («RU») with a menu of the three languages. */
 export const LanguageSwitcher: React.FC = () => {
   const { lang, setLanguage } = useI18n();
   const t = useT();
+
   return (
-    <div className="segmented-control" role="group" aria-label={t('language')}>
-      {languages.map((entry) => (
-        <button
-          type="button"
-          key={entry.code}
-          className={clsx({ active: lang === entry.code })}
-          onClick={() => setLanguage(entry.code)}
-          aria-label={entry.label}
-          aria-pressed={lang === entry.code}
-          title={entry.label}
-        >
-          <span aria-hidden="true">{entry.flag}</span>
-          <span className="sr-only">{entry.label}</span>
-        </button>
-      ))}
-    </div>
+    <Dropdown
+      className="v4-lang"
+      toggleClassName="v4-bar-btn v4-lang-btn"
+      toggleLabel={`${lang.toUpperCase()} — ${t('langMenuLabel')}`}
+      items={LANGUAGES.map((entry) => ({
+        value: entry.code,
+        label: entry.label,
+        checked: lang === entry.code,
+        lang: entry.code
+      }))}
+      onSelect={(value) => setLanguage(value as Language)}
+      toggleChildren={
+        <>
+          {lang.toUpperCase()}
+          <Chevron />
+        </>
+      }
+    />
   );
 };

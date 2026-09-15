@@ -1,27 +1,32 @@
 import React from 'react';
 import { useT } from '../i18n';
 
+/** Hero copy: eyebrow, title, tagline and the two feature lists. */
 export const InfoBlock: React.FC = () => {
   const t = useT();
   return (
-    <section className="panel info-panel">
-      <h1 className="section-title">{t('appTitle')}</h1>
-      <p className="info-panel__lead">{t('introLead')}</p>
-      <ul className="info-panel__list">
+    <div className="fy-hero-text">
+      <p className="fy-eyebrow">
+        <b>{t('heroEyebrow')}</b>
+        <span>{t('heroEyebrowMeta')}</span>
+      </p>
+      <h1 className="fy-h1" id="hero-title">
+        {t('appTitle')}
+      </h1>
+      <p className="fy-tagline">{t('introLead')}</p>
+      <ul className="v4-list">
         <li>{t('introHow')}</li>
         <li>{t('introSafe')}</li>
         <li>{t('introFeatureCleanup')}</li>
         <li>{t('introFeatureOcr')}</li>
       </ul>
-      <div className="info-panel__jobs">
-        <h2 className="section-title section-title--small">{t('introJobsTitle')}</h2>
-        <ul className="info-panel__list info-panel__list--compact">
-          <li>{t('introJobPrivacy')}</li>
-          <li>{t('introJobMasking')}</li>
-          <li>{t('introJobProof')}</li>
-          <li>{t('introJobPresets')}</li>
-        </ul>
-      </div>
-    </section>
+      <h2 className="v4-h3">{t('introJobsTitle')}</h2>
+      <ul className="v4-list">
+        <li>{t('introJobPrivacy')}</li>
+        <li>{t('introJobMasking')}</li>
+        <li>{t('introJobProof')}</li>
+        <li>{t('introJobPresets')}</li>
+      </ul>
+    </div>
   );
 };

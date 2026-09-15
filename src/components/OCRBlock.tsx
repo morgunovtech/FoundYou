@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useT } from '../i18n';
 import type { OCRResult } from '../hooks/useOCR';
+import { SectionHead } from './SectionHead';
 
 interface OCRBlockProps {
   result: OCRResult | null;
@@ -16,53 +17,50 @@ export const OCRBlock: React.FC<OCRBlockProps> = ({ result, loading, error, prog
   if (!loading && !error && !result) return null;
 
   return (
-    <section className="panel ocr-panel">
-      <h3>{t('ocrTitle')}</h3>
-
-      {loading && progress ? (
-        <div className="progress-row" aria-live="polite">
-          <div className="progress-text">{progress.label}</div>
-          <div
-            className="progress-bar"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={Math.round(progress.value * 100)}
-          >
-            <span style={{ width: `${Math.min(100, Math.max(0, progress.value * 100))}%` }} />
-          </div>
-        </div>
-      ) : null}
-
-      {error ? <p className="insight-compact__muted">{error}</p> : null}
-
-      {result && !loading ? (
-        result.fullText.length === 0 ? (
-          <p className="insight-compact__muted">{t('ocrEmpty')}</p>
-        ) : (
-          <>
-            <p className="insight-compact__muted">
-              {t('ocrFound', { count: result.regions.length })}
-              {' '}
-              {t('ocrBlurHint')}
-            </p>
-            <div className="ocr-text-block">
-              <pre className={`ocr-text-content ${expanded ? 'ocr-text-content--expanded' : ''}`}>
-                {result.fullText}
-              </pre>
-              {result.fullText.length > 200 && !expanded ? (
-                <button
-                  type="button"
-                  className="button button--ghost ocr-expand-button"
-                  onClick={() => setExpanded(true)}
-                >
-                  …
-                </button>
-              ) : null}
+    <section className="v4-section" aria-labelledby="sec-ocr">
+      <SectionHead num="02" title={t('ocrTitle')} id="sec-ocr" />
+      <div className="fy-card">
+        {loading && progress ? (
+          <div className="fy-progress" aria-live="polite">
+            <div className="fy-progress-text">{progress.label}</div>
+            <div
+              className="fy-progress-bar"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(progress.value * 100)}
+            >
+              <span style={{ width: `${Math.min(100, Math.max(0, progress.value * 100))}%` }} />
             </div>
-          </>
-        )
-      ) : null}
+          </div>
+        ) : null}
+
+        {error ? (
+          <p className="fy-hint" role="alert">
+            {error}
+          </p>
+        ) : null}
+
+        {result && !loading ? (
+          result.fullText.length === 0 ? (
+            <p className="fy-hint">{t('ocrEmpty')}</p>
+          ) : (
+            <>
+              <p className="fy-hint">
+                {t('ocrFound', { count: result.regions.length })} {t('ocrBlurHint')}
+              </p>
+              <div className="fy-ocr-text">
+                <pre className={`fy-ocr-pre ${expanded ? 'is-expanded' : ''}`}>{result.fullText}</pre>
+                {result.fullText.length > 200 && !expanded ? (
+                  <button type="button" className="v4-btn fy-btn-sm fy-ocr-more" onClick={() => setExpanded(true)}>
+                    …
+                  </button>
+                ) : null}
+              </div>
+            </>
+          )
+        ) : null}
+      </div>
     </section>
   );
 };

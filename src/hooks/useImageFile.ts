@@ -8,6 +8,8 @@ const MAX_PIXEL_COUNT = 40_000_000; // guard overly large resolution that may cr
 const NATIVE_SUPPORTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif', 'image/bmp'];
 const HEIC_TYPES = ['image/heic', 'image/heif'];
 const SUPPORTED_TYPES = [...NATIVE_SUPPORTED_TYPES, ...HEIC_TYPES];
+// ISO BMFF brands that hold HEIF/HEIC stills (heim/heis/hevm: multi-image & sequence variants).
+const HEIC_BRANDS = ['heic', 'heix', 'hevc', 'heim', 'heis', 'hevm', 'mif1', 'msf1'];
 
 function inferMimeFromName(name: string): string | null {
   const lower = name.toLowerCase();
@@ -31,7 +33,7 @@ async function sniffHeic(file: File): Promise<boolean> {
     if (!ftyp) return false;
     // Read the brand as ASCII
     const brand = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]).toLowerCase();
-    return ['heic', 'heix', 'hevc', 'mif1', 'msf1'].includes(brand);
+    return HEIC_BRANDS.includes(brand);
   } catch (error) {
     console.warn('heic-sniff-failed', error);
     return false;
@@ -69,6 +71,8 @@ export function useImageFile() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const objectUrlRef = useRef<string | null>(null);
+  // Monotonic counter: a slow earlier file must never overwrite a newer one.
+  const generationRef = useRef(0);
 
   const revokeObjectUrl = useCallback(() => {
     if (objectUrlRef.current) {
@@ -80,56 +84,67 @@ export function useImageFile() {
   useEffect(() => revokeObjectUrl, [revokeObjectUrl]);
 
   const reset = useCallback(() => {
+    generationRef.current += 1;
     setFileInfo(null);
     setError(null);
+    setLoading(false);
     revokeObjectUrl();
   }, [revokeObjectUrl]);
 
   const processFile = useCallback(
     async (file: File) => {
+      const generation = ++generationRef.current;
+      const isCurrent = () => generationRef.current === generation;
       setLoading(true);
       setError(null);
-      revokeObjectUrl();
       if (import.meta.env.DEV) {
         console.info('[pipeline] upload:start', { name: file.name, type: file.type, size: file.size });
       }
       let inferredType = file.type || inferMimeFromName(file.name) || '';
+      // The new object URL lives here until the file is fully decoded and
+      // validated; only then does it replace the previous one. Rejected or
+      // superseded files revoke their own URL and leave the current file intact.
+      let pendingObjectUrl: string | null = null;
       try {
         if (!inferredType || !SUPPORTED_TYPES.includes(inferredType)) {
           if (await sniffHeic(file)) {
             inferredType = 'image/heic';
           }
         }
+        if (!isCurrent()) return;
 
         if (file.size > MAX_SIZE_BYTES) {
           setError(t('fileTooLarge', { limit: 20 }));
-          setLoading(false);
           return;
         }
         if (!SUPPORTED_TYPES.includes(inferredType)) {
           setError(t('unsupportedFormat'));
-          setLoading(false);
           return;
         }
 
         const needsHeicConversion = HEIC_TYPES.includes(inferredType);
         const sourceFile = file;
         const heicDecoded = needsHeicConversion ? await decodeHeicToJpegForPreview(file) : null;
+        if (!isCurrent()) return;
         const workingFile = heicDecoded?.file ?? file;
         const mimeType = workingFile.type || inferredType || 'image/jpeg';
-        const objectUrl = URL.createObjectURL(workingFile);
-        objectUrlRef.current = objectUrl;
-        const { url: thumbnailUrl, width, height } = await makeThumbnail(objectUrl);
+        pendingObjectUrl = URL.createObjectURL(workingFile);
+        const { url: thumbnailUrl, width, height } = await makeThumbnail(pendingObjectUrl);
+        if (!isCurrent()) {
+          URL.revokeObjectURL(pendingObjectUrl);
+          pendingObjectUrl = null;
+          return;
+        }
         const pixelCount = width * height;
         if (pixelCount > MAX_PIXEL_COUNT) {
-          revokeObjectUrl();
+          URL.revokeObjectURL(pendingObjectUrl);
+          pendingObjectUrl = null;
           setError(t('fileTooLargeResolution'));
-          setLoading(false);
           return;
         }
         const info: BasicFileInfo = {
           file: workingFile,
-          dataUrl: objectUrl,
+          dataUrl: pendingObjectUrl,
           thumbnailUrl,
           width,
           height,
@@ -145,6 +160,10 @@ export function useImageFile() {
           processedSizeBytes: workingFile.size,
           wasConverted: needsHeicConversion
         };
+        // Commit: the new file passed every check, so the previous one can go.
+        revokeObjectUrl();
+        objectUrlRef.current = pendingObjectUrl;
+        pendingObjectUrl = null;
         setFileInfo(info);
         if (import.meta.env.DEV) {
           console.info('[pipeline] upload:ready', {
@@ -156,6 +175,10 @@ export function useImageFile() {
         }
       } catch (err) {
         console.error('file-processing', err);
+        if (pendingObjectUrl) {
+          URL.revokeObjectURL(pendingObjectUrl);
+        }
+        if (!isCurrent()) return;
         if (HEIC_TYPES.includes(inferredType)) {
           setError(t('heicConversionFailed'));
         } else if (inferredType === 'image/avif') {
@@ -163,9 +186,10 @@ export function useImageFile() {
         } else {
           setError(t('corruptedFile'));
         }
-        revokeObjectUrl();
       } finally {
-        setLoading(false);
+        if (isCurrent()) {
+          setLoading(false);
+        }
       }
     },
     [revokeObjectUrl, t]

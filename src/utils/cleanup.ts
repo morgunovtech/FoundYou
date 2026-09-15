@@ -1,8 +1,8 @@
 import type { AntiSearchParams, ManualMask } from '../types/cleanup';
-import type { BoundingBox } from '../types/detection';
+import { FACE_LABEL, PERSON_LABEL, type BoundingBox } from '../types/detection';
 import type { OCRRegion } from '../hooks/useOCR';
 
-interface BlurRegion {
+export interface BlurRegion {
   x: number;
   y: number;
   width: number;
@@ -11,6 +11,139 @@ interface BlurRegion {
 
 const MIN_MASK_SIZE = 12;
 const MIN_MASK_POINTS = 3;
+
+/* ── blur engine: CSS filter where it works, resampling elsewhere ── */
+
+export type CanvasBlurMode = 'filter' | 'pixelate';
+
+let blurModeCache: CanvasBlurMode | null = null;
+
+/**
+ * WebKit before Safari 18 either has no `filter` on the 2D context or accepts
+ * the assignment and ignores it, so every blur silently became a plain redraw
+ * while the UI claimed the region was hidden. Probe once: the property must be
+ * on the prototype, the assignment must stick, and a blurred 1px dot must
+ * actually bleed into its neighbour pixel.
+ */
+export function canvasBlurMode(): CanvasBlurMode {
+  if (blurModeCache) return blurModeCache;
+  blurModeCache = detectFilterSupport() ? 'filter' : 'pixelate';
+  return blurModeCache;
+}
+
+function detectFilterSupport(): boolean {
+  try {
+    if (typeof document === 'undefined' || typeof CanvasRenderingContext2D === 'undefined') return false;
+    if (!('filter' in CanvasRenderingContext2D.prototype)) return false;
+    const probe = document.createElement('canvas');
+    probe.width = 5;
+    probe.height = 5;
+    const ctx = probe.getContext('2d');
+    if (!ctx) return false;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, 5, 5);
+    ctx.filter = 'blur(1px)';
+    const sticks = typeof ctx.filter === 'string' && ctx.filter !== 'none' && ctx.filter !== '';
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(2, 2, 1, 1);
+    ctx.filter = 'none';
+    if (!sticks) return false;
+    const neighbour = ctx.getImageData(1, 2, 1, 1).data;
+    return neighbour[0] < 250;
+  } catch {
+    return false;
+  }
+}
+
+/** Block size for the resampling fallback; strength is the CSS blur radius in px. */
+function pixelateFactor(strength: number): number {
+  return Math.max(2, Math.round(strength / 2));
+}
+
+/**
+ * Draws `region` of `source` back onto `ctx` blurred. The caller owns the
+ * clip and the save/restore pair. With filter support this is the classic
+ * `filter: blur()` redraw; otherwise the region is shrunk into a tiny canvas
+ * and stretched back with smoothing, which hides detail just as reliably.
+ */
+function paintBlurredRegion(
+  ctx: CanvasRenderingContext2D,
+  source: CanvasImageSource,
+  region: BlurRegion,
+  strength: number
+) {
+  const { x, y, width, height } = region;
+  if (canvasBlurMode() === 'filter') {
+    ctx.filter = `blur(${Math.round(strength)}px)`;
+    ctx.drawImage(source, x, y, width, height, x, y, width, height);
+    ctx.filter = 'none';
+    return;
+  }
+  const factor = pixelateFactor(strength);
+  const smallWidth = Math.max(1, Math.round(width / factor));
+  const smallHeight = Math.max(1, Math.round(height / factor));
+  const tiny = document.createElement('canvas');
+  tiny.width = smallWidth;
+  tiny.height = smallHeight;
+  const tctx = tiny.getContext('2d');
+  if (!tctx) return;
+  tctx.imageSmoothingEnabled = true;
+  tctx.drawImage(source, x, y, width, height, 0, 0, smallWidth, smallHeight);
+  const previousSmoothing = ctx.imageSmoothingEnabled;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(tiny, 0, 0, smallWidth, smallHeight, x, y, width, height);
+  ctx.imageSmoothingEnabled = previousSmoothing;
+}
+
+/** Blurs one rectangle of `source` in place on `ctx`, picking filter or pixelate. */
+export function blurRegion(
+  ctx: CanvasRenderingContext2D,
+  source: CanvasImageSource,
+  region: BlurRegion,
+  strength: number
+) {
+  const clamped = clampRect(region, ctx.canvas.width, ctx.canvas.height);
+  if (!clamped) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(clamped.x, clamped.y, clamped.width, clamped.height);
+  ctx.clip();
+  paintBlurredRegion(ctx, source, clamped, strength);
+  ctx.restore();
+}
+
+/** Whole-canvas low-pass copy used by the PRNU pass (filter or downscale/upscale). */
+function blurredCopy(canvas: HTMLCanvasElement, radiusPx: number): HTMLCanvasElement {
+  const { width, height } = canvas;
+  const out = document.createElement('canvas');
+  out.width = width;
+  out.height = height;
+  const ctx = out.getContext('2d');
+  if (!ctx) {
+    throw new Error('canvas');
+  }
+  if (canvasBlurMode() === 'filter') {
+    ctx.filter = `blur(${radiusPx}px)`;
+    ctx.drawImage(canvas, 0, 0);
+    ctx.filter = 'none';
+    return out;
+  }
+  const factor = Math.max(2, Math.round(radiusPx * 1.2));
+  const smallWidth = Math.max(1, Math.round(width / factor));
+  const smallHeight = Math.max(1, Math.round(height / factor));
+  const tiny = document.createElement('canvas');
+  tiny.width = smallWidth;
+  tiny.height = smallHeight;
+  const tctx = tiny.getContext('2d');
+  if (!tctx) {
+    throw new Error('canvas');
+  }
+  tctx.imageSmoothingEnabled = true;
+  tctx.drawImage(canvas, 0, 0, width, height, 0, 0, smallWidth, smallHeight);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(tiny, 0, 0, smallWidth, smallHeight, 0, 0, width, height);
+  return out;
+}
 
 function clampRect(rect: BlurRegion, maxWidth: number, maxHeight: number): BlurRegion | null {
   const x = Math.max(0, Math.min(rect.x, maxWidth));
@@ -23,47 +156,79 @@ function clampRect(rect: BlurRegion, maxWidth: number, maxHeight: number): BlurR
   return { x, y, width, height };
 }
 
+/* ── blur targets: detected faces first, person boxes as fallback ── */
+
+export type BlurTargetSource = 'face' | 'person';
+
+export interface BlurTarget extends BlurRegion {
+  /** `face` — a padded FaceDetector box blurred as is; `person` — head-area fallback for a person box with no face inside. */
+  source: BlurTargetSource;
+}
+
+/**
+ * A person box is grown by this fraction of its size before testing whether a face centre
+ * falls inside it: face boxes are padded, and a tight person box may cut through the hair.
+ */
+const PERSON_FACE_TOLERANCE = 0.1;
+
+function containsPoint(box: BoundingBox, px: number, py: number, tolerance: number): boolean {
+  const dx = box.width * tolerance;
+  const dy = box.height * tolerance;
+  return px >= box.x - dx && px <= box.x + box.width + dx && py >= box.y - dy && py <= box.y + box.height + dy;
+}
+
+/**
+ * Head-area estimate for a person without a detected face (back of the head, mask, a profile
+ * the face model missed): the upper 45 % of the box, 55 % of its width, centred, plus a margin.
+ */
+function personHeadRegion(det: BoundingBox): BlurRegion {
+  const pad = Math.max(det.width, det.height) * 0.08;
+  const faceWidth = det.width * 0.55;
+  const faceHeight = det.height * 0.45;
+  const centerX = det.x + det.width / 2;
+  return {
+    x: centerX - faceWidth / 2 - pad,
+    y: det.y - pad * 0.6,
+    width: faceWidth + pad * 2,
+    height: faceHeight + pad * 1.5
+  };
+}
+
+/**
+ * Chooses what "hide faces" blurs. Every `face` box is a target as is (the detector output is
+ * already padded). A `person` box only adds the head-area fallback when no detected face lies
+ * inside it, so nobody is left unblurred while people with a real face box are not blurred
+ * twice. Other labels (car, dog, …) are ignored. Pure — no canvas — so it is unit-tested directly.
+ */
+export function selectBlurTargets(detections: BoundingBox[]): BlurTarget[] {
+  const faces = detections.filter((det) => det.label === FACE_LABEL);
+  const targets: BlurTarget[] = faces.map((face) => ({
+    x: face.x,
+    y: face.y,
+    width: face.width,
+    height: face.height,
+    source: 'face'
+  }));
+  for (const person of detections) {
+    if (person.label !== PERSON_LABEL) continue;
+    const hasFace = faces.some((face) =>
+      containsPoint(person, face.x + face.width / 2, face.y + face.height / 2, PERSON_FACE_TOLERANCE)
+    );
+    if (hasFace) continue;
+    targets.push({ ...personHeadRegion(person), source: 'person' });
+  }
+  return targets;
+}
+
 export function blurDetections(
   ctx: CanvasRenderingContext2D,
   source: CanvasImageSource,
   detections: BoundingBox[],
   strength: number
 ) {
-  detections.forEach((det) => {
-    const pad = Math.max(det.width, det.height) * 0.08;
-    const faceWidth = det.width * 0.55;
-    const faceHeight = det.height * 0.45;
-    const centerX = det.x + det.width / 2;
-    const faceX = centerX - faceWidth / 2;
-    const region: BlurRegion = {
-      x: faceX - pad,
-      y: det.y - pad * 0.6,
-      width: faceWidth + pad * 2,
-      height: faceHeight + pad * 1.5
-    };
-    const clamped = clampRect(region, ctx.canvas.width, ctx.canvas.height);
-    if (!clamped) {
-      return;
-    }
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(clamped.x, clamped.y, clamped.width, clamped.height);
-    ctx.clip();
-    ctx.filter = `blur(${Math.round(strength)}px)`;
-    ctx.drawImage(
-      source,
-      clamped.x,
-      clamped.y,
-      clamped.width,
-      clamped.height,
-      clamped.x,
-      clamped.y,
-      clamped.width,
-      clamped.height
-    );
-    ctx.filter = 'none';
-    ctx.restore();
-  });
+  for (const target of selectBlurTargets(detections)) {
+    blurRegion(ctx, source, target, strength);
+  }
 }
 
 export function blurManualMasks(
@@ -75,22 +240,33 @@ export function blurManualMasks(
   if (masks.length === 0) return;
 
   const { width, height } = ctx.canvas;
-
-  // Reuse a single blurred layer for all masks
-  const blurredFull = document.createElement('canvas');
-  blurredFull.width = width;
-  blurredFull.height = height;
-  const bfCtx = blurredFull.getContext('2d');
-  if (!bfCtx) return;
-  bfCtx.filter = `blur(${Math.round(strength)}px)`;
-  bfCtx.drawImage(source, 0, 0, width, height);
-  bfCtx.filter = 'none';
+  // Blur input outside the painted area so the polygon edge never samples the
+  // transparent border of the sub-rectangle (3σ covers the Gaussian tail).
+  const bleed = Math.round(strength) * 3;
 
   masks.forEach((mask) => {
     if (mask.points.length < MIN_MASK_POINTS) return;
 
-    ctx.save();
     const radius = Math.max(mask.radius, MIN_MASK_SIZE / 2);
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const pt of mask.points) {
+      minX = Math.min(minX, pt.x);
+      minY = Math.min(minY, pt.y);
+      maxX = Math.max(maxX, pt.x);
+      maxY = Math.max(maxY, pt.y);
+    }
+    const pad = radius + bleed;
+    const bounds = clampRect(
+      { x: minX - pad, y: minY - pad, width: maxX - minX + pad * 2, height: maxY - minY + pad * 2 },
+      width,
+      height
+    );
+    if (!bounds) return;
+
+    ctx.save();
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.beginPath();
@@ -99,9 +275,8 @@ export function blurManualMasks(
       ctx.lineTo(mask.points[i].x, mask.points[i].y);
     }
     ctx.closePath();
-    ctx.lineWidth = radius * 1.2;
     ctx.clip();
-    ctx.drawImage(blurredFull, 0, 0);
+    paintBlurredRegion(ctx, source, bounds, strength);
     ctx.restore();
   });
 }
@@ -247,13 +422,16 @@ export function applyAntiSearch(
   const brightness = params.brightnessShift;
   const contrast = params.contrastShift;
   const factor = (259 * (contrast * 255 + 255)) / (255 * (259 - contrast * 255));
+  // One closure for the whole pass: allocating it per pixel froze the slider
+  // for hundreds of milliseconds on multi-megapixel previews.
+  let noise = 0;
+  const adjust = (value: number) => {
+    let v = value + noise + brightness * 255;
+    v = factor * (v - 128) + 128;
+    return clamp(v, 0, 255);
+  };
   for (let i = 0; i < data.length; i += 4) {
-    const noise = (rand() - 0.5) * params.noiseAmplitude;
-    const adjust = (value: number) => {
-      let v = value + noise + brightness * 255;
-      v = factor * (v - 128) + 128;
-      return clamp(v, 0, 255);
-    };
+    noise = (rand() - 0.5) * params.noiseAmplitude;
     const r = adjust(data[i]);
     const g = adjust(data[i + 1]);
     const b = adjust(data[i + 2]);
@@ -328,16 +506,11 @@ export function applyPrnuCleanup(canvas: HTMLCanvasElement): HTMLCanvasElement {
   const original = ctx.getImageData(0, 0, width, height);
   const data = original.data;
 
-  const blurCanvas = document.createElement('canvas');
-  blurCanvas.width = width;
-  blurCanvas.height = height;
+  const blurCanvas = blurredCopy(canvas, 1.8);
   const bctx = blurCanvas.getContext('2d');
   if (!bctx) {
     throw new Error('canvas');
   }
-  bctx.filter = 'blur(1.8px)';
-  bctx.drawImage(canvas, 0, 0);
-  bctx.filter = 'none';
   const blurred = bctx.getImageData(0, 0, width, height);
   const blurredData = blurred.data;
 
@@ -399,20 +572,7 @@ export function blurOcrRegions(
       width: region.width * scale + pad * 2,
       height: region.height * scale + pad * 2,
     };
-    const clamped = clampRect(rect, ctx.canvas.width, ctx.canvas.height);
-    if (!clamped) continue;
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(clamped.x, clamped.y, clamped.width, clamped.height);
-    ctx.clip();
-    ctx.filter = `blur(${Math.round(strength)}px)`;
-    ctx.drawImage(
-      source,
-      clamped.x, clamped.y, clamped.width, clamped.height,
-      clamped.x, clamped.y, clamped.width, clamped.height
-    );
-    ctx.filter = 'none';
-    ctx.restore();
+    blurRegion(ctx, source, rect, strength);
   }
 }
 

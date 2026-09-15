@@ -1,55 +1,52 @@
-import type { PagesEventContext, CfRequestInit } from './_types';
-import { json, methodNotAllowed } from './_geo';
+import { DAY, cacheKey, coordKey, defineHandler, fetchUpstream, json, parseCoord, round4, withCache } from './_geo';
 
-export async function onRequest({ request }: PagesEventContext): Promise<Response> {
-  if (request.method !== 'GET') return methodNotAllowed();
+const TTL = DAY;
 
-  const url = new URL(request.url);
-  const lat = Number(url.searchParams.get('lat'));
-  const lon = Number(url.searchParams.get('lon'));
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-    return json({ ok: false, error: 'invalid-coordinates' });
+export const onRequest = defineHandler(async ({ url, context }) => {
+  const lat = parseCoord(url.searchParams.get('lat'), 90);
+  const lon = parseCoord(url.searchParams.get('lon'), 180);
+  if (lat === null || lon === null) {
+    return json({ ok: false, error: 'invalid-coordinates' }, 400);
   }
+  const rlat = round4(lat);
+  const rlon = round4(lon);
+  const [lat4, lon4] = coordKey(rlat, rlon);
 
-  try {
-    const apiUrl = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}`;
-    const init: CfRequestInit = {
-      headers: {
-        'User-Agent': 'meta-data-insight/1.0 (https://github.com/nicenemo/meta-data)'
-      },
-      cf: {
-        cacheTtl: 900,
-        cacheEverything: true
-      }
-    };
-    const response = await fetch(apiUrl, init);
+  return withCache(context, cacheKey('reverse-geocode', lat4, lon4), TTL, async () => {
+    const upstream = await fetchUpstream(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat4}&lon=${lon4}`
+    );
+    if (!upstream.ok) return upstream.error;
 
-    if (!response.ok) {
-      return json({ ok: false, error: `upstream-${response.status}` });
+    let result: any;
+    try {
+      result = await upstream.response.json();
+    } catch {
+      return json({ ok: false, error: 'upstream-invalid' }, 502);
     }
 
-    const result = await (await response.json()) as any;
-    const boundingBox = (result.boundingbox ?? []).map((value: string) => Number(value));
-    const precision = estimatePrecision(boundingBox);
+    const boundingBox = (Array.isArray(result?.boundingbox) ? result.boundingbox : []).map((value: string) => Number(value));
+    const address = result?.address ?? {};
+    const countryCode = typeof address.country_code === 'string' ? address.country_code.toUpperCase() : undefined;
     const data = {
-      address: result.display_name ?? 'Unknown address',
-      country: result.address?.country ?? 'Unknown',
-      countryCode: result.address?.country_code?.toUpperCase(),
-      city: result.address?.city ?? result.address?.town ?? result.address?.village,
-      state: result.address?.state,
-      district: result.address?.suburb ?? result.address?.county ?? result.address?.state_district,
-      road: result.address?.road ?? result.address?.pedestrian ?? result.address?.footway,
-      houseNumber: result.address?.house_number,
-      precisionMeters: precision,
-      lat,
-      lon
+      address: result?.display_name ?? 'Unknown address',
+      country: address.country ?? 'Unknown',
+      countryCode,
+      city: address.city ?? address.town ?? address.village,
+      state: address.state,
+      district: address.suburb ?? address.county ?? address.state_district,
+      road: address.road ?? address.pedestrian ?? address.footway,
+      houseNumber: address.house_number,
+      precisionMeters: estimatePrecision(boundingBox),
+      // The answer is shared by every request that rounds to the same cell,
+      // so it must describe the rounded point, not the caller's exact one.
+      lat: rlat,
+      lon: rlon
     };
 
-    return json({ ok: true, data });
-  } catch (error) {
-    return json({ ok: false, error: (error as Error).message ?? 'unexpected-error' });
-  }
-}
+    return json({ ok: true, data }, 200, undefined, TTL);
+  });
+});
 
 function estimatePrecision(boundingBox: number[]): number | undefined {
   if (boundingBox.length !== 4) return undefined;

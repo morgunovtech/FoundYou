@@ -65,7 +65,7 @@ const hasICC = true;  // Assume ICC might be present
 | **Ручные маски-кисти** | `ManualMask` — дорисовать закрашивание там, где автоматика не сработала. |
 | **«Анти-поиск»** | Микрокроп, поворот, шум, сдвиги яркости/контраста/насыщенности/оттенка, warp — против поиска по изображению. У chronoscope очистка сводилась к трём функциям: `removeMetadata()`, `blurFaces()`, `blurOCR()`. |
 | **Водяной знак, выбор качества JPEG** | Chronoscope умел только «скачать очищенное». |
-| **OCR мощнее** | `rus+eng` с предобработкой против однопроходного распознавания; ассеты Tesseract самохостятся (`npm run prepare:ocr` → `public/ocr/`), а не тянутся с CDN. |
+| **OCR мощнее** | `rus+eng` с предобработкой против однопроходного распознавания; ассеты Tesseract (worker, ядро, traineddata) и модель COCO-SSD самохостятся — `npm run prepare:assets` (входит в `npm run build`) раскладывает их в `public/ocr/` и `public/models/`, на этапе выполнения ничего не тянется с CDN. |
 | **Проверки качества** | eslint + vitest, 5 юнит-тестов утилит и 3 отдельных скрипта. У chronoscope был один Playwright-спек (`tests/basic.spec.ts`). |
 | **Обработка ошибок** | `ErrorBoundary` + `ErrorBanner`. В chronoscope выделенной обработки не было. |
 

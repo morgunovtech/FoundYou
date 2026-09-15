@@ -10,20 +10,22 @@ interface ErrorBannerProps {
 export const ErrorBanner: React.FC<ErrorBannerProps> = ({ message, onRetry, onDismiss }) => {
   const t = useT();
   return (
-    <div className="error-banner" role="alert">
+    <div className="fy-error" role="alert">
       <span>{message}</span>
-      <div style={{ display: 'flex', gap: '0.5rem' }}>
-        {onRetry ? (
-          <button type="button" className="button button--ghost" onClick={onRetry}>
-            {t('retry')}
-          </button>
-        ) : null}
-        {onDismiss ? (
-          <button type="button" className="button button--ghost" onClick={onDismiss} aria-label="Dismiss">
-            &times;
-          </button>
-        ) : null}
-      </div>
+      {onRetry || onDismiss ? (
+        <div className="fy-error-actions">
+          {onRetry ? (
+            <button type="button" className="v4-btn fy-btn-sm" onClick={onRetry}>
+              {t('retry')}
+            </button>
+          ) : null}
+          {onDismiss ? (
+            <button type="button" className="v4-btn fy-btn-sm" onClick={onDismiss} aria-label={t('dismiss')}>
+              &times;
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 };

@@ -1,7 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import exifr from 'exifr';
+import { stripContainerMetadata } from './utils/containerMetadata';
 import { InfoBlock } from './components/InfoBlock';
-import { LanguageSwitcher } from './components/LanguageSwitcher';
+import { SiteHeader } from './components/SiteHeader';
+import { SiteFooter } from './components/SiteFooter';
+import { SectionHead } from './components/SectionHead';
 import { UploadZone } from './components/UploadZone';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { useImageFile } from './hooks/useImageFile';
 import { useExifMetadata } from './hooks/useExifMetadata';
 import { PreviewViewer } from './components/PreviewViewer';
@@ -11,9 +16,18 @@ import { CleanupDownloadBlock } from './components/CleanupDownloadBlock';
 import { useImageAnalysis } from './hooks/useImageAnalysis';
 import { useOCR } from './hooks/useOCR';
 import { OCRBlock } from './components/OCRBlock';
-import { useI18n, useT } from './i18n';
-import { ThemeSwitcher } from './components/ThemeSwitcher';
-import type { AntiSearchParams, CleanupPreviewDimensions, ManualMask, QualityMode } from './types/cleanup';
+import { useI18n, useT, type MessageKey } from './i18n';
+import { FACE_LABEL, PERSON_LABEL, type DetectionErrorCode, type DetectionStage } from './types/detection';
+import type { OCRErrorCode, OCRStage } from './hooks/useOCR';
+import type {
+  AntiSearchParams,
+  CleanupPreviewDimensions,
+  ManualMask,
+  OutputFormat,
+  QualityMode,
+  VerifyResult
+} from './types/cleanup';
+import type { BasicFileInfo, StructuredMetadata } from './types/metadata';
 import { ProfileBlock } from './components/ProfileBlock';
 import { generateSceneNarrative } from './utils/sceneNarrative';
 import { analyzeFilename } from './utils/heuristics/filenameAnalyzer';
@@ -41,11 +55,11 @@ export interface ProData {
 import {
   applyAntiSearch,
   applyColorReduction,
-  applyDownscale,
   applyMirror,
   applyPrnuCleanup,
   applyWatermark,
   blurDetections,
+  selectBlurTargets,
   blurManualMasks,
   blurOcrRegions,
   generateAntiSearchParams
@@ -73,6 +87,54 @@ async function loadImageElement(src: string): Promise<HTMLImageElement> {
 const blurDefault = 28;
 const PREVIEW_MAX_DIMENSION = 2400;
 
+/** Pipeline stage ids from the analysis hooks → progress labels shown by PreviewViewer / OCRBlock. */
+const DETECTION_STAGE_KEYS: Record<DetectionStage, MessageKey> = {
+  prep: 'detectionStagePrep',
+  model: 'detectionStageModel',
+  decode: 'detectionStageDecode',
+  detect: 'detectionStageDetect',
+  process: 'detectionStageProcess',
+  done: 'detectionStageDone'
+};
+
+const OCR_STAGE_KEYS: Record<OCRStage, MessageKey> = {
+  queued: 'ocrStageQueued',
+  core: 'ocrStageLoad',
+  lang: 'ocrStageLang',
+  init: 'ocrStageInit',
+  recognize: 'ocrStageRecognize',
+  done: 'ocrStageDone'
+};
+
+/** Error codes from the hooks → user-facing messages (the hooks stay free of i18n). */
+const OCR_ERROR_KEYS: Record<OCRErrorCode, MessageKey> = {
+  'ocr-unavailable': 'ocrUnavailable',
+  'ocr-failed': 'ocrError'
+};
+
+const DETECTION_ERROR_KEYS: Record<DetectionErrorCode, MessageKey> = {
+  'detection-unavailable': 'detectionUnavailable',
+  'detection-failed': 'detectionFailed',
+  'content-unavailable': 'contentUnavailable'
+};
+
+/** Formats `canvas.toBlob` can actually produce; anything else falls back to JPEG. */
+const ENCODABLE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+/**
+ * iOS/iPadOS Safari refuses (or silently blanks) canvas backing stores above
+ * ~16 Mpx; iPadOS 13+ ships a desktop UA, hence the touch-point check.
+ */
+function isAppleMobile(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || '';
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  return /Macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 1;
+}
+
+const MAX_EXPORT_PIXELS = isAppleMobile() ? 16_000_000 : 40_000_000;
+const MAX_EXPORT_MEGAPIXELS = Math.round(MAX_EXPORT_PIXELS / 1_000_000);
+
 function qualityForMode(mode: QualityMode): number {
   switch (mode) {
     case 'low':
@@ -90,17 +152,79 @@ function createAnonymisedName(extension: string): string {
   return `photo-${random}.${extension}`;
 }
 
-function estimateDataUrlBytes(dataUrl: string): number {
-  const base64 = dataUrl.split(',')[1];
-  if (!base64) return 0;
-  const padding = (base64.match(/=+$/)?.[0].length ?? 0);
-  return Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
+/** Requested mime (what the UI shows) vs. the one we can hand to `toBlob`. */
+function resolveExportMime(outputFormat: OutputFormat, originalMime: string): { requested: string; mime: string } {
+  const requested = outputFormat === 'original' ? originalMime : `image/${outputFormat}`;
+  const mime = ENCODABLE_MIMES.has(requested) ? requested : 'image/jpeg';
+  return { requested, mime };
+}
+
+function extensionForMime(mime: string): string {
+  if (mime.includes('png')) return 'png';
+  if (mime.includes('webp')) return 'webp';
+  return 'jpg';
+}
+
+function mimeLabel(mime: string): string {
+  const sub = mime.replace(/^image\//, '');
+  if (sub === 'jpeg' || sub === 'jpg') return 'JPEG';
+  if (sub === 'webp') return 'WebP';
+  return sub.toUpperCase();
+}
+
+function countMetadataFields(metadata: StructuredMetadata | null): number {
+  if (!metadata) return 0;
+  const groups = metadata.groups;
+  return (['exif', 'xmp', 'iptc', 'icc'] as const).reduce(
+    (sum, key) => sum + Object.keys(groups[key] ?? {}).length,
+    0
+  );
+}
+
+/**
+ * Re-parses the exported blob and counts what survived. `null` means exifr
+ * could not read the container at all (WebP), not that fields remain.
+ */
+async function countRemainingMetadata(blob: Blob): Promise<number | null> {
+  try {
+    const parsed = await exifr.parse(blob, {
+      tiff: true,
+      xmp: true,
+      iptc: true,
+      icc: true,
+      ihdr: true,
+      mergeOutput: false
+    });
+    if (!parsed || typeof parsed !== 'object') return 0;
+    let count = 0;
+    for (const [segment, value] of Object.entries(parsed as Record<string, unknown>)) {
+      // PNG IHDR is the structural header (size, bit depth), not identifying metadata.
+      if (segment === 'ihdr') continue;
+      if (value && typeof value === 'object') {
+        count += Object.keys(value as Record<string, unknown>).length;
+      }
+    }
+    return count;
+  } catch (err) {
+    console.warn('verify-metadata', err);
+    return null;
+  }
+}
+
+interface ProcessedResult {
+  canvas: HTMLCanvasElement;
+  /** Scale the canvas was rendered at (preview may be smaller than export). */
+  scale: number;
+  /** Scale the real export will use — resolution preset and platform cap, no preview limit. */
+  exportScale: number;
+  /** True when the platform pixel cap forced a smaller export than the preset asked for. */
+  platformCapped: boolean;
 }
 
 const SEO_DESCRIPTIONS: Record<string, string> = {
-  ru: 'Бесплатный онлайн-инструмент для анализа и удаления метаданных из фотографий. EXIF, GPS, OCR, детекция лиц — всё локально в браузере.',
-  en: 'Free browser-based tool to analyze and remove photo metadata. EXIF, GPS, OCR, face detection — all processed locally, nothing uploaded.',
-  uz: 'Fotosuratlar metama\'lumotlarini tahlil qilish va olib tashlash uchun bepul vosita. EXIF, GPS, OCR — hammasi brauzerda ishlaydi.',
+  ru: 'Бесплатный онлайн-инструмент для анализа и удаления метаданных из фотографий. EXIF, GPS, OCR, поиск людей и объектов. Фото не покидает браузер; контекст места — только по запросу и по округлённым координатам.',
+  en: 'Free browser-based tool to analyze and remove photo metadata. EXIF, GPS, OCR, people and object detection. The photo never leaves your browser; place context only on request, from rounded coordinates.',
+  uz: "Fotosuratlar metama'lumotlarini tahlil qilish va olib tashlash uchun bepul vosita. EXIF, GPS, OCR, odamlar va obyektlarni aniqlash. Surat brauzerdan chiqmaydi; joy konteksti faqat so'rov bo'yicha, yaxlitlangan koordinatalar asosida.",
 };
 
 const SEO_TITLES: Record<string, string> = {
@@ -123,9 +247,13 @@ const App: React.FC = () => {
   }, [lang]);
   const { fileInfo, error, loading, processFile } = useImageFile();
   const { metadata } = useExifMetadata(fileInfo);
-  const { loading: analysisLoading, error: analysisError, detectionStatus, detections, summary: analysisSummary } =
+  const { loading: analysisLoading, error: analysisError, detectionStatus, detections, modelUnavailable, settledFile } =
     useImageAnalysis(fileInfo);
-  const { loading: ocrLoading, error: ocrError, result: ocrResult, progress: ocrProgress } = useOCR(fileInfo);
+  // OCR starts only once detection has settled for this very file (success or failure):
+  // both compete for the GPU/CPU and the network, and the profile needs detection first.
+  const { loading: ocrLoading, error: ocrError, result: ocrResult, progress: ocrProgress } = useOCR(fileInfo, {
+    enabled: settledFile === fileInfo
+  });
 
   const [digitalProfile, setDigitalProfile] = useState<DigitalProfile | null>(null);
   const [proData, setProData] = useState<ProData | null>(null);
@@ -153,7 +281,8 @@ const App: React.FC = () => {
         hasSoftwareTag: !!(exif.Software ?? exif.software ?? xmp.CreatorTool ?? xmp.creatorTool),
         lang,
       });
-      const temporalResult = analyzeDateTime(metadata?.shotDate, lang);
+      // Wall-clock of the camera, not the viewer's zone: "night photo" must be night where it was taken.
+      const temporalResult = analyzeDateTime(metadata?.shotDateLocal ?? metadata?.shotDate, lang);
       const hashResult = await generateFileHash(fileInfo.originalFile ?? fileInfo.file);
 
       if (cancelled) return;
@@ -179,11 +308,12 @@ const App: React.FC = () => {
 
   type NoticeState = { type: 'success' | 'error'; message: string };
 
-  const [removeMetadata, setRemoveMetadata] = useState(true);
+  const [prnuCleanup, setPrnuCleanup] = useState(true);
   const [blurFaces, setBlurFaces] = useState(false);
   const [blurStrength, setBlurStrength] = useState(blurDefault);
   const [qualityMode, setQualityMode] = useState<QualityMode>('medium');
-  const [renameFile, setRenameFile] = useState(false);
+  // The original filename is itself a leak the profile heuristics flag, so neutral naming is on by default.
+  const [renameFile, setRenameFile] = useState(true);
   const [manualMaskMode, setManualMaskMode] = useState(false);
   const [manualMasks, setManualMasks] = useState<ManualMask[]>([]);
   const [antiSearchEnabled, setAntiSearchEnabled] = useState(false);
@@ -194,21 +324,27 @@ const App: React.FC = () => {
   const [blurText, setBlurText] = useState(false);
   const [mirrorEnabled, setMirrorEnabled] = useState(false);
   const [downscaleMax, setDownscaleMax] = useState<number>(0); // 0 = off
-  const [outputFormat, setOutputFormat] = useState<'original' | 'jpeg' | 'png' | 'webp'>('original');
+  const [outputFormat, setOutputFormat] = useState<OutputFormat>('original');
   const [processing, setProcessing] = useState(false);
   const [notice, setNotice] = useState<NoticeState | null>(null);
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [estimatedSize, setEstimatedSize] = useState<number | null>(null);
   const [previewDimensions, setPreviewDimensions] = useState<CleanupPreviewDimensions | null>(null);
+  const [platformCapped, setPlatformCapped] = useState(false);
+  const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
   const reduceColor = antiSearchEnabled && antiSearchLevel === 3;
-  const prnuCleanup = removeMetadata;
   const watermark = watermarkEnabled;
 
-  const personDetections = useMemo(
-    () => detections.filter((det) => det.label === 'person'),
+  const metadataFieldCount = useMemo(() => countMetadataFields(metadata), [metadata]);
+
+  /** Boxes the "hide faces" option works from: detected faces plus person boxes (fallback for people without a face). */
+  const blurCandidates = useMemo(
+    () => detections.filter((det) => det.label === FACE_LABEL || det.label === PERSON_LABEL),
     [detections]
   );
+  /** Regions that will actually be blurred — shown as the count in the cleanup summary. */
+  const blurTargetCount = useMemo(() => selectBlurTargets(blurCandidates).length, [blurCandidates]);
 
   useEffect(() => {
     if (antiSearchEnabled) {
@@ -218,17 +354,81 @@ const App: React.FC = () => {
     }
   }, [antiSearchEnabled, antiSearchLevel]);
 
+  /**
+   * Swap the processed-preview blob URL, revoking whatever it replaces.
+   * Functional updater so concurrent callers never leak the previous URL.
+   */
+  const replacePreviewUrl = useCallback((next: string | null) => {
+    setPreviewDataUrl((prev) => {
+      if (prev && prev !== next && prev.startsWith('blob:')) {
+        URL.revokeObjectURL(prev);
+      }
+      return next;
+    });
+  }, []);
+
+  const previewUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    previewUrlRef.current = previewDataUrl;
+  }, [previewDataUrl]);
+  useEffect(
+    () => () => {
+      if (previewUrlRef.current && previewUrlRef.current.startsWith('blob:')) {
+        URL.revokeObjectURL(previewUrlRef.current);
+      }
+    },
+    []
+  );
+
+  /**
+   * Decoded source for the current file, shared by every preview regeneration
+   * and the export. Stored as a promise so parallel callers await one decode.
+   */
+  const sourceImageRef = useRef<{ url: string; promise: Promise<HTMLImageElement> } | null>(null);
+  const getSourceImage = useCallback((info: BasicFileInfo) => {
+    const cached = sourceImageRef.current;
+    if (cached && cached.url === info.dataUrl) return cached.promise;
+    const promise = loadImageElement(info.dataUrl).catch((err) => {
+      if (sourceImageRef.current?.promise === promise) sourceImageRef.current = null;
+      throw err;
+    });
+    sourceImageRef.current = { url: info.dataUrl, promise };
+    return promise;
+  }, []);
+
+  // New file (or none): drop the decoded source and every derived preview artefact.
+  useEffect(() => {
+    sourceImageRef.current = null;
+    replacePreviewUrl(null);
+    setEstimatedSize(null);
+    setPreviewDimensions(null);
+    setPlatformCapped(false);
+    setVerifyResult(null);
+  }, [fileInfo, replacePreviewUrl]);
+
+  // Once a file is accepted, bring the first results section into view and focus.
+  const previousFileRef = useRef<BasicFileInfo | null>(null);
+  useEffect(() => {
+    const previous = previousFileRef.current;
+    previousFileRef.current = fileInfo;
+    if (!fileInfo || fileInfo === previous) return;
+    const heading = document.getElementById('sec-file');
+    if (!heading) return;
+    const reduceMotion =
+      typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    heading.tabIndex = -1;
+    heading.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
+    heading.focus({ preventScroll: true });
+  }, [fileInfo]);
+
   const handleFile = useCallback(
     async (file: File) => {
-      setRemoveMetadata(true);
+      setPrnuCleanup(true);
       setBlurFaces(false);
       setBlurStrength(blurDefault);
       setNotice(null);
       setQualityMode('medium');
-      setPreviewDataUrl(null);
-      setPreviewLoading(true);
-      setEstimatedSize(null);
-      setRenameFile(false);
+      setRenameFile(true);
       setManualMasks([]);
       setManualMaskMode(false);
       setAntiSearchEnabled(false);
@@ -240,21 +440,32 @@ const App: React.FC = () => {
       setMirrorEnabled(false);
       setDownscaleMax(0);
       setOutputFormat('original');
-      setPreviewDimensions(null);
       await processFile(file);
     },
     [processFile]
   );
 
   const createProcessedCanvas = useCallback(
-    async (options?: { maxDimension?: number }) => {
+    async (options?: { maxDimension?: number }): Promise<ProcessedResult | null> => {
       if (!fileInfo) return null;
-      const longest = Math.max(fileInfo.width, fileInfo.height) || 1;
-      const targetScale = options?.maxDimension ? Math.min(1, options.maxDimension / longest) : 1;
-      const targetWidth = Math.max(1, Math.round(fileInfo.width * targetScale));
-      const targetHeight = Math.max(1, Math.round(fileInfo.height * targetScale));
+      const { width: sourceWidth, height: sourceHeight } = fileInfo;
+      const longest = Math.max(sourceWidth, sourceHeight) || 1;
 
-      const image = await loadImageElement(fileInfo.dataUrl);
+      // Base scale first: resolution preset, then the platform pixel cap, then
+      // (preview only) the preview ceiling. Every op below runs on that canvas,
+      // so nothing is ever rendered larger than the file that leaves the app.
+      const pixelCap = Math.sqrt(MAX_EXPORT_PIXELS / Math.max(1, sourceWidth * sourceHeight));
+      let exportScale = 1;
+      if (downscaleMax > 0) {
+        exportScale = Math.min(exportScale, downscaleMax / longest);
+      }
+      const platformCapped = pixelCap < exportScale;
+      exportScale = Math.min(exportScale, pixelCap);
+      const scale = options?.maxDimension ? Math.min(exportScale, options.maxDimension / longest) : exportScale;
+      const targetWidth = Math.max(1, Math.round(sourceWidth * scale));
+      const targetHeight = Math.max(1, Math.round(sourceHeight * scale));
+
+      const image = await getSourceImage(fileInfo);
       const baseCanvas = document.createElement('canvas');
       baseCanvas.width = targetWidth;
       baseCanvas.height = targetHeight;
@@ -264,18 +475,18 @@ const App: React.FC = () => {
       }
       ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
 
-      const scaledDetections = personDetections.map((det) => ({
+      const scaledDetections = blurCandidates.map((det) => ({
         ...det,
-        x: det.x * targetScale,
-        y: det.y * targetScale,
-        width: det.width * targetScale,
-        height: det.height * targetScale
+        x: det.x * scale,
+        y: det.y * scale,
+        width: det.width * scale,
+        height: det.height * scale
       }));
 
       const scaledMasks = manualMasks.map((mask) => ({
         ...mask,
-        points: mask.points.map((pt) => ({ x: pt.x * targetScale, y: pt.y * targetScale })),
-        radius: mask.radius * targetScale
+        points: mask.points.map((pt) => ({ x: pt.x * scale, y: pt.y * scale })),
+        radius: mask.radius * scale
       }));
 
       if (blurFaces && scaledDetections.length > 0) {
@@ -283,7 +494,7 @@ const App: React.FC = () => {
       }
 
       if (blurText && ocrResult && ocrResult.regions.length > 0) {
-        blurOcrRegions(ctx, baseCanvas, ocrResult.regions, blurStrength, targetScale);
+        blurOcrRegions(ctx, baseCanvas, ocrResult.regions, blurStrength, scale);
       }
 
       if (scaledMasks.length > 0) {
@@ -308,23 +519,20 @@ const App: React.FC = () => {
         workingCanvas = applyMirror(workingCanvas);
       }
 
-      if (downscaleMax > 0) {
-        workingCanvas = applyDownscale(workingCanvas, downscaleMax);
-      }
-
       if (watermark) {
         const wmText = watermarkText.trim() || t('watermarkText');
         workingCanvas = applyWatermark(workingCanvas, wmText);
       }
 
-      return workingCanvas;
+      return { canvas: workingCanvas, scale, exportScale, platformCapped };
     },
     [
       fileInfo,
+      getSourceImage,
       blurFaces,
       blurText,
       ocrResult,
-      personDetections,
+      blurCandidates,
       blurStrength,
       manualMasks,
       antiSearchEnabled,
@@ -336,7 +544,7 @@ const App: React.FC = () => {
       watermarkText,
       prnuCleanup,
       t
-  ]
+    ]
   );
 
   const handleDownload = useCallback(async () => {
@@ -347,26 +555,28 @@ const App: React.FC = () => {
     setNotice(null);
     try {
       if (import.meta.env.DEV) {
-        console.info('[pipeline] export:start', { mime: fileInfo.mimeType, qualityMode });
+        console.info('[pipeline] export:start', { mime: fileInfo.mimeType, qualityMode, outputFormat });
       }
-      const canvas = await createProcessedCanvas();
-      if (!canvas) {
+      const result = await createProcessedCanvas();
+      if (!result) {
         throw new Error('no-canvas');
       }
-      const originalMime = fileInfo.mimeType;
-      const exportMime = outputFormat === 'jpeg' ? 'image/jpeg'
-        : outputFormat === 'png' ? 'image/png'
-        : outputFormat === 'webp' ? 'image/webp'
-        : originalMime;
-      const extension = exportMime.includes('png') ? 'png' : exportMime.includes('webp') ? 'webp' : 'jpg';
-      const jpegQuality = qualityForMode(qualityMode);
-      const blob: Blob = await new Promise((resolve, reject) => {
-        const quality = exportMime === 'image/png' ? undefined : jpegQuality;
-        canvas.toBlob((result) => {
-          if (result) resolve(result);
+      const { canvas } = result;
+      setPlatformCapped(result.platformCapped);
+      const { requested, mime: exportMime } = resolveExportMime(outputFormat, fileInfo.mimeType);
+      const quality = exportMime === 'image/png' ? undefined : qualityForMode(qualityMode);
+      const encodedBlob: Blob = await new Promise((resolve, reject) => {
+        canvas.toBlob((encoded) => {
+          if (encoded) resolve(encoded);
           else reject(new Error('export-failed'));
         }, exportMime, quality);
       });
+      // The browser's encoder adds container metadata of its own (Chrome: an sRGB ICC
+      // profile in APP2 / iCCP). Harmless, but "0 fields left" must be literally true.
+      const blob = await stripContainerMetadata(encodedBlob);
+      // Safari answers a WebP request with PNG; trust the blob, not the request.
+      const actualMime = blob.type || exportMime;
+      const extension = extensionForMime(actualMime);
 
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
@@ -379,9 +589,17 @@ const App: React.FC = () => {
         URL.revokeObjectURL(link.href);
         document.body.removeChild(link);
       }, 2000);
-      setNotice({ type: 'success', message: t('downloadReady') });
+
+      const remaining = await countRemainingMetadata(blob);
+      setVerifyResult({ before: metadataFieldCount, after: remaining });
+
+      const messages = [t('downloadReady')];
+      if (actualMime !== requested) {
+        messages.push(t('formatFallback', { from: mimeLabel(requested), to: mimeLabel(actualMime) }));
+      }
+      setNotice({ type: 'success', message: messages.join(' ') });
       if (import.meta.env.DEV) {
-        console.info('[pipeline] export:done');
+        console.info('[pipeline] export:done', { mime: actualMime, remaining });
       }
     } catch (err) {
       console.error(err);
@@ -389,80 +607,63 @@ const App: React.FC = () => {
     } finally {
       setProcessing(false);
     }
-  }, [fileInfo, createProcessedCanvas, qualityMode, renameFile, t]);
+  }, [fileInfo, createProcessedCanvas, qualityMode, renameFile, outputFormat, metadataFieldCount, t]);
 
   useEffect(() => {
     if (!fileInfo) {
-      setPreviewDataUrl(null);
       setPreviewLoading(false);
-      setEstimatedSize(null);
-      setPreviewDimensions(null);
       return;
     }
     let cancelled = false;
     setPreviewLoading(true);
-    const longestSide = Math.max(fileInfo.width, fileInfo.height) || 1;
-    const previewScale = Math.min(1, PREVIEW_MAX_DIMENSION / longestSide);
+    // A new preview means the settings changed; the last verification no longer describes them.
+    setVerifyResult(null);
+    const { mime } = resolveExportMime(outputFormat, fileInfo.mimeType);
+    const quality = mime === 'image/png' ? undefined : qualityForMode(qualityMode);
+
+    const fail = (err: unknown) => {
+      console.error('cleanup-preview', err);
+      if (cancelled) return;
+      replacePreviewUrl(null);
+      setEstimatedSize(null);
+      setPreviewDimensions(null);
+      setPreviewLoading(false);
+      setNotice({ type: 'error', message: t('cleanupPreviewFailed') });
+    };
+
     const debounceTimer = setTimeout(() => {
-    createProcessedCanvas({ maxDimension: PREVIEW_MAX_DIMENSION })
-      .then((canvas) => {
-        if (!canvas || cancelled) {
-          return;
-        }
-        const mime = fileInfo.mimeType.includes('png') ? 'image/png' : 'image/jpeg';
-        const quality = mime === 'image/jpeg' ? qualityForMode(qualityMode) : undefined;
-        // Use blob URL instead of data URL — much less memory for large images
-        canvas.toBlob((blob) => {
-          if (!blob || cancelled) return;
-          // Revoke previous preview URL to free memory
-          setPreviewDataUrl((prev) => {
-            if (prev && prev.startsWith('blob:')) URL.revokeObjectURL(prev);
-            return URL.createObjectURL(blob);
-          });
-          setEstimatedSize(blob.size);
-          setPreviewDimensions({
-            width: Math.round(canvas.width / previewScale),
-            height: Math.round(canvas.height / previewScale)
-          });
-          setPreviewLoading(false);
-        }, mime, quality);
-      })
-      .catch((err) => {
-        console.error('cleanup-preview', err);
-        if (!cancelled) {
-          setPreviewDataUrl(null);
-          setEstimatedSize(null);
-          setPreviewDimensions(null);
-        }
-      })
-      .finally(() => {
-        // previewLoading is set to false inside toBlob callback on success,
-        // or here on error path
-      });
+      createProcessedCanvas({ maxDimension: PREVIEW_MAX_DIMENSION })
+        .then((result) => {
+          if (!result || cancelled) {
+            return;
+          }
+          const { canvas, scale, exportScale } = result;
+          // Encode with the export mime so the size estimate tracks the real output.
+          canvas.toBlob((blob) => {
+            if (cancelled) return;
+            if (!blob) {
+              fail(new Error('preview-encode'));
+              return;
+            }
+            const ratio = exportScale / scale;
+            const finalWidth = Math.max(1, Math.round(canvas.width * ratio));
+            const finalHeight = Math.max(1, Math.round(canvas.height * ratio));
+            const areaRatio = (finalWidth * finalHeight) / Math.max(1, canvas.width * canvas.height);
+            replacePreviewUrl(URL.createObjectURL(blob));
+            setEstimatedSize(Math.round(blob.size * areaRatio));
+            setPreviewDimensions({ width: finalWidth, height: finalHeight });
+            setPlatformCapped(result.platformCapped);
+            setPreviewLoading(false);
+          }, mime, quality);
+        })
+        .catch(fail);
     }, 300);
 
     return () => {
       cancelled = true;
       clearTimeout(debounceTimer);
     };
-  }, [
-    fileInfo,
-    blurFaces,
-    blurText,
-    manualMasks,
-    blurStrength,
-    antiSearchEnabled,
-    antiSearchParams,
-    reduceColor,
-    mirrorEnabled,
-    downscaleMax,
-    watermark,
-    watermarkEnabled,
-    watermarkText,
-    prnuCleanup,
-    qualityMode,
-    createProcessedCanvas
-  ]);
+  }, [fileInfo, createProcessedCanvas, qualityMode, outputFormat, replacePreviewUrl, t]);
 
   const handleManualMaskAdd = useCallback((mask: Omit<ManualMask, 'id'>) => {
     setManualMasks((current) => {
@@ -477,7 +678,8 @@ const App: React.FC = () => {
 
   const sceneDescription = useMemo(() => {
     if (analysisLoading) return t('sceneDescriptionLoading');
-    if (analysisError) return t('sceneDescriptionUnavailable');
+    // An unavailable model must never read as "nothing found".
+    if (analysisError) return t(DETECTION_ERROR_KEYS[analysisError]);
     if (!fileInfo || detections.length === 0) return t('sceneDescriptionEmpty');
     return generateSceneNarrative({
       detections,
@@ -488,110 +690,132 @@ const App: React.FC = () => {
   }, [analysisLoading, analysisError, fileInfo, detections, lang, t]);
 
   return (
-    <div className="app-shell">
-      <header className="title-row">
-        <div className="title-row__group">
-          <LanguageSwitcher />
-          <ThemeSwitcher />
-        </div>
-      </header>
-      <div className="intro-grid">
-        <InfoBlock />
-        <UploadZone loading={loading} onFile={handleFile} error={error ?? undefined} />
+    <>
+      <a href="#main" className="skip-link">
+        {t('skipToContent')}
+      </a>
+      <div className="v4-root">
+        <SiteHeader />
+        <main id="main" className="fy-main">
+          <section className="fy-hero" aria-labelledby="hero-title">
+            <InfoBlock />
+            <UploadZone loading={loading} onFile={handleFile} error={error ?? undefined} />
+          </section>
+
+          {fileInfo ? (
+            <ErrorBoundary variant="inline" resetKey={fileInfo}>
+              <section className="v4-section" aria-labelledby="sec-file">
+                <SectionHead num="01" title={t('sectionFile')} id="sec-file" />
+                <div className="fy-grid-2">
+                  <div className="fy-card">
+                    <PreviewViewer
+                      fileInfo={fileInfo}
+                      detections={detections}
+                      sceneDescription={sceneDescription}
+                      progress={
+                        analysisLoading && detectionStatus
+                          ? { label: t(DETECTION_STAGE_KEYS[detectionStatus.stage]), value: detectionStatus.progress }
+                          : null
+                      }
+                    />
+                  </div>
+                  <MetadataPanel fileInfo={fileInfo} metadata={metadata} />
+                </div>
+              </section>
+            </ErrorBoundary>
+          ) : null}
+
+          {fileInfo ? (
+            <ErrorBoundary variant="inline" resetKey={fileInfo}>
+              <OCRBlock
+                result={ocrResult}
+                loading={ocrLoading}
+                error={ocrError ? t(OCR_ERROR_KEYS[ocrError]) : null}
+                progress={ocrProgress ? { label: t(OCR_STAGE_KEYS[ocrProgress.stage]), value: ocrProgress.value } : null}
+              />
+            </ErrorBoundary>
+          ) : null}
+
+          {fileInfo && digitalProfile ? (
+            <ErrorBoundary variant="inline" resetKey={fileInfo}>
+              <ProfileBlock
+                profile={digitalProfile}
+                lang={lang}
+                metadata={metadata}
+                proData={proData}
+                fileInfo={fileInfo}
+                detections={detections}
+                ocrResult={ocrResult}
+              />
+            </ErrorBoundary>
+          ) : null}
+
+          {fileInfo ? (
+            <ErrorBoundary variant="inline" resetKey={fileInfo}>
+              <ShockBlock metadata={metadata} />
+            </ErrorBoundary>
+          ) : null}
+
+          {fileInfo ? (
+            <ErrorBoundary variant="inline" resetKey={fileInfo}>
+              <CleanupDownloadBlock
+                fileInfo={fileInfo}
+                prnuCleanup={prnuCleanup}
+                blurFaces={blurFaces}
+                blurStrength={blurStrength}
+                qualityMode={qualityMode}
+                renameFile={renameFile}
+                manualMaskMode={manualMaskMode}
+                manualMasks={manualMasks}
+                antiSearchEnabled={antiSearchEnabled}
+                previewDimensions={previewDimensions}
+                setPrnuCleanup={setPrnuCleanup}
+                setBlurFaces={setBlurFaces}
+                setBlurStrength={setBlurStrength}
+                setQualityMode={setQualityMode}
+                setRenameFile={setRenameFile}
+                setManualMaskMode={setManualMaskMode}
+                onManualMaskAdd={handleManualMaskAdd}
+                onManualMaskRemove={handleManualMaskRemove}
+                setAntiSearchEnabled={setAntiSearchEnabled}
+                antiSearchLevel={antiSearchLevel}
+                setAntiSearchLevel={setAntiSearchLevel}
+                watermarkEnabled={watermarkEnabled}
+                setWatermarkEnabled={setWatermarkEnabled}
+                watermarkText={watermarkText}
+                setWatermarkText={setWatermarkText}
+                blurText={blurText}
+                setBlurText={setBlurText}
+                mirrorEnabled={mirrorEnabled}
+                setMirrorEnabled={setMirrorEnabled}
+                downscaleMax={downscaleMax}
+                setDownscaleMax={setDownscaleMax}
+                outputFormat={outputFormat}
+                setOutputFormat={setOutputFormat}
+                ocrRegionCount={ocrResult?.regions.length ?? 0}
+                onClean={handleDownload}
+                processing={processing}
+                previewDataUrl={previewDataUrl}
+                previewLoading={previewLoading}
+                estimatedSize={estimatedSize}
+                blurTargetCount={blurTargetCount}
+                originalPreviewUrl={fileInfo.thumbnailUrl ?? null}
+                platformCapped={platformCapped}
+                platformCapMegapixels={MAX_EXPORT_MEGAPIXELS}
+                verifyResult={verifyResult}
+                detectionUnavailable={modelUnavailable}
+              />
+            </ErrorBoundary>
+          ) : null}
+          {notice ? (
+            <p className={`fy-status ${notice.type === 'success' ? 'fy-notice--positive' : 'fy-notice--negative'}`} role="status">
+              {notice.message}
+            </p>
+          ) : null}
+        </main>
+        <SiteFooter />
       </div>
-
-      {fileInfo ? (
-        <div className="grid-two-column">
-          <div className="panel">
-            <PreviewViewer
-              fileInfo={fileInfo}
-              detections={detections}
-              sceneDescription={sceneDescription}
-              progress={
-                analysisLoading && detectionStatus
-                  ? { label: detectionStatus.label, value: detectionStatus.progress }
-                  : null
-              }
-            />
-          </div>
-          <MetadataPanel fileInfo={fileInfo} metadata={metadata} />
-        </div>
-      ) : null}
-
-      {fileInfo ? (
-        <OCRBlock
-          result={ocrResult}
-          loading={ocrLoading}
-          error={ocrError}
-          progress={ocrProgress}
-        />
-      ) : null}
-
-      {fileInfo && digitalProfile ? (
-        <ProfileBlock
-          profile={digitalProfile}
-          lang={lang}
-          metadata={metadata}
-          proData={proData}
-          fileInfo={fileInfo}
-          detections={detections}
-          ocrResult={ocrResult}
-        />
-      ) : null}
-
-      {fileInfo ? (
-        <ShockBlock metadata={metadata} />
-      ) : null}
-
-      <CleanupDownloadBlock
-        fileInfo={fileInfo}
-        removeMetadata={removeMetadata}
-        blurFaces={blurFaces}
-        blurStrength={blurStrength}
-        qualityMode={qualityMode}
-        renameFile={renameFile}
-        manualMaskMode={manualMaskMode}
-        manualMasks={manualMasks}
-        antiSearchEnabled={antiSearchEnabled}
-        previewDimensions={previewDimensions}
-        setRemoveMetadata={setRemoveMetadata}
-        setBlurFaces={setBlurFaces}
-        setBlurStrength={setBlurStrength}
-        setQualityMode={setQualityMode}
-        setRenameFile={setRenameFile}
-        setManualMaskMode={setManualMaskMode}
-        onManualMaskAdd={handleManualMaskAdd}
-        onManualMaskRemove={handleManualMaskRemove}
-        setAntiSearchEnabled={setAntiSearchEnabled}
-        antiSearchLevel={antiSearchLevel}
-        setAntiSearchLevel={setAntiSearchLevel}
-        watermarkEnabled={watermarkEnabled}
-        setWatermarkEnabled={setWatermarkEnabled}
-        watermarkText={watermarkText}
-        setWatermarkText={setWatermarkText}
-        blurText={blurText}
-        setBlurText={setBlurText}
-        mirrorEnabled={mirrorEnabled}
-        setMirrorEnabled={setMirrorEnabled}
-        downscaleMax={downscaleMax}
-        setDownscaleMax={setDownscaleMax}
-        outputFormat={outputFormat}
-        setOutputFormat={setOutputFormat}
-        ocrRegionCount={ocrResult?.regions.length ?? 0}
-        onClean={handleDownload}
-        processing={processing}
-        previewDataUrl={previewDataUrl}
-        previewLoading={previewLoading}
-        estimatedSize={estimatedSize}
-        personDetections={personDetections}
-        originalPreviewUrl={fileInfo?.thumbnailUrl ?? null}
-      />
-      {notice ? (
-        <p className={`notice ${notice.type === 'success' ? 'notice--positive' : 'notice--negative'}`}>
-          {notice.message}
-        </p>
-      ) : null}
-    </div>
+    </>
   );
 };
 

@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { DigitalProfile } from '../utils/heuristics/digitalProfile';
 import { generateReport } from '../utils/heuristics/digitalProfile';
 import type { StructuredMetadata, BasicFileInfo } from '../types/metadata';
 import type { BoundingBox } from '../types/detection';
 import type { OCRResult } from '../hooks/useOCR';
 import type { ProData } from '../App';
+import { useT } from '../i18n';
+import { SectionHead } from './SectionHead';
 
 interface ProfileBlockProps {
   profile: DigitalProfile | null;
@@ -18,11 +20,18 @@ interface ProfileBlockProps {
 
 type Row = [string, string];
 
+/** Raw XMP/ICC dumps can run to thousands of rows; render this many and offer the rest on demand. */
+const PRO_ROW_CAP = 200;
+
 function formatValue(value: unknown): string {
   if (value == null) return '';
   if (value instanceof Date) return value.toISOString();
   if (typeof value === 'object') {
-    try { return JSON.stringify(value); } catch { return String(value); }
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
   }
   return String(value);
 }
@@ -55,10 +64,13 @@ function buildProGroups(
   // 1. Leak score + profile sections
   const profileRows: Row[] = [
     ['Leak Score', `${profile.leakScore}/100 (${profile.leakLevel.label})`],
-    ...profile.sections.map(s => [
-      `${s.icon} ${s.title}`,
-      `${s.text}${s.subtext ? ` — ${s.subtext}` : ''}${s.threatScenario ? ` [${s.threatScenario}]` : ''}`,
-    ] as Row),
+    ...profile.sections.map(
+      (s) =>
+        [
+          s.title,
+          `${s.text}${s.subtext ? ` — ${s.subtext}` : ''}${s.threatScenario ? ` [${s.threatScenario}]` : ''}`
+        ] as Row
+    )
   ];
   groups.push({ group: lang === 'ru' ? 'Профиль' : 'Profile', rows: profileRows });
 
@@ -70,7 +82,7 @@ function buildProGroups(
       ['size', `${(fileInfo.sizeBytes / 1024).toFixed(1)} KB`],
       ['dimensions', `${fileInfo.width} x ${fileInfo.height}`],
       ['aspectRatio', fileInfo.aspectRatio.toFixed(3)],
-      ['megapixels', ((fileInfo.width * fileInfo.height) / 1_000_000).toFixed(1)],
+      ['megapixels', ((fileInfo.width * fileInfo.height) / 1_000_000).toFixed(1)]
     ];
     if (fileInfo.wasConverted) {
       fileRows.push(['originalMimeType', fileInfo.originalMimeType ?? '']);
@@ -85,7 +97,7 @@ function buildProGroups(
     const rows: Row[] = [
       ['platform', fn.platform ?? '—'],
       ['device', fn.device || '—'],
-      ['confidence', fn.confidence > 0 ? `${(fn.confidence * 100).toFixed(0)}%` : '—'],
+      ['confidence', fn.confidence > 0 ? `${(fn.confidence * 100).toFixed(0)}%` : '—']
     ];
     if (fn.photoIndex != null) rows.push(['photoIndex', String(fn.photoIndex)]);
     if (fn.estimatedMonths != null) rows.push(['estimatedMonthsOfUse', String(fn.estimatedMonths)]);
@@ -99,7 +111,7 @@ function buildProGroups(
       ['possibleDevices', res.possibleDevices.length > 0 ? res.possibleDevices.join(', ') : '—'],
       ['contentType', res.contentType],
       ['contentHint', res.contentHint || '—'],
-      ['isScreenshot', String(res.isScreenshot)],
+      ['isScreenshot', String(res.isScreenshot)]
     ];
     groups.push({ group: lang === 'ru' ? 'Эвристика: разрешение' : 'Heuristic: resolution', rows });
   }
@@ -110,7 +122,7 @@ function buildProGroups(
     const rows: Row[] = [
       ['stripped', String(st.stripped)],
       ['strippedBy', st.strippedBy ?? '—'],
-      ['confidence', st.confidence > 0 ? `${(st.confidence * 100).toFixed(0)}%` : '—'],
+      ['confidence', st.confidence > 0 ? `${(st.confidence * 100).toFixed(0)}%` : '—']
     ];
     for (let i = 0; i < st.evidence.length; i++) {
       rows.push([`evidence[${i}]`, st.evidence[i]]);
@@ -126,7 +138,7 @@ function buildProGroups(
       ['editingLevel', ed.editingLevel],
       ['software', ed.software.length > 0 ? ed.software.join(', ') : '—'],
       ['isAiGenerated', String(ed.isAiGenerated)],
-      ['aiTool', ed.aiTool ?? '—'],
+      ['aiTool', ed.aiTool ?? '—']
     ];
     for (let i = 0; i < ed.hints.length; i++) {
       rows.push([`hint[${i}]`, ed.hints[i]]);
@@ -136,7 +148,10 @@ function buildProGroups(
 
   // 7. Temporal analysis
   if (proData?.temporal && proData.temporal.length > 0) {
-    const rows: Row[] = proData.temporal.map((t, i) => [`[${i}] ${t.severity}`, `${t.fact}${t.inference ? ` — ${t.inference}` : ''}`]);
+    const rows: Row[] = proData.temporal.map((t, i) => [
+      `[${i}] ${t.severity}`,
+      `${t.fact}${t.inference ? ` — ${t.inference}` : ''}`
+    ]);
     groups.push({ group: lang === 'ru' ? 'Эвристика: время' : 'Heuristic: temporal', rows });
   }
 
@@ -149,10 +164,10 @@ function buildProGroups(
   if (profile.serialNumbers.length > 0) {
     groups.push({
       group: lang === 'ru' ? 'Серийные номера' : 'Serial Numbers',
-      rows: profile.serialNumbers.map(s => {
+      rows: profile.serialNumbers.map((s) => {
         const idx = s.indexOf(': ');
         return idx >= 0 ? [s.slice(0, idx), s.slice(idx + 2)] : [s, ''];
-      }),
+      })
     });
   }
 
@@ -160,7 +175,7 @@ function buildProGroups(
   if (detections.length > 0) {
     const rows: Row[] = detections.map((d, i) => [
       `[${i}] ${d.label}`,
-      `score=${d.score.toFixed(2)} x=${Math.round(d.x)} y=${Math.round(d.y)} w=${Math.round(d.width)} h=${Math.round(d.height)}`,
+      `score=${d.score.toFixed(2)} x=${Math.round(d.x)} y=${Math.round(d.y)} w=${Math.round(d.width)} h=${Math.round(d.height)}`
     ]);
     groups.push({ group: lang === 'ru' ? 'Детекции объектов' : 'Object detections', rows });
   }
@@ -169,7 +184,7 @@ function buildProGroups(
   if (ocrResult) {
     const rows: Row[] = [
       ['regions', String(ocrResult.regions.length)],
-      ['fullText', ocrResult.fullText.length > 500 ? ocrResult.fullText.slice(0, 500) + '...' : ocrResult.fullText],
+      ['fullText', ocrResult.fullText.length > 500 ? ocrResult.fullText.slice(0, 500) + '...' : ocrResult.fullText]
     ];
     groups.push({ group: 'OCR', rows });
   }
@@ -191,10 +206,11 @@ function buildProGroups(
       structured.push(['gps.lat', String(metadata.gps.lat)]);
       structured.push(['gps.lon', String(metadata.gps.lon)]);
       if (metadata.gps.altitude != null) structured.push(['gps.altitude', `${metadata.gps.altitude}m`]);
-      if (metadata.gps.accuracy != null) structured.push(['gps.accuracy', `\u00b1${metadata.gps.accuracy}m`]);
-      if (metadata.gps.heading != null) structured.push(['gps.heading', `${metadata.gps.heading}\u00b0`]);
+      if (metadata.gps.accuracy != null) structured.push(['gps.accuracy', `±${metadata.gps.accuracy}m`]);
+      if (metadata.gps.heading != null) structured.push(['gps.heading', `${metadata.gps.heading}°`]);
     }
-    structured.push(['completeness', `${metadata.completeness}/100`]);
+    // completeness is a 0..1 ratio (metadataScore.ts) — show it as a percentage.
+    structured.push(['completeness', `${Math.round(metadata.completeness * 100)}/100`]);
     if (metadata.orientation) structured.push(['orientation', metadata.orientation]);
     if (structured.length > 0) {
       groups.push({ group: lang === 'ru' ? 'Структурированные поля' : 'Structured Fields', rows: structured });
@@ -216,22 +232,32 @@ function buildProGroups(
   return groups;
 }
 
-export const ProfileBlock: React.FC<ProfileBlockProps> = ({ profile, lang, metadata, proData, fileInfo, detections, ocrResult }) => {
+const ProfileBlockInner: React.FC<ProfileBlockProps> = ({ profile, lang, metadata, proData, fileInfo, detections, ocrResult }) => {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [proMode, setProMode] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+
+  const proGroups = useMemo(
+    () => (proMode && profile ? buildProGroups(profile, metadata, proData, fileInfo, detections, ocrResult, lang) : []),
+    [proMode, profile, metadata, proData, fileInfo, detections, ocrResult, lang]
+  );
 
   if (!profile || profile.sections.length === 0) return null;
 
   const handleCopy = () => {
     const report = generateReport(profile, lang);
-    navigator.clipboard.writeText(report).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }).catch(() => {
-      // Clipboard API denied (iframe, permissions policy) — fallback to text selection
-      console.warn('clipboard-write-denied');
-    });
+    navigator.clipboard
+      .writeText(report)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {
+        // Clipboard API denied (iframe, permissions policy) — nothing else to fall back to here.
+        console.warn('clipboard-write-denied');
+      });
   };
 
   const handleDownload = () => {
@@ -250,92 +276,101 @@ export const ProfileBlock: React.FC<ProfileBlockProps> = ({ profile, lang, metad
   };
 
   const scorePercent = Math.min(100, Math.max(0, profile.leakScore));
-  const proGroups = proMode ? buildProGroups(profile, metadata, proData, fileInfo, detections, ocrResult, lang) : [];
 
   return (
-    <section className="panel profile-panel">
-      <div className="profile-header">
-        <h3>{lang === 'ru' ? 'Цифровой профиль' : lang === 'uz' ? 'Raqamli profil' : 'Digital Profile'}</h3>
-        <button
-          type="button"
-          className={`button button--ghost pro-mode-btn ${proMode ? 'pro-mode-btn--active' : ''}`}
-          onClick={() => setProMode(!proMode)}
-        >
-          Pro
+    <section className="v4-section" aria-labelledby="sec-profile">
+      <SectionHead num="03" title={t('profileTitle')} id="sec-profile">
+        <button type="button" className="v4-btn fy-btn-sm" aria-pressed={proMode} onClick={() => setProMode(!proMode)}>
+          {t('proMode')}
         </button>
-      </div>
-
-      {proMode ? (
-        <div className="pro-table-container">
-          {proGroups.map((group, gi) => (
-            <div key={gi} className="pro-table-group">
-              <div className="pro-table-group__title">{group.group}</div>
-              <table className="pro-table">
-                <tbody>
-                  {group.rows.map(([key, value], ri) => (
-                    <tr key={ri}>
-                      <td className="pro-table__key">{key}</td>
-                      <td className="pro-table__value">{value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <>
-          <div className="profile-score">
-            <div className="profile-score__bar">
-              <div
-                className="profile-score__fill"
-                style={{ width: `${scorePercent}%`, backgroundColor: profile.leakLevel.color }}
-              />
-            </div>
-            <div className="profile-score__label" style={{ color: profile.leakLevel.color }}>
-              <strong>{profile.leakScore}/100</strong>
-              <span> — {profile.leakLevel.label}</span>
-            </div>
-            <p className="profile-score__desc">{profile.leakLevel.description}</p>
-          </div>
-
-          <div className="profile-sections">
-            {profile.sections.map((section, idx) => (
-              <div
-                key={idx}
-                className={`profile-section profile-section--${section.severity}`}
-                onClick={() => setExpandedIdx(expandedIdx === idx ? null : idx)}
-              >
-                <div className="profile-section__header">
-                  <span className="profile-section__icon">{section.icon}</span>
-                  <span className="profile-section__title">{section.title}</span>
-                  {section.leakPoints > 0 ? (
-                    <span className="profile-section__points">+{section.leakPoints}</span>
+      </SectionHead>
+      <div className="fy-card">
+        {proMode ? (
+          <div className="fy-pro">
+            {proGroups.map((group) => {
+              const expanded = Boolean(expandedGroups[group.group]);
+              const visibleRows = expanded ? group.rows : group.rows.slice(0, PRO_ROW_CAP);
+              const hiddenCount = group.rows.length - visibleRows.length;
+              return (
+                <div key={group.group} className="fy-pro-group">
+                  <h3 className="v4-h3">{group.group}</h3>
+                  <div className="fy-table-scroll">
+                    <table className="fy-pro-table">
+                      <tbody>
+                        {visibleRows.map(([key, value], ri) => (
+                          <tr key={`${key}-${ri}`}>
+                            <td>{key}</td>
+                            <td>{value}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {hiddenCount > 0 ? (
+                    <button
+                      type="button"
+                      className="v4-btn fy-btn-sm"
+                      onClick={() => setExpandedGroups((prev) => ({ ...prev, [group.group]: true }))}
+                    >
+                      {t('showMore', { count: hiddenCount })}
+                    </button>
                   ) : null}
                 </div>
-                <div className="profile-section__text">{section.text}</div>
-                {section.subtext ? (
-                  <div className="profile-section__subtext">{section.subtext}</div>
-                ) : null}
-                {expandedIdx === idx && section.threatScenario ? (
-                  <div className="profile-section__threat">{section.threatScenario}</div>
-                ) : null}
-              </div>
-            ))}
+              );
+            })}
           </div>
-        </>
-      )}
+        ) : (
+          <>
+            <div className="fy-score" data-level={profile.leakLevel.level}>
+              <div className="fy-score-bar">
+                <div className="fy-score-fill" style={{ width: `${scorePercent}%` }} />
+              </div>
+              <div className="fy-score-label">
+                <span className="fy-score-value">{profile.leakScore}/100</span>
+                <span className="fy-score-level">{profile.leakLevel.label}</span>
+              </div>
+              <p className="fy-score-desc">{profile.leakLevel.description}</p>
+            </div>
 
-      <div className="profile-export">
-        <button type="button" className="button button--ghost" onClick={handleCopy}>
-          {copied
-            ? (lang === 'ru' ? 'Скопировано!' : 'Copied!')
-            : (lang === 'ru' ? 'Скопировать отчёт' : lang === 'uz' ? 'Hisobotni nusxalash' : 'Copy report')}
-        </button>
-        <button type="button" className="button button--ghost" onClick={handleDownload}>
-          {lang === 'ru' ? 'Скачать .txt' : lang === 'uz' ? '.txt yuklab olish' : 'Download .txt'}
-        </button>
+            <div className="fy-findings">
+              {profile.sections.map((section, idx) => {
+                const expandable = Boolean(section.threatScenario);
+                const expanded = expandedIdx === idx;
+                return (
+                  <button
+                    type="button"
+                    key={`${section.title}-${idx}`}
+                    className="fy-finding"
+                    data-severity={section.severity}
+                    aria-expanded={expandable ? expanded : undefined}
+                    onClick={() => (expandable ? setExpandedIdx(expanded ? null : idx) : undefined)}
+                  >
+                    <div className="fy-finding-head">
+                      <span className="fy-finding-title">{section.title}</span>
+                      {section.leakPoints > 0 ? <span className="fy-finding-points">+{section.leakPoints}</span> : null}
+                    </div>
+                    <div className="fy-finding-text">{section.text}</div>
+                    {section.subtext ? <div className="fy-finding-sub">{section.subtext}</div> : null}
+                    {expanded && section.threatScenario ? <div className="fy-finding-threat">{section.threatScenario}</div> : null}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        <div className="fy-actions">
+          <button type="button" className="v4-btn fy-btn-sm" onClick={handleCopy}>
+            {copied ? t('copied') : t('copyReport')}
+          </button>
+          <button type="button" className="v4-btn fy-btn-sm" onClick={handleDownload}>
+            {t('downloadTxt')}
+          </button>
+        </div>
       </div>
     </section>
   );
 };
+
+export const ProfileBlock = React.memo(ProfileBlockInner);
+ProfileBlock.displayName = 'ProfileBlock';

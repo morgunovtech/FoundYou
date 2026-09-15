@@ -4,10 +4,22 @@
   "description": "Analyze and remove metadata from photos. EXIF, GPS, OCR, face detection — all locally in your browser.",
   "start_url": "/",
   "display": "standalone",
-  "theme_color": "#1a1a2e",
-  "background_color": "#0f0f1a",
+  "theme_color": "#edeae5",
+  "background_color": "#edeae5",
   "lang": "ru",
   "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
     {
       "src": "/favicon.svg",
       "sizes": "any",

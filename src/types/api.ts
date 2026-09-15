@@ -24,6 +24,20 @@ export interface HistoricalWeatherResult {
   cloudCover: number;
   windSpeed: number;
   pressure: number;
+  /** IANA zone the hour was resolved in (Open-Meteo `timezone=auto`); absent for legacy UTC lookups. */
+  timezone?: string;
+}
+
+export interface HolidayEntry {
+  date: string;
+  localName: string;
+  name: string;
+  global: boolean;
+}
+
+export interface HolidaysResult {
+  isHoliday: boolean;
+  holidays: HolidayEntry[];
 }
 
 export interface PoiResult {

@@ -5,37 +5,261 @@ type RawMetadata = {
   xmpData: Record<string, unknown> | undefined;
   iptcData: Record<string, unknown> | undefined;
   iccData: Record<string, unknown> | undefined;
+  /** PNG only: IHDR header fields + text chunks (tEXt / zTXt / iTXt). */
+  pngData: Record<string, unknown> | undefined;
   gpsRaw: Record<string, unknown> | undefined;
 };
 
-/**
- * Extract EXIF TIFF blob from HEIC/HEIF ISO BMFF container.
- * HEIC stores EXIF data as 'Exif\x00\x00' + TIFF stream inside a metadata item.
- * exifr cannot parse HEIC containers directly, so we extract the TIFF blob first.
+/* ── HEIF / ISO-BMFF Exif extraction ─────────────────────────────────────────
+ *
+ * exifr cannot open HEIC containers, so the TIFF stream is cut out first. The Exif item
+ * (ISO/IEC 23008-12 §A.2.1) is `exif_tiff_header_offset` (4 bytes, big-endian) followed by
+ * the TIFF header at `4 + offset`. Apple writes offset 6 and puts the JPEG-style `Exif\0\0`
+ * marker in front of the TIFF; libheif's heif-enc and most other encoders write offset 0 and
+ * a bare TIFF — which the old "search for Exif\0\0" scan never found.
+ *
+ * The box walk locates the item exactly: meta → iinf (which item is `Exif`) → iloc (where
+ * its bytes are: absolute file offsets for construction_method 0, offsets into `idat` for 1).
+ * The marker scan is kept only as a fallback for files with a damaged `meta`.
  */
-async function extractExifFromHeic(file: File): Promise<ArrayBuffer | null> {
+
+/** Hard cap on the returned TIFF (a real Exif block is tens of KB; some embed a preview JPEG). */
+const TIFF_MAX_BYTES = 8 * 1024 * 1024;
+
+interface Box {
+  type: string;
+  /** Offset of the first payload byte (after size + type [+ largesize]). */
+  payload: number;
+  end: number;
+}
+
+interface ItemLocation {
+  constructionMethod: number;
+  dataReferenceIndex: number;
+  baseOffset: number;
+  extents: Array<{ offset: number; length: number }>;
+}
+
+const fourcc = (bytes: Uint8Array, at: number) =>
+  String.fromCharCode(bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]);
+
+const dataView = (bytes: Uint8Array) => new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+
+/** Boxes of one nesting level in [start, end). Stops at the first malformed header. */
+function* iterateBoxes(bytes: Uint8Array, start: number, end: number): Generator<Box> {
+  const view = dataView(bytes);
+  let offset = start;
+  while (offset + 8 <= end) {
+    let size = view.getUint32(offset);
+    const type = fourcc(bytes, offset + 4);
+    let header = 8;
+    if (size === 1) {
+      if (offset + 16 > end) return;
+      size = Number(view.getBigUint64(offset + 8));
+      header = 16;
+    } else if (size === 0) {
+      size = end - offset; // extends to the end of the enclosing box
+    }
+    if (size < header) return;
+    yield { type, payload: offset + header, end: Math.min(offset + size, end) };
+    offset += size;
+  }
+}
+
+/** Reads a 0/4/8-byte unsigned field used by iloc; other widths are invalid per spec. */
+function readSized(view: DataView, at: number, size: number): number {
+  if (size === 0) return 0;
+  if (size === 4) return view.getUint32(at);
+  if (size === 8) return Number(view.getBigUint64(at));
+  throw new RangeError(`iloc field size ${size}`);
+}
+
+/** Item IDs whose `infe` declares item_type 'Exif'. */
+function parseExifItemIds(bytes: Uint8Array, iinf: Box): number[] {
+  const view = dataView(bytes);
+  const version = bytes[iinf.payload];
+  const countAt = iinf.payload + 4;
+  const entriesAt = version === 0 ? countAt + 2 : countAt + 4;
+  const ids: number[] = [];
+  for (const infe of iterateBoxes(bytes, entriesAt, iinf.end)) {
+    if (infe.type !== 'infe') continue;
+    const infeVersion = bytes[infe.payload];
+    if (infeVersion < 2) continue; // v0/v1 carry no item_type
+    let at = infe.payload + 4;
+    const itemId = infeVersion === 2 ? view.getUint16(at) : view.getUint32(at);
+    at += infeVersion === 2 ? 2 : 4;
+    at += 2; // item_protection_index
+    if (at + 4 > infe.end) continue;
+    if (fourcc(bytes, at) === 'Exif') ids.push(itemId);
+  }
+  return ids;
+}
+
+function parseItemLocations(bytes: Uint8Array, iloc: Box): Map<number, ItemLocation> {
+  const view = dataView(bytes);
+  const version = bytes[iloc.payload];
+  let at = iloc.payload + 4;
+  const offsetSize = bytes[at] >> 4;
+  const lengthSize = bytes[at] & 0x0f;
+  const baseOffsetSize = bytes[at + 1] >> 4;
+  const indexSize = version === 1 || version === 2 ? bytes[at + 1] & 0x0f : 0;
+  at += 2;
+  const itemCount = version < 2 ? view.getUint16(at) : view.getUint32(at);
+  at += version < 2 ? 2 : 4;
+
+  const locations = new Map<number, ItemLocation>();
+  for (let i = 0; i < itemCount && at < iloc.end; i++) {
+    const itemId = version < 2 ? view.getUint16(at) : view.getUint32(at);
+    at += version < 2 ? 2 : 4;
+    let constructionMethod = 0;
+    if (version === 1 || version === 2) {
+      constructionMethod = view.getUint16(at) & 0x0f;
+      at += 2;
+    }
+    const dataReferenceIndex = view.getUint16(at);
+    at += 2;
+    const baseOffset = readSized(view, at, baseOffsetSize);
+    at += baseOffsetSize;
+    const extentCount = view.getUint16(at);
+    at += 2;
+    const extents: ItemLocation['extents'] = [];
+    for (let e = 0; e < extentCount; e++) {
+      at += indexSize; // extent_index — unused (only meaningful for construction_method 2)
+      const offset = readSized(view, at, offsetSize);
+      at += offsetSize;
+      const length = readSized(view, at, lengthSize);
+      at += lengthSize;
+      extents.push({ offset, length });
+    }
+    locations.set(itemId, { constructionMethod, dataReferenceIndex, baseOffset, extents });
+  }
+  return locations;
+}
+
+/** Concatenates the Exif item's extents; a single extent is returned as a view (no copy). */
+function readItemBytes(bytes: Uint8Array, location: ItemLocation, idat: Box | null): Uint8Array | null {
+  if (location.dataReferenceIndex !== 0) return null; // data lives in another file
+  let base: number;
+  let limit: number;
+  if (location.constructionMethod === 0) {
+    base = location.baseOffset;
+    limit = bytes.length;
+  } else if (location.constructionMethod === 1 && idat) {
+    base = idat.payload + location.baseOffset;
+    limit = idat.end;
+  } else {
+    return null; // construction_method 2 (item offsets) is not used for Exif in practice
+  }
+
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  for (const extent of location.extents) {
+    const start = base + extent.offset;
+    const end = start + extent.length;
+    if (extent.length <= 0 || start < 0 || end > limit) return null;
+    parts.push(bytes.subarray(start, end));
+    total += extent.length;
+  }
+  if (parts.length === 0) return null;
+  if (parts.length === 1) return parts[0];
+  const joined = new Uint8Array(total);
+  let cursor = 0;
+  for (const part of parts) {
+    joined.set(part, cursor);
+    cursor += part.length;
+  }
+  return joined;
+}
+
+const isTiffHeader = (bytes: Uint8Array, at: number) =>
+  at + 4 <= bytes.length &&
+  ((bytes[at] === 0x49 && bytes[at + 1] === 0x49 && bytes[at + 2] === 0x2a && bytes[at + 3] === 0x00) || // "II*\0"
+    (bytes[at] === 0x4d && bytes[at + 1] === 0x4d && bytes[at + 2] === 0x00 && bytes[at + 3] === 0x2a)); // "MM\0*"
+
+const isExifMarker = (bytes: Uint8Array, at: number) =>
+  at + 6 <= bytes.length &&
+  bytes[at] === 0x45 && bytes[at + 1] === 0x78 && bytes[at + 2] === 0x69 && bytes[at + 3] === 0x66 && // "Exif"
+  bytes[at + 4] === 0x00 && bytes[at + 5] === 0x00;
+
+/** First TIFF header in [from, to), with or without a leading "Exif\0\0"; -1 when absent. */
+function findTiffHeader(bytes: Uint8Array, from: number, to: number): number {
+  for (let i = from; i + 4 <= to; i++) {
+    if (isTiffHeader(bytes, i)) return i;
+  }
+  return -1;
+}
+
+/** Exif item payload → TIFF stream (ISO 23008-12 A.2.1, tolerant of the common writer mistakes). */
+function tiffFromExifItem(item: Uint8Array): Uint8Array | null {
+  if (item.length < 4 + 8) return null;
+  const headerOffset = dataView(item).getUint32(0);
+  let start = 4 + headerOffset;
+  if (start + 8 > item.length) start = 4; // nonsense offset — assume the TIFF follows the field
+  if (isExifMarker(item, start)) start += 6; // Apple (offset 6) and writers that add the marker but declare 0
+  if (!isTiffHeader(item, start)) {
+    const found = findTiffHeader(item, 0, item.length);
+    if (found === -1) return null;
+    start = found;
+  }
+  return item.slice(start, Math.min(item.length, start + TIFF_MAX_BYTES));
+}
+
+/** ISO-BMFF walk: meta → iinf/iloc/idat → Exif item → TIFF. Null when the structure is absent or broken. */
+function locateExifViaBoxes(bytes: Uint8Array): Uint8Array | null {
   try {
-    const buffer = await file.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    // Search for 'Exif\x00\x00' followed by TIFF header ('II' or 'MM')
-    for (let i = 0; i < bytes.length - 8; i++) {
-      if (
-        bytes[i] === 0x45 && bytes[i + 1] === 0x78 && // Ex
-        bytes[i + 2] === 0x69 && bytes[i + 3] === 0x66 && // if
-        bytes[i + 4] === 0x00 && bytes[i + 5] === 0x00    // \0\0
-      ) {
-        // Check next 2 bytes for TIFF byte order mark
-        const b0 = bytes[i + 6];
-        const b1 = bytes[i + 7];
-        if ((b0 === 0x49 && b1 === 0x49) || (b0 === 0x4D && b1 === 0x4D)) {
-          // Found TIFF header — extract a generous chunk (64KB should cover any EXIF)
-          const tiffStart = i + 6;
-          const tiffEnd = Math.min(tiffStart + 65536, bytes.length);
-          return buffer.slice(tiffStart, tiffEnd);
-        }
+    for (const box of iterateBoxes(bytes, 0, bytes.length)) {
+      if (box.type !== 'meta') continue;
+      let iinf: Box | null = null;
+      let iloc: Box | null = null;
+      let idat: Box | null = null;
+      // `meta` is a FullBox: 4 bytes of version/flags precede its children.
+      for (const child of iterateBoxes(bytes, box.payload + 4, box.end)) {
+        if (child.type === 'iinf') iinf = child;
+        else if (child.type === 'iloc') iloc = child;
+        else if (child.type === 'idat') idat = child;
+      }
+      if (!iinf || !iloc) continue;
+      const locations = parseItemLocations(bytes, iloc);
+      for (const itemId of parseExifItemIds(bytes, iinf)) {
+        const location = locations.get(itemId);
+        if (!location) continue;
+        const item = readItemBytes(bytes, location, idat);
+        const tiff = item && tiffFromExifItem(item);
+        if (tiff) return tiff;
       }
     }
-    return null;
+  } catch {
+    // Truncated or malformed boxes — fall back to the marker scan below.
+  }
+  return null;
+}
+
+/** Legacy fallback: "Exif\0\0" immediately followed by a TIFF header anywhere in the file. */
+function scanForExifMarker(bytes: Uint8Array): Uint8Array | null {
+  let i = bytes.indexOf(0x45);
+  while (i !== -1 && i + 10 <= bytes.length) {
+    if (isExifMarker(bytes, i) && isTiffHeader(bytes, i + 6)) {
+      const start = i + 6;
+      return bytes.slice(start, Math.min(bytes.length, start + TIFF_MAX_BYTES));
+    }
+    i = bytes.indexOf(0x45, i + 1);
+  }
+  return null;
+}
+
+/**
+ * TIFF stream of the Exif item in a HEIF/HEIC/AVIF container (any brand: heic, heix, hevc,
+ * heim, heis, hevm, mif1, msf1 share the same meta/iinf/iloc layout), or null.
+ * Exported for tests; the app goes through `extractMetadataFromOriginal`.
+ */
+export function extractExifTiffFromHeif(bytes: Uint8Array): Uint8Array | null {
+  if (bytes.length < 16) return null;
+  return locateExifViaBoxes(bytes) ?? scanForExifMarker(bytes);
+}
+
+async function extractExifFromHeic(file: File): Promise<Uint8Array | null> {
+  try {
+    return extractExifTiffFromHeif(new Uint8Array(await file.arrayBuffer()));
   } catch {
     return null;
   }
@@ -48,14 +272,26 @@ function isHeicFile(file: File): boolean {
   return /\.(heic|heif)$/i.test(file.name);
 }
 
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/** Magic-byte check — MIME types from the OS are not reliable for renamed files. */
+async function isPngFile(file: File): Promise<boolean> {
+  try {
+    const head = new Uint8Array(await file.slice(0, PNG_SIGNATURE.length).arrayBuffer());
+    return PNG_SIGNATURE.every((byte, index) => head[index] === byte);
+  } catch {
+    return false;
+  }
+}
+
 export async function extractMetadataFromOriginal(file: File): Promise<RawMetadata> {
   // For HEIC files: extract EXIF TIFF blob from the ISO BMFF container,
   // then parse that blob with exifr (which doesn't support HEIC natively).
-  let parseSource: File | ArrayBuffer = file;
+  let parseSource: File | Uint8Array = file;
   if (isHeicFile(file)) {
-    const exifBlob = await extractExifFromHeic(file);
-    if (exifBlob) {
-      parseSource = exifBlob;
+    const exifTiff = await extractExifFromHeic(file);
+    if (exifTiff) {
+      parseSource = exifTiff;
     }
     // If no EXIF found in HEIC, fall through to try parsing the file directly
     // (will likely return empty, but no harm)
@@ -69,6 +305,9 @@ export async function extractMetadataFromOriginal(file: File): Promise<RawMetada
       xmp: true,
       iptc: true,
       icc: true,
+      // PNG header + tEXt chunks (Stable Diffusion `parameters`, ComfyUI `workflow`, …).
+      // exifr only ever emits this segment for PNG sources, so it is harmless for JPEG/HEIC.
+      ihdr: true,
       translateKeys: true,
       translateValues: false,
     })
@@ -76,15 +315,34 @@ export async function extractMetadataFromOriginal(file: File): Promise<RawMetada
 
   const gpsRaw = await safeExtract(() => (exifr as any).gps(parseSource));
 
+  // PNG: collect the header + every text chunk separately so they can live in their own group.
+  let pngData: Record<string, unknown> | undefined;
+  if (await isPngFile(file)) {
+    const header = (await safeExtract(() =>
+      exifr.parse(file, {
+        ihdr: true,
+        tiff: false,
+        exif: false,
+        gps: false,
+        xmp: false,
+        iptc: false,
+        icc: false,
+        mergeOutput: false,
+        translateKeys: true,
+        translateValues: true,
+      })
+    )) as { ihdr?: Record<string, unknown> } | undefined;
+    const text = await safeExtract(() => readPngTextChunks(file));
+    const merged = { ...(header?.ihdr ?? {}), ...(text ?? {}) };
+    if (Object.keys(merged).length > 0) {
+      pngData = merged;
+    }
+  }
+
   const base = parsed ?? {};
 
   // exifr returns all segments merged into one flat object when parsed together.
   // Split them back into logical groups for the rest of the pipeline.
-  const GPS_KEYS = new Set(['latitude', 'longitude', 'altitude', 'latitudeRef', 'longitudeRef',
-    'altitudeRef', 'speed', 'speedRef', 'heading', 'headingRef', 'accuracy',
-    'GPSLatitude', 'GPSLongitude', 'GPSAltitude', 'GPSLatitudeRef', 'GPSLongitudeRef',
-    'GPSAltitudeRef', 'GPSSpeed', 'GPSSpeedRef', 'GPSImgDirection', 'GPSImgDirectionRef',
-    'lat', 'lon', 'gpsHPositioningError', 'GPSDOP']);
   const XMP_KEYS = new Set(['Rating', 'Label', 'Subject', 'Description', 'Title',
     'Creator', 'Rights', 'CreatorTool', 'CreateDate', 'ModifyDate', 'MetadataDate',
     'xmp', 'dc', 'photoshop', 'xmpMM', 'crs']);
@@ -101,6 +359,12 @@ export async function extractMetadataFromOriginal(file: File): Promise<RawMetada
   const iccData: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(base)) {
+    if (pngData && key in pngData) {
+      // Header/text chunk → `png` group. `Software` is mirrored into exif because the
+      // stripped-metadata and editing-history heuristics read `exif.Software`.
+      if (key === 'Software') exifData[key] = value;
+      continue;
+    }
     if (ICC_KEYS.has(key)) { iccData[key] = value; }
     else if (IPTC_KEYS.has(key)) { iptcData[key] = value; }
     else if (XMP_KEYS.has(key)) { xmpData[key] = value; }
@@ -112,8 +376,93 @@ export async function extractMetadataFromOriginal(file: File): Promise<RawMetada
     xmpData,
     iptcData,
     iccData,
+    pngData,
     gpsRaw: (gpsRaw ?? {}) as Record<string, unknown>,
   };
+}
+
+const PNG_TEXT_CHUNKS = new Set(['tEXt', 'zTXt', 'iTXt']);
+/** A single prompt/workflow payload is a few KB; anything past this is not text we want to hold. */
+const PNG_TEXT_MAX_CHUNK = 4 * 1024 * 1024;
+
+/**
+ * PNG text chunks. exifr surfaces `tEXt` only (and XMP hidden in iTXt); generators such as
+ * Automatic1111 write non-Latin prompts as `iTXt`, and some tools compress them (`zTXt`,
+ * compressed `iTXt`). Read all three so `parameters` / `prompt` / `workflow` show up.
+ */
+async function readPngTextChunks(file: File): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {};
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  const latin1 = new TextDecoder('latin1');
+  const utf8 = new TextDecoder('utf-8');
+
+  let offset = PNG_SIGNATURE.length;
+  while (offset + 8 <= bytes.length) {
+    const size = view.getUint32(offset);
+    const type = latin1.decode(bytes.subarray(offset + 4, offset + 8));
+    const start = offset + 8;
+    const end = start + size;
+    if (end > bytes.length || type === 'IEND') break;
+    if (PNG_TEXT_CHUNKS.has(type) && size <= PNG_TEXT_MAX_CHUNK) {
+      try {
+        const entry = await decodePngTextChunk(type, bytes.subarray(start, end), latin1, utf8);
+        if (entry) out[entry.key] = entry.value;
+      } catch {
+        // Malformed or unsupported compression — skip this chunk, keep the rest.
+      }
+    }
+    offset = end + 4; // + CRC
+  }
+  return out;
+}
+
+async function decodePngTextChunk(
+  type: string,
+  chunk: Uint8Array,
+  latin1: TextDecoder,
+  utf8: TextDecoder
+): Promise<{ key: string; value: string } | null> {
+  const nulAfter = (from: number) => {
+    const index = chunk.indexOf(0, from);
+    return index === -1 ? chunk.length : index;
+  };
+  const keyEnd = nulAfter(0);
+  const key = latin1.decode(chunk.subarray(0, keyEnd)).trim();
+  if (!key) return null;
+
+  if (type === 'tEXt') {
+    return { key, value: latin1.decode(chunk.subarray(keyEnd + 1)) };
+  }
+
+  if (type === 'zTXt') {
+    // keyword \0 compressionMethod(1) compressedText
+    if (chunk[keyEnd + 1] !== 0) return null;
+    const text = await inflate(chunk.subarray(keyEnd + 2));
+    return text ? { key, value: latin1.decode(text) } : null;
+  }
+
+  // iTXt: keyword \0 compressionFlag(1) compressionMethod(1) languageTag \0 translatedKeyword \0 text
+  const compressed = chunk[keyEnd + 1] === 1;
+  const method = chunk[keyEnd + 2];
+  const languageEnd = nulAfter(keyEnd + 3);
+  const translatedEnd = nulAfter(languageEnd + 1);
+  const payload = chunk.subarray(translatedEnd + 1);
+  if (!compressed) {
+    return { key, value: utf8.decode(payload) };
+  }
+  if (method !== 0) return null;
+  const text = await inflate(payload);
+  return text ? { key, value: utf8.decode(text) } : null;
+}
+
+/** zlib-inflate via the platform stream API; null when the browser has none. */
+async function inflate(data: Uint8Array): Promise<Uint8Array | null> {
+  if (typeof DecompressionStream === 'undefined') return null;
+  // `slice()` copies onto a plain ArrayBuffer — Blob refuses a view over a SharedArrayBuffer-typed buffer.
+  const stream = new Blob([data.slice()]).stream().pipeThrough(new DecompressionStream('deflate'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
 type HeicDecodeResult = {
@@ -123,23 +472,6 @@ type HeicDecodeResult = {
 };
 
 const HEIC_MAX_SIDE = 2200;
-
-function createImageFromBlob(blob: Blob): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(blob);
-    const image = new Image();
-    image.decoding = 'async';
-    image.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve(image);
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('image-load'));
-    };
-    image.src = url;
-  });
-}
 
 /**
  * Try native browser HEIC decoding via createImageBitmap.
@@ -213,9 +545,20 @@ export async function decodeHeicToJpegForPreview(sourceFile: File): Promise<Heic
         cleanup: () => { if (imgSrc.startsWith('blob:')) URL.revokeObjectURL(imgSrc); },
       };
     } else {
-      // Strategy 3: libheif-js WASM decoder (supports all HEIC variants)
-      const libheifModule = await import('libheif-js');
-      const libheif = (libheifModule as any).default ?? libheifModule;
+      // Strategy 3: libheif-js WASM decoder (supports all HEIC variants).
+      // The package default (`libheif-js`) inlines the 1.4 MB wasm as base64 into a 3 MB JS
+      // chunk. The `libheif-wasm` variant ships the same emscripten glue (91 KB) with a
+      // separate `.wasm` that Vite emits as a hashed asset; the factory instantiates
+      // synchronously when handed `wasmBinary`, so the module is usable right away.
+      const [glue, { default: wasmUrl }] = await Promise.all([
+        import('libheif-js/libheif-wasm/libheif.js'),
+        import('libheif-js/libheif-wasm/libheif.wasm?url'),
+      ]);
+      const wasmResponse = await fetch(wasmUrl);
+      if (!wasmResponse.ok) throw new Error(`heic-convert: libheif.wasm ${wasmResponse.status}`);
+      const wasmBinary = await wasmResponse.arrayBuffer();
+      const createLibheif = ((glue as any).default ?? glue) as (options: { wasmBinary: ArrayBuffer }) => any;
+      const libheif = createLibheif({ wasmBinary });
       const decoder = new libheif.HeifDecoder();
       const buffer = await sourceFile.arrayBuffer();
       const data = new Uint8Array(buffer);
