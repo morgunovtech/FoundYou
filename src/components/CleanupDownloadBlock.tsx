@@ -419,12 +419,13 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
 
   return (
     <section className="v4-section" aria-labelledby="sec-cleanup">
-      <SectionHead num="05" title={t('cleanupTitle')} id="sec-cleanup">
+      <SectionHead num="02" title={t('cleanupTitle')} id="sec-cleanup" />
+      <div className="fy-toolbar">
+        <p className="fy-hint">{t('cleanupHint')}</p>
         <button type="button" className="v4-btn fy-btn-sm" onClick={handleApplyAll}>
           {t('cleanupApplyAll')}
         </button>
-      </SectionHead>
-      <p className="fy-section-lead">{t('cleanupHint')}</p>
+      </div>
 
       <div className="fy-cleanup">
         <div className="fy-grid-cards">

@@ -4,18 +4,14 @@ import { stripContainerMetadata } from './utils/containerMetadata';
 import { InfoBlock } from './components/InfoBlock';
 import { SiteHeader } from './components/SiteHeader';
 import { SiteFooter } from './components/SiteFooter';
-import { SectionHead } from './components/SectionHead';
 import { UploadZone } from './components/UploadZone';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useImageFile } from './hooks/useImageFile';
 import { useExifMetadata } from './hooks/useExifMetadata';
-import { PreviewViewer } from './components/PreviewViewer';
-import { MetadataPanel } from './components/MetadataPanel';
-import { ShockBlock } from './components/ShockBlock';
+import { StoryBlock } from './components/StoryBlock';
 import { CleanupDownloadBlock } from './components/CleanupDownloadBlock';
 import { useImageAnalysis } from './hooks/useImageAnalysis';
 import { useOCR } from './hooks/useOCR';
-import { OCRBlock } from './components/OCRBlock';
 import { useI18n, useT, type MessageKey } from './i18n';
 import { FACE_LABEL, PERSON_LABEL, type DetectionErrorCode, type DetectionStage } from './types/detection';
 import type { OCRErrorCode, OCRStage } from './hooks/useOCR';
@@ -28,7 +24,6 @@ import type {
   VerifyResult
 } from './types/cleanup';
 import type { BasicFileInfo, StructuredMetadata } from './types/metadata';
-import { ProfileBlock } from './components/ProfileBlock';
 import { generateSceneNarrative } from './utils/sceneNarrative';
 import { analyzeFilename } from './utils/heuristics/filenameAnalyzer';
 import { analyzeResolution } from './utils/heuristics/resolutionAnalyzer';
@@ -261,7 +256,7 @@ const App: React.FC = () => {
   // Compute digital profile when analysis completes
   useEffect(() => {
     if (!fileInfo) { setDigitalProfile(null); setProData(null); return; }
-    if (analysisLoading || ocrLoading) return;
+    if (analysisLoading) return; // OCR joins later: the profile is recomputed when ocrResult arrives
 
     let cancelled = false;
     (async () => {
@@ -412,7 +407,7 @@ const App: React.FC = () => {
     const previous = previousFileRef.current;
     previousFileRef.current = fileInfo;
     if (!fileInfo || fileInfo === previous) return;
-    const heading = document.getElementById('sec-file');
+    const heading = document.getElementById('sec-story');
     if (!heading) return;
     const reduceMotion =
       typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -676,6 +671,16 @@ const App: React.FC = () => {
     setManualMasks((current) => current.filter((mask) => mask.id !== id));
   }, []);
 
+  // Verdict CTA: bring the cleanup section into view and hand focus to its heading.
+  const handleMakeSafeCopy = useCallback(() => {
+    const heading = document.getElementById('sec-cleanup');
+    if (!heading) return;
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    heading.scrollIntoView({ block: 'start', behavior: reduced ? 'auto' : 'smooth' });
+    heading.setAttribute('tabindex', '-1');
+    heading.focus({ preventScroll: true });
+  }, []);
+
   const sceneDescription = useMemo(() => {
     if (analysisLoading) return t('sceneDescriptionLoading');
     // An unavailable model must never read as "nothing found".
@@ -704,55 +709,24 @@ const App: React.FC = () => {
 
           {fileInfo ? (
             <ErrorBoundary variant="inline" resetKey={fileInfo}>
-              <section className="v4-section" aria-labelledby="sec-file">
-                <SectionHead num="01" title={t('sectionFile')} id="sec-file" />
-                <div className="fy-grid-2">
-                  <div className="fy-card">
-                    <PreviewViewer
-                      fileInfo={fileInfo}
-                      detections={detections}
-                      sceneDescription={sceneDescription}
-                      progress={
-                        analysisLoading && detectionStatus
-                          ? { label: t(DETECTION_STAGE_KEYS[detectionStatus.stage]), value: detectionStatus.progress }
-                          : null
-                      }
-                    />
-                  </div>
-                  <MetadataPanel fileInfo={fileInfo} metadata={metadata} />
-                </div>
-              </section>
-            </ErrorBoundary>
-          ) : null}
-
-          {fileInfo ? (
-            <ErrorBoundary variant="inline" resetKey={fileInfo}>
-              <OCRBlock
-                result={ocrResult}
-                loading={ocrLoading}
-                error={ocrError ? t(OCR_ERROR_KEYS[ocrError]) : null}
-                progress={ocrProgress ? { label: t(OCR_STAGE_KEYS[ocrProgress.stage]), value: ocrProgress.value } : null}
-              />
-            </ErrorBoundary>
-          ) : null}
-
-          {fileInfo && digitalProfile ? (
-            <ErrorBoundary variant="inline" resetKey={fileInfo}>
-              <ProfileBlock
-                profile={digitalProfile}
-                lang={lang}
-                metadata={metadata}
-                proData={proData}
+              <StoryBlock
                 fileInfo={fileInfo}
+                metadata={metadata}
+                profile={digitalProfile}
+                proData={proData}
                 detections={detections}
+                sceneDescription={sceneDescription}
+                detectionProgress={
+                  analysisLoading && detectionStatus
+                    ? { label: t(DETECTION_STAGE_KEYS[detectionStatus.stage]), value: detectionStatus.progress }
+                    : null
+                }
                 ocrResult={ocrResult}
+                ocrLoading={ocrLoading}
+                ocrError={ocrError ? t(OCR_ERROR_KEYS[ocrError]) : null}
+                ocrProgressLabel={ocrProgress ? t(OCR_STAGE_KEYS[ocrProgress.stage]) : null}
+                onMakeSafeCopy={handleMakeSafeCopy}
               />
-            </ErrorBoundary>
-          ) : null}
-
-          {fileInfo ? (
-            <ErrorBoundary variant="inline" resetKey={fileInfo}>
-              <ShockBlock metadata={metadata} />
             </ErrorBoundary>
           ) : null}
 

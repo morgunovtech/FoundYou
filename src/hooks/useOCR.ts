@@ -13,6 +13,8 @@ export interface OCRRegion {
 export interface OCRResult {
   fullText: string;
   regions: OCRRegion[];
+  /** Mean confidence (0–100) of the words that survived filtering; 0 when no text was kept. */
+  meanConfidence?: number;
 }
 
 /**
@@ -41,7 +43,7 @@ export interface UseOCROptions {
 
 type TesseractWorker = import('tesseract.js').Worker;
 type LoggerMessage = import('tesseract.js').LoggerMessage;
-type RecognizedPage = import('tesseract.js').RecognizeResult['data'];
+export type RecognizedPage = import('tesseract.js').RecognizeResult['data'];
 
 /* ── self-hosted runtime (see scripts/prepare-assets.mjs) ─── */
 
@@ -296,114 +298,267 @@ async function preprocessImage(file: File, fallbackWidth: number, fallbackHeight
 }
 
 /* ── word/line filtering ─────────────────────────────────── */
+/*
+ * Tesseract happily "reads" foliage, water and textures as text (`MII NN`, `3 p`,
+ * `AONE 2 BGR`, `7 wll`, `HAN atte`…). Every function below is pure and exported so
+ * the thresholds can be pinned by tests (src/__tests__/hooks/ocrFilters.test.ts).
+ *
+ * Filtering runs at four levels, each of which can only drop, never add:
+ *   word   — confidence by length + lexical plausibility (`isGoodWord`)
+ *   box    — specks and whole-image boxes are not text (`isSaneBox`)
+ *   line   — low-confidence lines and lines made only of fragments (`extractRegions`)
+ *   result — a photo with fewer than two surviving words has no text (`buildResult`)
+ */
 
-interface WordInfo {
+export interface Bbox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+export interface WordInfo {
   text: string;
   confidence: number;
-  bbox: { x0: number; y0: number; x1: number; y1: number };
+  bbox: Bbox;
 }
 
-function isGoodWord(word: WordInfo): boolean {
-  const w = word.text.trim();
-  if (w.length === 0) return false;
-
-  // Pure punctuation/symbols — always skip
-  const alphaCount = (w.match(/[\p{L}\p{N}]/gu) ?? []).length;
-  if (alphaCount === 0) return false;
-
-  // Length-proportional confidence: short words need higher confidence
-  if (w.length <= 2) return word.confidence >= 50;
-  if (w.length <= 4) return word.confidence >= 35;
-  return word.confidence >= 25;
+/** Structural subset of tesseract.js' `Page` that the filters read; the real `Page` satisfies it. */
+export interface RecognizedLineLike {
+  confidence: number;
+  words?: WordInfo[] | null;
 }
 
-function extractRegions(
-  data: any,
+export interface RecognizedPageLike {
+  blocks?: { paragraphs?: { lines?: RecognizedLineLike[] | null }[] | null }[] | null;
+  /** Raw page text — deliberately never used as a fallback (it is unfiltered). */
+  text?: string | null;
+  /** Legacy flat word list (tesseract.js ≤ 5); absent in v7 output. */
+  words?: WordInfo[] | null;
+}
+
+/** Size of the bitmap that was handed to Tesseract; word bboxes are in its pixel space. */
+export interface OCRCanvasSize {
+  width: number;
+  height: number;
+}
+
+/** Minimum word confidence by token length (code points): ≤ 2 / 3–4 / ≥ 5. */
+export const WORD_MIN_CONFIDENCE = { short: 82, medium: 68, long: 58 } as const;
+/** Lines below this confidence are dropped wholesale, regardless of their words. */
+export const LINE_MIN_CONFIDENCE = 45;
+/** A surviving line must keep at least one word with this many letters/digits. */
+export const LINE_MIN_WORD_ALNUM = 3;
+/** Fewer surviving words than this in the whole page → the photo has no text. */
+export const RESULT_MIN_GOOD_WORDS = 2;
+/** At least this share of a token's characters must be letters or digits. */
+export const TOKEN_MIN_ALNUM_RATIO = 0.6;
+/** Word boxes smaller than this share of the OCR canvas area are specks. */
+export const BOX_MIN_AREA_RATIO = 0.0002;
+/** Word boxes shorter than this (OCR-canvas pixels) are specks. */
+export const BOX_MIN_HEIGHT_PX = 6;
+/** Word boxes wider than this share of the canvas are whole-image false hits. */
+export const BOX_MAX_WIDTH_RATIO = 0.9;
+
+const ALNUM_RE = /[\p{L}\p{N}]/gu;
+const LATIN_RE = /\p{Script=Latin}/u;
+const CYRILLIC_RE = /\p{Script=Cyrillic}/u;
+/** Three identical letters in a row (case-insensitive). Digits are exempt: `1000`, `777 77 77`. */
+const TRIPLE_LETTER_RE = /(\p{L})\1\1/iu;
+/** `www.` is the one legitimate triple letter on signs. */
+const WWW_RE = /^www\./iu;
+/** Uzbek Latin oʻ/gʻ in all the apostrophe spellings Tesseract emits; they count as the base letter. */
+const UZBEK_APOSTROPHE_RE = /['ʻʼ‘’`]/gu;
+const VOWEL_RE = /[aeiouyаеёиоуыэюя]/u;
+
+function alnumCount(text: string): number {
+  return (text.match(ALNUM_RE) ?? []).length;
+}
+
+/**
+ * Lexical sanity of one token, independent of confidence. Real text — signs, plates
+ * (`01 A 123 BC`), phones (`+998`), prices, `ул.`, `Coca-Cola`, `to‘g‘ri` — passes;
+ * the classic texture noise (`Hаn`, `wlll`, `p.`, `---`) does not.
+ */
+export function isPlausibleToken(text: string): boolean {
+  const token = text.trim();
+  if (token.length === 0) return false;
+
+  const chars = [...token];
+  const alnum = alnumCount(token);
+  if (alnum === 0) return false;
+  // Mostly punctuation/symbols (`(a`, `%^&a`, `a-b-c-d`)
+  if (alnum / chars.length < TOKEN_MIN_ALNUM_RATIO) return false;
+  // A lone letter/digit wrapped in punctuation (`p.`, `3)`, `(a`) — but a bare `A` or `3` may be a plate or a house number
+  if (alnum === 1 && chars.length > 1) return false;
+  // Latin and Cyrillic glyphs inside one word (`Hаn`) — Tesseract picks one model per real word
+  if (LATIN_RE.test(token) && CYRILLIC_RE.test(token)) return false;
+  // `wlll`, `Ннн` — no language written here triples a letter, except `www.`
+  if (TRIPLE_LETTER_RE.test(token) && !WWW_RE.test(token)) return false;
+
+  // Letter-only tokens of ≥ 4 letters need a vowel, unless they are an all-caps abbreviation (`HTML`, `ГИБДД`).
+  const letters = token.replace(UZBEK_APOSTROPHE_RE, '');
+  const lettersOnly = /^\p{L}+$/u.test(letters);
+  if (lettersOnly && [...letters].length >= 4) {
+    const allUpper = letters === letters.toUpperCase() && letters !== letters.toLowerCase();
+    if (!allUpper && !VOWEL_RE.test(letters.toLowerCase())) return false;
+  }
+
+  return true;
+}
+
+/**
+ * Confidence gate by token length, on top of `isPlausibleToken`. Short tokens are
+ * the easiest to hallucinate, so they need both high confidence and a shape that
+ * real short text has: all digits (`01`, `12`) or all capitals (`BC`, `A`).
+ */
+export function isGoodWord(word: WordInfo): boolean {
+  const token = (word.text ?? '').trim();
+  if (!isPlausibleToken(token)) return false;
+
+  const length = [...token].length;
+  if (length <= 2) {
+    if (word.confidence < WORD_MIN_CONFIDENCE.short) return false;
+    return /^\p{N}+$/u.test(token) || /^\p{Lu}+$/u.test(token);
+  }
+  if (length <= 4) return word.confidence >= WORD_MIN_CONFIDENCE.medium;
+  return word.confidence >= WORD_MIN_CONFIDENCE.long;
+}
+
+/**
+ * Geometry gate: specks (tiny area, < 6 px tall) and boxes spanning almost the whole
+ * width are not words. Area/width checks need the canvas size; without it only the
+ * absolute height check applies.
+ */
+export function isSaneBox(bbox: Bbox | null | undefined, canvas?: OCRCanvasSize): boolean {
+  if (!bbox) return false;
+  const width = bbox.x1 - bbox.x0;
+  const height = bbox.y1 - bbox.y0;
+  if (!(width > 0) || !(height > 0)) return false;
+  if (height < BOX_MIN_HEIGHT_PX) return false;
+  if (canvas && canvas.width > 0 && canvas.height > 0) {
+    if (width * height < canvas.width * canvas.height * BOX_MIN_AREA_RATIO) return false;
+    if (width > canvas.width * BOX_MAX_WIDTH_RATIO) return false;
+  }
+  return true;
+}
+
+interface KeptWord {
+  text: string;
+  confidence: number;
+  region: OCRRegion | null;
+}
+
+function toRegion(word: WordInfo, scaleX: number, scaleY: number): OCRRegion {
+  return {
+    text: word.text.trim(),
+    x: word.bbox.x0 * scaleX,
+    y: word.bbox.y0 * scaleY,
+    width: (word.bbox.x1 - word.bbox.x0) * scaleX,
+    height: (word.bbox.y1 - word.bbox.y0) * scaleY,
+    confidence: word.confidence
+  };
+}
+
+/** Word + box gates for one line's words. A word without a bbox (legacy `words` list) is kept as text only. */
+function keepWords(words: WordInfo[], scaleX: number, scaleY: number, canvas?: OCRCanvasSize): KeptWord[] {
+  const kept: KeptWord[] = [];
+  for (const word of words) {
+    if (!isGoodWord(word)) continue;
+    if (word.bbox && !isSaneBox(word.bbox, canvas)) continue;
+    kept.push({
+      text: word.text.trim(),
+      confidence: word.confidence,
+      region: word.bbox ? toRegion(word, scaleX, scaleY) : null
+    });
+  }
+  return kept;
+}
+
+/**
+ * Line gate: a line survives only if it keeps a word with ≥ 3 letters/digits — which
+ * also rules out lines made solely of ≤ 2-character fragments (`3 p`, `7 w`).
+ */
+function hasAnchorWord(kept: KeptWord[]): boolean {
+  return kept.some((word) => alnumCount(word.text) >= LINE_MIN_WORD_ALNUM);
+}
+
+export interface ExtractedRegions {
+  regions: OCRRegion[];
+  cleanLines: string[];
+  /** Confidence of every kept word, in reading order — feeds `meanConfidence`. */
+  confidences: number[];
+}
+
+export function extractRegions(
+  data: RecognizedPageLike,
   scaleX: number,
-  scaleY: number
-): { regions: OCRRegion[]; cleanLines: string[] } {
+  scaleY: number,
+  canvas?: OCRCanvasSize
+): ExtractedRegions {
   const regions: OCRRegion[] = [];
   const cleanLines: string[] = [];
+  const confidences: number[] = [];
 
   for (const block of data.blocks ?? []) {
     for (const paragraph of block.paragraphs ?? []) {
       for (const line of paragraph.lines ?? []) {
-        if (line.confidence < 20) continue;
+        if (!(line.confidence >= LINE_MIN_CONFIDENCE)) continue;
 
-        const goodWords: string[] = [];
-        for (const word of line.words ?? []) {
-          const w = word.text.trim();
-          if (!isGoodWord(word)) continue;
-          goodWords.push(w);
+        const kept = keepWords(line.words ?? [], scaleX, scaleY, canvas);
+        if (kept.length === 0 || !hasAnchorWord(kept)) continue;
 
-          const bbox = word.bbox;
-          regions.push({
-            text: w,
-            x: bbox.x0 * scaleX,
-            y: bbox.y0 * scaleY,
-            width: (bbox.x1 - bbox.x0) * scaleX,
-            height: (bbox.y1 - bbox.y0) * scaleY,
-            confidence: word.confidence,
-          });
+        cleanLines.push(kept.map((word) => word.text).join(' '));
+        for (const word of kept) {
+          confidences.push(word.confidence);
+          if (word.region) regions.push(word.region);
         }
-
-        const lineText = goodWords.join(' ');
-        const lineAlpha = (lineText.match(/[\p{L}\p{N}]/gu) ?? []).length;
-        if (lineAlpha < 2) continue;
-        cleanLines.push(lineText);
       }
     }
   }
 
-  return { regions, cleanLines };
+  return { regions, cleanLines, confidences };
 }
 
-/* ── fallback: extract from data.words when blocks are empty ── */
-
+/** Legacy flat `data.words` (no line structure): the whole list is treated as one line and passes the same gates. */
 function extractFromWords(
-  data: any,
+  words: WordInfo[],
   scaleX: number,
-  scaleY: number
-): { regions: OCRRegion[]; text: string } {
-  const regions: OCRRegion[] = [];
-  const words: string[] = [];
-
-  for (const word of data.words ?? []) {
-    if (!isGoodWord(word)) continue;
-    const w = word.text.trim();
-    words.push(w);
-
-    if (word.bbox) {
-      regions.push({
-        text: w,
-        x: word.bbox.x0 * scaleX,
-        y: word.bbox.y0 * scaleY,
-        width: (word.bbox.x1 - word.bbox.x0) * scaleX,
-        height: (word.bbox.y1 - word.bbox.y0) * scaleY,
-        confidence: word.confidence,
-      });
-    }
-  }
-
-  return { regions, text: words.join(' ') };
+  scaleY: number,
+  canvas?: OCRCanvasSize
+): ExtractedRegions {
+  const kept = keepWords(words, scaleX, scaleY, canvas);
+  if (kept.length === 0 || !hasAnchorWord(kept)) return { regions: [], cleanLines: [], confidences: [] };
+  return {
+    regions: kept.flatMap((word) => (word.region ? [word.region] : [])),
+    cleanLines: [kept.map((word) => word.text).join(' ')],
+    confidences: kept.map((word) => word.confidence)
+  };
 }
 
-function buildResult(data: RecognizedPage, scaleX: number, scaleY: number): OCRResult {
-  // Primary: extract from blocks hierarchy
-  let { regions, cleanLines } = extractRegions(data, scaleX, scaleY);
+/**
+ * Turns a recognised page into the hook result. `scaleX/scaleY` map OCR-canvas pixels
+ * back to the original image; `canvas` (the OCR bitmap size) enables the relative box
+ * checks. The raw `data.text` is never used — it is exactly the unfiltered garbage
+ * this pipeline exists to remove.
+ */
+export function buildResult(
+  data: RecognizedPageLike,
+  scaleX: number,
+  scaleY: number,
+  canvas?: OCRCanvasSize
+): OCRResult {
+  let extracted = extractRegions(data, scaleX, scaleY, canvas);
 
-  // Fallback 1: try data.words directly if blocks yielded nothing
-  const dataAny = data as any;
-  if (cleanLines.length === 0 && (dataAny.words ?? []).length > 0) {
-    const fallback = extractFromWords(dataAny, scaleX, scaleY);
-    regions = fallback.regions;
-    cleanLines = fallback.text ? [fallback.text] : [];
+  if (extracted.cleanLines.length === 0 && data.words && data.words.length > 0) {
+    extracted = extractFromWords(data.words, scaleX, scaleY, canvas);
   }
 
-  // Fallback 2: use raw data.text if everything else is empty
-  const fullText = cleanLines.length > 0 ? cleanLines.join('\n') : (data.text ?? '').trim();
+  const { regions, cleanLines, confidences } = extracted;
+  if (confidences.length < RESULT_MIN_GOOD_WORDS) return { fullText: '', regions: [], meanConfidence: 0 };
 
-  return { fullText, regions };
+  const meanConfidence = confidences.reduce((sum, c) => sum + c, 0) / confidences.length;
+  return { fullText: cleanLines.join('\n'), regions, meanConfidence };
 }
 
 /* ── main hook ───────────────────────────────────────────── */
@@ -441,10 +596,11 @@ async function runOCR(fileInfo: BasicFileInfo, session: OCRSession, set: OCRStat
     const data = await recognizeImage(pre.blob, sink, () => session.cancelled);
     if (session.cancelled || !data) return;
 
-    // Regions map back to fileInfo.width/height coordinates (the preprocess canvas may be smaller)
+    // Regions map back to fileInfo.width/height coordinates (the preprocess canvas may be smaller);
+    // the canvas size itself drives the relative speck / whole-image box checks.
     const scaleX = fileInfo.width / pre.width;
     const scaleY = fileInfo.height / pre.height;
-    set.setResult(buildResult(data, scaleX, scaleY));
+    set.setResult(buildResult(data, scaleX, scaleY, { width: pre.width, height: pre.height }));
     report({ stage: 'done', value: 1 });
   } catch (err) {
     if (session.cancelled) return;
