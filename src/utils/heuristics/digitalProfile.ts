@@ -158,7 +158,8 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   const exif = metadata?.groups?.exif ?? {};
 
   // ── Device ──
-  const device = metadata?.cameraModel ?? filename.device ?? resolution.possibleDevices[0] ?? null;
+  // `||`, not `??`: an unknown filename yields `device: ''`, which must fall through to the resolution guess.
+  const device = metadata?.cameraModel || filename.device || resolution.possibleDevices[0] || null;
   if (device) {
     const fromExif = !!metadata?.cameraModel;
     sections.push({

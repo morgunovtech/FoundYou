@@ -1,4 +1,6 @@
+import type { MessageKey } from '../i18n';
 import type { ReverseGeocodeResult, HistoricalWeatherResult, PoiResult } from '../types/api';
+import { hasZoneDesignator, parseWallClock, wallClockAsUtcDate } from './format';
 
 const RU_PLACE_MAP: Record<string, string> = {
   "o'zbekiston": 'Узбекистан',
@@ -10,19 +12,32 @@ const RU_PLACE_MAP: Record<string, string> = {
   aviasozlar: 'Авиасозлар'
 };
 
+const DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false
+};
+
+/**
+ * Short date/time for the "When" row.
+ * Pass `shotDateLocal` (wall-clock, no zone) and it is rendered digit-for-digit — the time the
+ * camera wrote, independent of the viewer's zone. A `Date`/zoned ISO string is treated as an
+ * instant and rendered in the viewer's zone (legacy path).
+ */
 export function formatDateTime(value: string | Date | undefined, locale: string): string | undefined {
   if (!value) return undefined;
+  const resolvedLocale = locale === 'ru' ? 'ru-RU' : 'en-GB';
+  if (typeof value === 'string' && !hasZoneDesignator(value)) {
+    const parts = parseWallClock(value);
+    if (!parts) return undefined;
+    return new Intl.DateTimeFormat(resolvedLocale, { ...DATE_TIME_OPTIONS, timeZone: 'UTC' }).format(wallClockAsUtcDate(parts));
+  }
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return undefined;
-  const resolvedLocale = locale === 'ru' ? 'ru-RU' : 'en-GB';
-  return new Intl.DateTimeFormat(resolvedLocale, {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  }).format(date);
+  return new Intl.DateTimeFormat(resolvedLocale, DATE_TIME_OPTIONS).format(date);
 }
 
 export function formatCoords(lat: number, lon: number): string {
@@ -39,7 +54,7 @@ export function formatDistance(value?: number, locale?: string): string {
       maximumFractionDigits: value < 100 ? 1 : 0
     }).format(value);
     return `± ${formatted}`;
-  } catch (error) {
+  } catch {
     return `± ${Math.round(value)} m`;
   }
 }
@@ -61,12 +76,12 @@ export function localizePlaceParts(
 
 export function localizeCategoryKey(
   category: string,
-  t: (key: string, params?: Record<string, string | number>) => string
+  t: (key: MessageKey, params?: Record<string, string | number>) => string
 ): string {
   const normalized = category.toLowerCase();
   const key = CATEGORY_KEYS[normalized];
   if (key) {
-    return t(key);
+    return t(key as MessageKey);
   }
   return t('poiCategory_other', { category: toReadableCategory(normalized) });
 }

@@ -45,6 +45,22 @@ const EVIDENCE: Record<string, Record<Lang, string>> = {
 
 const CAMERA_NAME_REGEX = /^(IMG|DSC|PXL|GOPR|DJI|DCIM|photo|_DSC|GX)/i;
 
+/**
+ * Platforms that re-encode uploads and drop EXIF. Only these may be named in `strippedBy`;
+ * a camera/vendor platform inferred from the filename (Apple iOS, Android, Camera…) is where
+ * the photo was *taken*, not what removed its metadata.
+ */
+const STRIPPING_PLATFORMS = new Set([
+  'Telegram',
+  'Signal',
+  'WhatsApp',
+  'Viber',
+  'Facebook Messenger',
+  'Instagram',
+  'VK',
+  'Discord',
+]);
+
 export function detectStrippedMetadata(input: StrippedInput): StrippedAnalysis {
   const { filename, filenameAnalysis, mimeType, width, height, hasExif, hasSoftwareTag, lang } = input;
   const evidence: string[] = [];
@@ -63,7 +79,9 @@ export function detectStrippedMetadata(input: StrippedInput): StrippedAnalysis {
   }
 
   // Sign 2: Messenger filename pattern
-  if (filenameAnalysis.platform && ['Telegram', 'Signal', 'WhatsApp', 'Viber', 'Facebook Messenger'].includes(filenameAnalysis.platform)) {
+  const strippingPlatform =
+    filenameAnalysis.platform && STRIPPING_PLATFORMS.has(filenameAnalysis.platform) ? filenameAnalysis.platform : null;
+  if (strippingPlatform) {
     evidence.push(EVIDENCE.messenger_name[lang]);
   }
 
@@ -81,7 +99,7 @@ export function detectStrippedMetadata(input: StrippedInput): StrippedAnalysis {
   const stripped = evidence.length >= 1 && !hasExif;
   return {
     stripped,
-    strippedBy: stripped ? (filenameAnalysis.platform ?? null) : null,
+    strippedBy: stripped ? strippingPlatform : null,
     confidence: evidence.length >= 2 ? 0.85 : evidence.length === 1 ? 0.6 : 0,
     evidence,
   };

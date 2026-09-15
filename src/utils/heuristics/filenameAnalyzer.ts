@@ -62,8 +62,15 @@ const PATTERNS: FilenamePattern[] = [
   { regex: /^viber_image_\d+/i, platform: 'Viber', device: { ru: 'Сохранено из Viber', en: 'Saved from Viber', uz: 'Viberdan saqlangan' }, confidence: 0.9 },
 ];
 
+/**
+ * A shot counter is only the whole basename `IMG_NNNN(N)` / `DSC_NNNN(N)` / `DSCNNNNN` / `_DSCNNNN`
+ * (iPhone, Canon, Nikon, Sony), optionally with an AirDrop " (n)" suffix. Date-stamped names such
+ * as `IMG_20240614_183012.jpg` carry no counter — the first digits are a date, not an index.
+ */
+const SEQUENCE_NAME_REGEX = /^(?:IMG_|_?DSC_?)(\d{4,5})(?:\s?\(\d+\))?\.[A-Za-z0-9]+$/i;
+
 function estimatePhotoIndex(filename: string): { photoIndex: number; estimatedMonths: number } | null {
-  const match = filename.match(/IMG_(\d{4,5})/i) ?? filename.match(/DSC_?(\d{4,5})/i);
+  const match = SEQUENCE_NAME_REGEX.exec(filename);
   if (!match) return null;
   const index = parseInt(match[1], 10);
   if (index <= 0) return null;
