@@ -1,39 +1,39 @@
 # Found You — Photo Metadata Analyzer
 
-> Free, privacy-focused web tool for analyzing and removing metadata from photos. All processing happens locally in the browser — no files are ever uploaded to a server.
+> Free, privacy-focused web tool that shows what a photo reveals (location, time, device, people, text) and produces a cleaned copy. The photo itself never leaves the browser: metadata parsing, detection, OCR, blurring and export all run on the user's device.
 
 ## What It Does
 
-Found You helps users understand what personal information is embedded in their photos and provides tools to remove it before sharing. The tool extracts hidden metadata (EXIF, GPS coordinates, camera info, timestamps), detects faces and objects, recognizes text via OCR, and allows users to clean photos for safe publication.
+Found You (formerly Meta Data Insight) extracts hidden metadata from a photo, detects faces, people and objects, recognizes text, builds a "digital profile" of what the file leaks, optionally enriches GPS coordinates with place context on request, and lets the user download a safe copy with verified-clean metadata.
 
 ## Key Features
 
-- **Metadata Extraction**: Reads EXIF, XMP, IPTC, and ICC profiles from JPEG, PNG, WebP, AVIF, HEIC/HEIF images
-- **GPS Visualization**: Shows photo location on an interactive map with nearby points of interest
-- **Face Detection**: Identifies people in photos using COCO-SSD (TensorFlow.js) with one-click blurring
-- **OCR Text Recognition**: Recognizes Russian and English text in photos using Tesseract.js with region-level bounding boxes
-- **Photo Cleanup**: Removes all metadata, blurs faces/text, applies anti-reverse-image-search protection, removes PRNU camera fingerprints
-- **Historical Context**: Shows weather conditions and nearby surveillance cameras at the time and location the photo was taken
-- **Privacy Scoring**: Rates how much personal information a photo reveals before and after cleanup
+- **Metadata extraction**: EXIF, XMP, IPTC and ICC from JPEG, PNG, WebP, AVIF, GIF, BMP and HEIC/HEIF; PNG text chunks (tEXt/zTXt/iTXt, e.g. AI-generation prompts). HEIC is decoded locally.
+- **Face and object detection**: MediaPipe Tasks Vision — FaceDetector (BlazeFace short-range) for faces, ObjectDetector (EfficientDet-Lite0, COCO labels) for people and objects; the WASM runtime and models are self-hosted. The cleanup option "Hide faces (and people without a detected face)" blurs each detected face box (padded); a person without a detected face gets the upper part of the person box blurred as a fallback.
+- **OCR**: Tesseract.js (Russian + English) with region-level bounding boxes; recognized text regions can be blurred. Runtime and language data are self-hosted.
+- **Digital profile**: heuristics on filename, resolution, stripped metadata, editing history, file hash and time of day; a 0–100 leak score; a plain-language scene description.
+- **Place context (on request only)**: after the user clicks "Show place context", rounded coordinates (~11 m) and the capture date/time are sent to the site's own Cloudflare Pages Functions, which proxy Nominatim (address), Open-Meteo (historical weather for the hour of capture), Nager.Date (public holidays, with a static fallback for Uzbekistan) and Overpass (nearby places, likely surveillance cameras). A MapLibre map with OpenStreetMap tiles appears at the same time.
+- **Cleanup and export**: re-encoding through canvas removes source metadata; container-level metadata added by the browser (ICC profile, comments) is stripped as well; the exported file is re-parsed and the UI reports "N metadata fields before, 0 left". Options: blur faces (with a person-box fallback), blur OCR text, manual brush masks, weaken camera sensor fingerprint (PRNU), anti-reverse-image-search transforms, mirror, downscale, watermark, output format (original/JPEG/PNG/WebP) and quality, neutral filename by default.
+- **Limits**: 20 MB and 40 megapixels per file; export capped at 40 MP (16 MP on iOS/iPadOS).
 
 ## Privacy Architecture
 
-- 100% client-side processing — images never leave the user's device
-- No user accounts, no cookies, no tracking
-- API calls only send coordinates and timestamps (never image data) to public geocoding and weather services
-- Open source
+- The image, its pixels, filename and full metadata never leave the device.
+- Nothing is sent to any server until the user explicitly opts in for place context; then only 4-decimal rounded coordinates and the capture date/time go to the site's own functions, which forward them to the upstream services (the user's IP is not exposed to those services).
+- Models and OCR runtime are served from the site's own domain; no third-party CDN at run time.
+- No accounts, no cookies, no analytics or tracking. Strict Content-Security-Policy and other security headers.
 
 ## Supported Formats
 
-JPEG, PNG, WebP, AVIF, HEIC, HEIF, GIF, BMP
+JPEG, PNG, WebP, AVIF, GIF, BMP, HEIC, HEIF
 
 ## Languages
 
-Russian, English, Uzbek
+Russian, English, Uzbek. Interface themes: light, dark, auto, high-contrast.
 
 ## Technology
 
-React 18, TypeScript, Vite, TensorFlow.js (COCO-SSD), Tesseract.js v7, exifr, MapLibre GL. Deployed on Cloudflare Pages.
+React, TypeScript, Vite, MediaPipe Tasks Vision (FaceDetector + ObjectDetector), Tesseract.js, exifr, libheif-js, MapLibre GL. Hosted on Cloudflare Pages with Pages Functions. Source repository: https://github.com/morgunovtech/meta-data
 
 ## URL
 
@@ -41,11 +41,11 @@ https://foundyou.morgunov.tech/
 
 ## Use Cases
 
-- Check what metadata your phone camera embeds before posting to social media
-- Remove GPS location from photos before sharing online
-- Blur faces and license plates for privacy compliance
-- Verify photo authenticity by inspecting camera and editing software metadata
-- Prepare photos for legal or journalistic use with verifiable cleanup
+- Check what metadata a phone camera embeds before posting to social media
+- Remove GPS location and device information from photos before sharing
+- Blur faces, people, text, license plates or documents in a photo
+- Inspect camera and editing-software metadata, including AI-generation prompts in PNG files
+- Prepare photos for work chats, listings or publication with a verified-clean copy
 
 ## Contact
 
