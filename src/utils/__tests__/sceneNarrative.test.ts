@@ -80,3 +80,23 @@ describe('generateSceneNarrative', () => {
     expect(result).toContain('background');
   });
 });
+
+describe('generateSceneNarrative — face boxes', () => {
+  it('ignores face detections: they duplicate the person, not a scene object', () => {
+    const dets = [box('person', 350, 100, 300, 500), box('face', 450, 120, 100, 110)];
+    const result = generateSceneNarrative({ detections: dets, imageWidth: IMG_W, imageHeight: IMG_H, lang: 'en' });
+    expect(result).toContain('person');
+    expect(result).not.toContain('face');
+    expect(result).not.toContain('2 ');
+  });
+
+  it('reports no objects when only faces were detected', () => {
+    const result = generateSceneNarrative({
+      detections: [box('face', 450, 120, 100, 110)],
+      imageWidth: IMG_W,
+      imageHeight: IMG_H,
+      lang: 'ru'
+    });
+    expect(result).toBe('Объекты не обнаружены.');
+  });
+});

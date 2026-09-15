@@ -1,4 +1,4 @@
-import type { BoundingBox } from '../types/detection';
+import { FACE_LABEL, type BoundingBox } from '../types/detection';
 
 type Lang = 'ru' | 'en' | 'uz';
 
@@ -23,7 +23,7 @@ function horizontalZone(box: BoundingBox, imageWidth: number): Zone {
 }
 
 
-/* ── COCO-SSD label → human-readable label ───────────────── */
+/* ── COCO label (EfficientDet-Lite0) → human-readable label ─ */
 
 const LABELS_RU: Record<string, string> = {
   person: 'человек', car: 'автомобиль', bus: 'автобус', truck: 'грузовик',
@@ -217,7 +217,8 @@ function capitalize(s: string): string {
 export function generateSceneNarrative(input: NarrativeInput): string {
   const { detections, imageWidth: imgW, imageHeight: imgH, lang } = input;
 
-  const confident = detections.filter((d) => d.score >= 0.5);
+  // Face boxes duplicate the person they belong to and are not scene objects.
+  const confident = detections.filter((d) => d.score >= 0.5 && d.label !== FACE_LABEL);
   if (confident.length === 0) {
     return lang === 'ru'
       ? 'Объекты не обнаружены.'
