@@ -1224,6 +1224,24 @@
   margin-top: 4px;
 }
 
+.fy-tip {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--v4-line);
+  font-size: 13px;
+  line-height: 1.5;
+  display: grid;
+  gap: 2px;
+}
+
+.fy-tip b {
+  font-weight: 500;
+}
+
+.fy-cred {
+  margin-top: 8px;
+}
+
 .fy-geo-note {
   margin: 0;
   font-size: 12.5px;

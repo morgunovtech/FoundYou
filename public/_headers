@@ -22,5 +22,8 @@
 /mediapipe/*
   Cache-Control: public, max-age=86400
 
+/c2pa/*
+  Cache-Control: public, max-age=86400
+
 /images/*
   Cache-Control: public, max-age=604800

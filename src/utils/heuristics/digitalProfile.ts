@@ -1,4 +1,7 @@
 import type { StructuredMetadata } from '../../types/metadata';
+import type { PlateCandidate } from '../plates';
+import type { ContentCredentials } from '../contentCredentials';
+import type { CredentialsStatus } from '../../hooks/useContentCredentials';
 import type { BoundingBox } from '../../types/detection';
 import type { OCRResult } from '../../hooks/useOCR';
 import type { FilenameAnalysis } from './filenameAnalyzer';
@@ -23,7 +26,8 @@ export type ProfileSectionKind =
   | 'origin'
   | 'content'
   | 'serial'
-  | 'hash';
+  | 'hash'
+  | 'plates';
 
 export interface ProfileSection {
   /** Stable id of the fact the section describes; the UI attaches details (map, OCR text) by it. */
@@ -122,11 +126,42 @@ const THREATS: ThreatMap = {
     en: 'Hash allows finding this photo on any service it was uploaded to',
     uz: 'Xesh bu fotoni yuklangan har qanday xizmatda topishga imkon beradi',
   },
+  plates: {
+    ru: 'По номеру машины находят владельца через базы штрафов и чаты; вместе с местом съёмки это адрес стоянки',
+    en: 'A plate leads to the owner through fine databases and chats; with the location it is a parking address',
+    uz: 'Avtomobil raqami orqali egasini jarima bazalari va chatlar orqali topadilar; joylashuv bilan birga bu turargoh manzili',
+  },
   ai: {
     ru: 'Фото сгенерировано нейросетью — не является реальной фотографией',
     en: 'Photo is AI-generated — not a real photograph',
     uz: 'Foto neyrotarmoq tomonidan yaratilgan — haqiqiy fotosurat emas',
   },
+};
+
+/* ── new copy lives in one table (no ternaries per CLAUDE.md) ─ */
+
+const TEXTS: Record<string, Record<Lang, string>> = {
+  aiTitle: { ru: 'AI-генерация', en: 'AI-generated', uz: 'AI-generatsiya' },
+  aiCheckTitle: { ru: 'AI-генерация', en: 'AI check', uz: 'AI-generatsiya' },
+  aiNone: { ru: 'Признаков AI-генерации не обнаружено', en: 'No AI generation signs detected', uz: 'AI-generatsiya belgilari topilmadi' },
+  aiNoneSigned: { ru: 'Признаков AI нет, происхождение подписано', en: 'No AI signs; provenance is signed', uz: 'AI belgilari yo‘q, kelib chiqishi imzolangan' },
+  credSignedBy: { ru: 'Content Credentials, подпись:', en: 'Content Credentials, signed by', uz: 'Content Credentials, imzo:' },
+  credValidSuffix: { ru: ' (проверена)', en: ' (verified)', uz: ' (tasdiqlangan)' },
+  credInvalidSuffix: { ru: ' (не прошла проверку)', en: ' (failed validation)', uz: ' (tekshiruvdan o‘tmadi)' },
+  credChecking: { ru: 'Проверяем Content Credentials…', en: 'Checking Content Credentials…', uz: 'Content Credentials tekshirilmoqda…' },
+  credUnavailable: {
+    ru: 'Content Credentials есть, но прочитать их не удалось; проверены XMP и метаданные ПО',
+    en: 'Content Credentials present but unreadable; XMP and software metadata checked',
+    uz: 'Content Credentials bor, lekin o‘qilmadi; XMP va dastur metadatasi tekshirildi',
+  },
+  credNone: {
+    ru: 'Content Credentials нет. Проверены только XMP-теги и метаданные ПО: без подписи AI-снимок неотличим от обычного',
+    en: 'No Content Credentials. Only XMP tags and software metadata were checked: without a signature an AI image looks like any other',
+    uz: 'Content Credentials yo‘q. Faqat XMP teglari va dastur metadatasi tekshirildi: imzosiz AI-surat oddiy suratdan farq qilmaydi',
+  },
+  platesTitle: { ru: 'Номера машин', en: 'Licence plates', uz: 'Avtomobil raqamlari' },
+  platesText: { ru: 'Возможных номеров: {count}', en: 'Possible plates: {count}', uz: 'Ehtimoliy raqamlar: {count}' },
+  platesSub: { ru: 'Найдены по распознанному тексту, проверьте в предпросмотре', en: 'Found via recognised text; check the preview', uz: 'Aniqlangan matn bo‘yicha topildi; ko‘rib chiqing' },
 };
 
 /* ── serial number extraction ───────────────────────────── */
@@ -154,6 +189,11 @@ function extractSerialNumbers(exif: Record<string, unknown>): string[] {
 /* ── main generator ─────────────────────────────────────── */
 
 export interface ProfileInput {
+  /** Licence-plate candidates from OCR + vehicle boxes (`findPlateCandidates`). */
+  plates?: PlateCandidate[];
+  /** Parsed Content Credentials (C2PA), when the file carries them. */
+  credentials?: ContentCredentials | null;
+  credentialsStatus?: CredentialsStatus;
   filename: FilenameAnalysis;
   resolution: ResolutionAnalysis;
   stripped: StrippedAnalysis;
@@ -285,25 +325,71 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     });
   }
 
-  // ── AI detection (always show) ──
-  if (editing.isAiGenerated) {
+  // ── Licence plates: OCR tokens that read like a plate or sit on a detected vehicle ──
+  const plates = input.plates ?? [];
+  if (plates.length > 0) {
+    const sample = plates.slice(0, 2).map((p) => p.text).join(', ');
+    sections.push({
+      kind: 'plates',
+      icon: '🚘',
+      title: TEXTS.platesTitle[lang],
+      text: `${TEXTS.platesText[lang].replace('{count}', String(plates.length))}: ${sample}`,
+      subtext: TEXTS.platesSub[lang],
+      leakPoints: 15,
+      severity: 'high',
+      threatScenario: THREATS.plates[lang],
+    });
+  }
+
+  // ── AI / provenance (always show). Content Credentials beat metadata guesses. ──
+  const cred = input.credentials ?? null;
+  const credStatus = input.credentialsStatus ?? 'idle';
+  const signer = cred ? (cred.issuer ?? cred.generator ?? 'C2PA') : '';
+  if (cred && cred.generative !== 'none') {
     sections.push({
       kind: 'ai',
       icon: '🤖',
-      title: lang === 'ru' ? 'AI-генерация' : lang === 'uz' ? 'AI-generatsiya' : 'AI-generated',
+      title: TEXTS.aiTitle[lang],
+      text: cred.generativeAgents.length > 0 ? cred.generativeAgents.join(', ') : cred.generator ?? 'AI',
+      subtext: `${TEXTS.credSignedBy[lang]} ${signer}${cred.valid ? TEXTS.credValidSuffix[lang] : TEXTS.credInvalidSuffix[lang]}`,
+      leakPoints: 0,
+      severity: 'medium',
+      threatScenario: THREATS.ai[lang],
+    });
+  } else if (editing.isAiGenerated) {
+    sections.push({
+      kind: 'ai',
+      icon: '🤖',
+      title: TEXTS.aiTitle[lang],
       text: editing.aiTool ?? 'AI',
       subtext: lang === 'ru' ? 'Фото создано нейросетью' : 'Photo created by AI',
       leakPoints: 0,
       severity: 'medium',
       threatScenario: THREATS.ai[lang],
     });
+  } else if (cred) {
+    sections.push({
+      kind: 'ai',
+      icon: '🤖',
+      title: TEXTS.aiCheckTitle[lang],
+      text: TEXTS.aiNoneSigned[lang],
+      subtext: `${TEXTS.credSignedBy[lang]} ${signer}${cred.valid ? TEXTS.credValidSuffix[lang] : TEXTS.credInvalidSuffix[lang]}`,
+      leakPoints: 0,
+      severity: 'low',
+      threatScenario: null,
+    });
   } else {
     sections.push({
       kind: 'ai',
       icon: '🤖',
-      title: lang === 'ru' ? 'AI-генерация' : lang === 'uz' ? 'AI-generatsiya' : 'AI check',
-      text: lang === 'ru' ? 'Признаков AI-генерации не обнаружено' : lang === 'uz' ? 'AI-generatsiya belgilari topilmadi' : 'No AI generation signs detected',
-      subtext: lang === 'ru' ? 'Проверены XMP-теги и метаданные ПО' : 'Checked XMP tags and software metadata',
+      title: TEXTS.aiCheckTitle[lang],
+      text: TEXTS.aiNone[lang],
+      subtext:
+        credStatus === 'checking'
+          ? TEXTS.credChecking[lang]
+          : credStatus === 'unavailable'
+            ? TEXTS.credUnavailable[lang]
+            : TEXTS.credNone[lang],
       leakPoints: 0,
       severity: 'low',
       threatScenario: null,

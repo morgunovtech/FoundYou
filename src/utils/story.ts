@@ -5,6 +5,8 @@ import type { StrippedAnalysis } from './heuristics/strippedDetector';
 import type { StructuredMetadata } from '../types/metadata';
 import type { BoundingBox } from '../types/detection';
 import type { OCRResult } from '../hooks/useOCR';
+import type { PlateCandidate } from './plates';
+import type { ContentCredentials } from './contentCredentials';
 import type { MessageKey } from '../i18n';
 import { formatDetailedDate } from './format';
 import { formatCoords } from './insightsCompact';
@@ -27,6 +29,10 @@ export interface StoryInput {
   accuracyLabel: string | null;
   weatherLine: string | null;
   holidayNames: string | null;
+  /** Licence-plate candidates; the first one is quoted. */
+  plates?: PlateCandidate[];
+  /** Content Credentials when the file carries a manifest. */
+  credentials?: ContentCredentials | null;
 }
 
 export interface Story {
@@ -44,6 +50,8 @@ export interface Story {
 export function buildStory(input: StoryInput): Story {
   const { t, lang, metadata, temporal, editing, stripped, detections, ocrResult, place, accuracyLabel, weatherLine, holidayNames } =
     input;
+  const plates = input.plates ?? [];
+  const credentials = input.credentials ?? null;
   const sentences: string[] = [];
 
   // When
@@ -90,6 +98,14 @@ export function buildStory(input: StoryInput): Story {
     const sample = ocrResult.fullText.replace(/\s+/g, ' ').trim().slice(0, 60);
     sentences.push(t('storyText', { sample }));
   }
+  if (plates.length > 0) sentences.push(t('storyPlates', { sample: plates[0].text }));
+
+  // Provenance: a signed manifest is a fact, not a guess.
+  if (credentials && credentials.generative !== 'none') {
+    sentences.push(t('storyAiSigned', { agent: credentials.generativeAgents[0] ?? credentials.generator ?? 'AI' }));
+  } else if (credentials) {
+    sentences.push(t('storySigned', { generator: credentials.generator ?? credentials.issuer ?? 'C2PA' }));
+  }
 
   // Origin / editing
   if (stripped?.stripped && stripped.strippedBy) {
@@ -111,6 +127,7 @@ function buildConclusion({ t, profile, detections }: StoryInput): string | null 
   else if (kinds.has('location')) pieces.push(t('storyPieceWhere'));
   if (kinds.has('time')) pieces.push(t('storyPieceHabits'));
   if (kinds.has('device')) pieces.push(t('storyPieceDevice'));
+  if (kinds.has('plates')) pieces.push(t('storyPieceCar'));
   if (kinds.has('people') || detections.some((d) => d.label === 'face')) pieces.push(t('storyPiecePeople'));
   if (kinds.has('hash') || kinds.has('serial')) pieces.push(t('storyPieceLink'));
   if (pieces.length === 0) return t('storyConclusion', { items: t('storyPieceLittle') });
