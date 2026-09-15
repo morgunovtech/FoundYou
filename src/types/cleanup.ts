@@ -32,3 +32,13 @@ export interface CleanupPreviewDimensions {
   width: number;
   height: number;
 }
+
+export type OutputFormat = 'original' | 'jpeg' | 'png' | 'webp';
+
+/** Result of re-parsing the exported blob with exifr after download. */
+export interface VerifyResult {
+  /** Metadata fields found in the uploaded file (EXIF + XMP + IPTC + ICC). */
+  before: number;
+  /** Fields still present in the exported file; null when the format could not be parsed (e.g. WebP). */
+  after: number | null;
+}
