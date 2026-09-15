@@ -12,7 +12,22 @@ type Lang = 'ru' | 'en' | 'uz';
 
 /* ── types ──────────────────────────────────────────────── */
 
+export type ProfileSectionKind =
+  | 'device'
+  | 'location'
+  | 'time'
+  | 'people'
+  | 'text'
+  | 'ai'
+  | 'editing'
+  | 'origin'
+  | 'content'
+  | 'serial'
+  | 'hash';
+
 export interface ProfileSection {
+  /** Stable id of the fact the section describes; the UI attaches details (map, OCR text) by it. */
+  kind: ProfileSectionKind;
   icon: string;
   title: string;
   text: string;
@@ -163,6 +178,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   if (device) {
     const fromExif = !!metadata?.cameraModel;
     sections.push({
+      kind: 'device',
       icon: '📱',
       title: lang === 'ru' ? 'Устройство' : lang === 'uz' ? 'Qurilma' : 'Device',
       text: device + (metadata?.cameraMake ? ` (${metadata.cameraMake})` : ''),
@@ -178,6 +194,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   // ── GPS ──
   if (metadata?.gps) {
     sections.push({
+      kind: 'location',
       icon: '📍',
       title: lang === 'ru' ? 'Местоположение' : lang === 'uz' ? 'Joylashuv' : 'Location',
       text: `${metadata.gps.lat.toFixed(5)}, ${metadata.gps.lon.toFixed(5)}` + (metadata.gps.altitude != null ? ` (${Math.round(metadata.gps.altitude)}m)` : ''),
@@ -201,6 +218,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       return max;
     }, 'low');
     sections.push({
+      kind: 'time',
       icon: '🕐',
       title: lang === 'ru' ? 'Время и привычки' : lang === 'uz' ? 'Vaqt va odatlar' : 'Time & habits',
       text: allFacts,
@@ -211,6 +229,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     });
   } else {
     sections.push({
+      kind: 'time',
       icon: '🕐',
       title: lang === 'ru' ? 'Время и привычки' : lang === 'uz' ? 'Vaqt va odatlar' : 'Time & habits',
       text: lang === 'ru' ? 'Дата/время съёмки не найдены' : lang === 'uz' ? 'Suratga olish sanasi/vaqti topilmadi' : 'Shot date/time not found',
@@ -221,17 +240,23 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     });
   }
 
-  // ── Faces ──
+  // ── People and faces ──
   const personDetections = detections.filter(d => d.label === 'person' && d.score >= 0.5);
-  if (personDetections.length > 0) {
+  const faceDetections = detections.filter(d => d.label === 'face');
+  const peopleCount = Math.max(personDetections.length, faceDetections.length);
+  if (peopleCount > 0) {
+    const faceNote = faceDetections.length > 0
+      ? (lang === 'ru' ? `, лиц: ${faceDetections.length}` : lang === 'uz' ? `, yuzlar: ${faceDetections.length}` : `, faces: ${faceDetections.length}`)
+      : '';
     sections.push({
+      kind: 'people',
       icon: '👤',
       title: lang === 'ru' ? 'Люди на фото' : lang === 'uz' ? 'Fotodagi odamlar' : 'People in photo',
-      text: lang === 'ru'
-        ? `Обнаружено ${personDetections.length} чел.`
+      text: (lang === 'ru'
+        ? `Обнаружено ${peopleCount} чел.`
         : lang === 'uz'
-        ? `${personDetections.length} kishi aniqlandi`
-        : `${personDetections.length} person(s) detected`,
+        ? `${peopleCount} kishi aniqlandi`
+        : `${peopleCount} person(s) detected`) + faceNote,
       subtext: lang === 'ru'
         ? 'Лица могут быть найдены через сервисы поиска по изображениям'
         : lang === 'uz'
@@ -244,8 +269,10 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   }
 
   // ── OCR text ──
-  if (ocrResult && ocrResult.fullText.length > 3) {
+  // Two confident fragments at least: a lone token is texture noise more often than a sign.
+  if (ocrResult && ocrResult.regions.length >= 2 && ocrResult.fullText.length > 3) {
     sections.push({
+      kind: 'text',
       icon: '🔤',
       title: lang === 'ru' ? 'Текст на фото' : lang === 'uz' ? 'Fotodagi matn' : 'Text in photo',
       text: lang === 'ru'
@@ -261,6 +288,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   // ── AI detection (always show) ──
   if (editing.isAiGenerated) {
     sections.push({
+      kind: 'ai',
       icon: '🤖',
       title: lang === 'ru' ? 'AI-генерация' : lang === 'uz' ? 'AI-generatsiya' : 'AI-generated',
       text: editing.aiTool ?? 'AI',
@@ -271,6 +299,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     });
   } else {
     sections.push({
+      kind: 'ai',
       icon: '🤖',
       title: lang === 'ru' ? 'AI-генерация' : lang === 'uz' ? 'AI-generatsiya' : 'AI check',
       text: lang === 'ru' ? 'Признаков AI-генерации не обнаружено' : lang === 'uz' ? 'AI-generatsiya belgilari topilmadi' : 'No AI generation signs detected',
@@ -284,6 +313,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   // ── Editing (always show) ──
   if (editing.edited) {
     sections.push({
+      kind: 'editing',
       icon: '🖌️',
       title: lang === 'ru' ? 'Обработка' : lang === 'uz' ? 'Tahrirlash' : 'Editing',
       text: editing.software.join(', '),
@@ -294,6 +324,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     });
   } else {
     sections.push({
+      kind: 'editing',
       icon: '🖌️',
       title: lang === 'ru' ? 'Обработка' : lang === 'uz' ? 'Tahrirlash' : 'Editing',
       text: lang === 'ru' ? 'Следов редактирования не обнаружено' : lang === 'uz' ? 'Tahrirlash izlari topilmadi' : 'No editing traces detected',
@@ -307,6 +338,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   // ── Origin / messenger (always show) ──
   if (stripped.stripped) {
     sections.push({
+      kind: 'origin',
       icon: '💬',
       title: lang === 'ru' ? 'Происхождение' : lang === 'uz' ? 'Kelib chiqishi' : 'Origin',
       text: stripped.strippedBy
@@ -319,6 +351,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     });
   } else {
     sections.push({
+      kind: 'origin',
       icon: '💬',
       title: lang === 'ru' ? 'Происхождение' : lang === 'uz' ? 'Kelib chiqishi' : 'Origin',
       text: lang === 'ru' ? 'Оригинальный файл (не из мессенджера)' : lang === 'uz' ? 'Original fayl (messenjerdan emas)' : 'Original file (not from a messenger)',
@@ -332,6 +365,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   // ── Content type ──
   if (resolution.contentHint) {
     sections.push({
+      kind: 'content',
       icon: resolution.isScreenshot ? '🖥️' : '📐',
       title: lang === 'ru' ? 'Тип контента' : lang === 'uz' ? 'Kontent turi' : 'Content type',
       text: resolution.contentHint,
@@ -346,6 +380,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   const serials = extractSerialNumbers(exif);
   if (serials.length > 0) {
     sections.push({
+      kind: 'serial',
       icon: '🔢',
       title: lang === 'ru' ? 'Серийные номера' : lang === 'uz' ? 'Seriya raqamlari' : 'Serial numbers',
       text: serials.join('; '),
@@ -359,6 +394,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   // ── Hash ──
   if (hash) {
     sections.push({
+      kind: 'hash',
       icon: '🔑',
       title: lang === 'ru' ? 'Цифровой отпечаток' : lang === 'uz' ? 'Raqamli barmoq izi' : 'Digital fingerprint',
       text: `SHA-256: ${hash.sha256.substring(0, 16)}...`,

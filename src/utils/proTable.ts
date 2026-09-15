@@ -1,27 +1,20 @@
-import React, { useMemo, useState } from 'react';
-import type { DigitalProfile } from '../utils/heuristics/digitalProfile';
-import { generateReport } from '../utils/heuristics/digitalProfile';
+import type { DigitalProfile } from './heuristics/digitalProfile';
 import type { StructuredMetadata, BasicFileInfo } from '../types/metadata';
 import type { BoundingBox } from '../types/detection';
 import type { OCRResult } from '../hooks/useOCR';
 import type { ProData } from '../App';
-import { useT } from '../i18n';
-import { SectionHead } from './SectionHead';
 
-interface ProfileBlockProps {
-  profile: DigitalProfile | null;
-  lang: 'ru' | 'en' | 'uz';
-  metadata: StructuredMetadata | null;
-  proData: ProData | null;
-  fileInfo: BasicFileInfo | null;
-  detections: BoundingBox[];
-  ocrResult: OCRResult | null;
+/**
+ * Pro mode: every raw value the analysis produced, grouped for a mono table.
+ * Pure — the component only decides how many rows to show.
+ */
+export type ProRow = [string, string];
+export interface ProGroup {
+  group: string;
+  rows: ProRow[];
 }
 
-type Row = [string, string];
 
-/** Raw XMP/ICC dumps can run to thousands of rows; render this many and offer the rest on demand. */
-const PRO_ROW_CAP = 200;
 
 function formatValue(value: unknown): string {
   if (value == null) return '';
@@ -36,8 +29,8 @@ function formatValue(value: unknown): string {
   return String(value);
 }
 
-function flattenEntries(obj: Record<string, unknown>, prefix = ''): Row[] {
-  const rows: Row[] = [];
+function flattenEntries(obj: Record<string, unknown>, prefix = ''): ProRow[] {
+  const rows: ProRow[] = [];
   for (const [key, value] of Object.entries(obj)) {
     if (value == null) continue;
     const fullKey = prefix ? `${prefix}.${key}` : key;
@@ -50,7 +43,7 @@ function flattenEntries(obj: Record<string, unknown>, prefix = ''): Row[] {
   return rows;
 }
 
-function buildProGroups(
+export function buildProGroups(
   profile: DigitalProfile,
   metadata: StructuredMetadata | null,
   proData: ProData | null,
@@ -58,25 +51,25 @@ function buildProGroups(
   detections: BoundingBox[],
   ocrResult: OCRResult | null,
   lang: string
-): Array<{ group: string; rows: Row[] }> {
-  const groups: Array<{ group: string; rows: Row[] }> = [];
+): Array<{ group: string; rows: ProRow[] }> {
+  const groups: Array<{ group: string; rows: ProRow[] }> = [];
 
   // 1. Leak score + profile sections
-  const profileRows: Row[] = [
+  const profileRows: ProRow[] = [
     ['Leak Score', `${profile.leakScore}/100 (${profile.leakLevel.label})`],
     ...profile.sections.map(
       (s) =>
         [
           s.title,
           `${s.text}${s.subtext ? ` — ${s.subtext}` : ''}${s.threatScenario ? ` [${s.threatScenario}]` : ''}`
-        ] as Row
+        ] as ProRow
     )
   ];
   groups.push({ group: lang === 'ru' ? 'Профиль' : 'Profile', rows: profileRows });
 
   // 2. File info
   if (fileInfo) {
-    const fileRows: Row[] = [
+    const fileRows: ProRow[] = [
       ['filename', fileInfo.originalName ?? fileInfo.file.name],
       ['mimeType', fileInfo.mimeType],
       ['size', `${(fileInfo.sizeBytes / 1024).toFixed(1)} KB`],
@@ -94,7 +87,7 @@ function buildProGroups(
   // 3. Filename heuristics
   if (proData?.filename) {
     const fn = proData.filename;
-    const rows: Row[] = [
+    const rows: ProRow[] = [
       ['platform', fn.platform ?? '—'],
       ['device', fn.device || '—'],
       ['confidence', fn.confidence > 0 ? `${(fn.confidence * 100).toFixed(0)}%` : '—']
@@ -107,7 +100,7 @@ function buildProGroups(
   // 4. Resolution heuristics
   if (proData?.resolution) {
     const res = proData.resolution;
-    const rows: Row[] = [
+    const rows: ProRow[] = [
       ['possibleDevices', res.possibleDevices.length > 0 ? res.possibleDevices.join(', ') : '—'],
       ['contentType', res.contentType],
       ['contentHint', res.contentHint || '—'],
@@ -119,7 +112,7 @@ function buildProGroups(
   // 5. Stripped detection
   if (proData?.stripped) {
     const st = proData.stripped;
-    const rows: Row[] = [
+    const rows: ProRow[] = [
       ['stripped', String(st.stripped)],
       ['strippedBy', st.strippedBy ?? '—'],
       ['confidence', st.confidence > 0 ? `${(st.confidence * 100).toFixed(0)}%` : '—']
@@ -133,7 +126,7 @@ function buildProGroups(
   // 6. Editing history
   if (proData?.editing) {
     const ed = proData.editing;
-    const rows: Row[] = [
+    const rows: ProRow[] = [
       ['edited', String(ed.edited)],
       ['editingLevel', ed.editingLevel],
       ['software', ed.software.length > 0 ? ed.software.join(', ') : '—'],
@@ -148,7 +141,7 @@ function buildProGroups(
 
   // 7. Temporal analysis
   if (proData?.temporal && proData.temporal.length > 0) {
-    const rows: Row[] = proData.temporal.map((t, i) => [
+    const rows: ProRow[] = proData.temporal.map((t, i) => [
       `[${i}] ${t.severity}`,
       `${t.fact}${t.inference ? ` — ${t.inference}` : ''}`
     ]);
@@ -173,7 +166,7 @@ function buildProGroups(
 
   // 10. Object detections
   if (detections.length > 0) {
-    const rows: Row[] = detections.map((d, i) => [
+    const rows: ProRow[] = detections.map((d, i) => [
       `[${i}] ${d.label}`,
       `score=${d.score.toFixed(2)} x=${Math.round(d.x)} y=${Math.round(d.y)} w=${Math.round(d.width)} h=${Math.round(d.height)}`
     ]);
@@ -182,7 +175,7 @@ function buildProGroups(
 
   // 11. OCR
   if (ocrResult) {
-    const rows: Row[] = [
+    const rows: ProRow[] = [
       ['regions', String(ocrResult.regions.length)],
       ['fullText', ocrResult.fullText.length > 500 ? ocrResult.fullText.slice(0, 500) + '...' : ocrResult.fullText]
     ];
@@ -191,7 +184,7 @@ function buildProGroups(
 
   // 12. Structured metadata fields
   if (metadata) {
-    const structured: Row[] = [];
+    const structured: ProRow[] = [];
     if (metadata.shotDate) structured.push(['shotDate', metadata.shotDate]);
     if (metadata.cameraMake) structured.push(['cameraMake', metadata.cameraMake]);
     if (metadata.cameraModel) structured.push(['cameraModel', metadata.cameraModel]);
@@ -229,148 +222,6 @@ function buildProGroups(
     }
   }
 
+
   return groups;
 }
-
-const ProfileBlockInner: React.FC<ProfileBlockProps> = ({ profile, lang, metadata, proData, fileInfo, detections, ocrResult }) => {
-  const t = useT();
-  const [copied, setCopied] = useState(false);
-  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
-  const [proMode, setProMode] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
-
-  const proGroups = useMemo(
-    () => (proMode && profile ? buildProGroups(profile, metadata, proData, fileInfo, detections, ocrResult, lang) : []),
-    [proMode, profile, metadata, proData, fileInfo, detections, ocrResult, lang]
-  );
-
-  if (!profile || profile.sections.length === 0) return null;
-
-  const handleCopy = () => {
-    const report = generateReport(profile, lang);
-    navigator.clipboard
-      .writeText(report)
-      .then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      })
-      .catch(() => {
-        // Clipboard API denied (iframe, permissions policy) — nothing else to fall back to here.
-        console.warn('clipboard-write-denied');
-      });
-  };
-
-  const handleDownload = () => {
-    const report = generateReport(profile, lang);
-    const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'foundyou-report.txt';
-    document.body.appendChild(link);
-    link.click();
-    setTimeout(() => {
-      URL.revokeObjectURL(url);
-      document.body.removeChild(link);
-    }, 1000);
-  };
-
-  const scorePercent = Math.min(100, Math.max(0, profile.leakScore));
-
-  return (
-    <section className="v4-section" aria-labelledby="sec-profile">
-      <SectionHead num="03" title={t('profileTitle')} id="sec-profile">
-        <button type="button" className="v4-btn fy-btn-sm" aria-pressed={proMode} onClick={() => setProMode(!proMode)}>
-          {t('proMode')}
-        </button>
-      </SectionHead>
-      <div className="fy-card">
-        {proMode ? (
-          <div className="fy-pro">
-            {proGroups.map((group) => {
-              const expanded = Boolean(expandedGroups[group.group]);
-              const visibleRows = expanded ? group.rows : group.rows.slice(0, PRO_ROW_CAP);
-              const hiddenCount = group.rows.length - visibleRows.length;
-              return (
-                <div key={group.group} className="fy-pro-group">
-                  <h3 className="v4-h3">{group.group}</h3>
-                  <div className="fy-table-scroll">
-                    <table className="fy-pro-table">
-                      <tbody>
-                        {visibleRows.map(([key, value], ri) => (
-                          <tr key={`${key}-${ri}`}>
-                            <td>{key}</td>
-                            <td>{value}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  {hiddenCount > 0 ? (
-                    <button
-                      type="button"
-                      className="v4-btn fy-btn-sm"
-                      onClick={() => setExpandedGroups((prev) => ({ ...prev, [group.group]: true }))}
-                    >
-                      {t('showMore', { count: hiddenCount })}
-                    </button>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <>
-            <div className="fy-score" data-level={profile.leakLevel.level}>
-              <div className="fy-score-bar">
-                <div className="fy-score-fill" style={{ width: `${scorePercent}%` }} />
-              </div>
-              <div className="fy-score-label">
-                <span className="fy-score-value">{profile.leakScore}/100</span>
-                <span className="fy-score-level">{profile.leakLevel.label}</span>
-              </div>
-              <p className="fy-score-desc">{profile.leakLevel.description}</p>
-            </div>
-
-            <div className="fy-findings">
-              {profile.sections.map((section, idx) => {
-                const expandable = Boolean(section.threatScenario);
-                const expanded = expandedIdx === idx;
-                return (
-                  <button
-                    type="button"
-                    key={`${section.title}-${idx}`}
-                    className="fy-finding"
-                    data-severity={section.severity}
-                    aria-expanded={expandable ? expanded : undefined}
-                    onClick={() => (expandable ? setExpandedIdx(expanded ? null : idx) : undefined)}
-                  >
-                    <div className="fy-finding-head">
-                      <span className="fy-finding-title">{section.title}</span>
-                      {section.leakPoints > 0 ? <span className="fy-finding-points">+{section.leakPoints}</span> : null}
-                    </div>
-                    <div className="fy-finding-text">{section.text}</div>
-                    {section.subtext ? <div className="fy-finding-sub">{section.subtext}</div> : null}
-                    {expanded && section.threatScenario ? <div className="fy-finding-threat">{section.threatScenario}</div> : null}
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        )}
-
-        <div className="fy-actions">
-          <button type="button" className="v4-btn fy-btn-sm" onClick={handleCopy}>
-            {copied ? t('copied') : t('copyReport')}
-          </button>
-          <button type="button" className="v4-btn fy-btn-sm" onClick={handleDownload}>
-            {t('downloadTxt')}
-          </button>
-        </div>
-      </div>
-    </section>
-  );
-};
-
-export const ProfileBlock = React.memo(ProfileBlockInner);
-ProfileBlock.displayName = 'ProfileBlock';

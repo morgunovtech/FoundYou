@@ -312,9 +312,11 @@ describe('generateDigitalProfile: individual branches', () => {
     expect(section(three, ICON.people).text).toContain('3');
   });
 
-  it('text: needs more than three characters of OCR output', () => {
-    expect(icons(generateDigitalProfile({ ...base(), ocrResult: { fullText: 'abc', regions: [region('abc')] } }))).not.toContain(ICON.text);
-    expect(icons(generateDigitalProfile({ ...base(), ocrResult: { fullText: 'abcd', regions: [region('abcd')] } }))).toContain(ICON.text);
+  it('text: needs at least two confident fragments and more than three characters of OCR output', () => {
+    // A lone token is texture noise more often than a sign, however long it is.
+    expect(icons(generateDigitalProfile({ ...base(), ocrResult: { fullText: 'abcd', regions: [region('abcd')] } }))).not.toContain(ICON.text);
+    expect(icons(generateDigitalProfile({ ...base(), ocrResult: { fullText: 'a b', regions: [region('a'), region('b')] } }))).not.toContain(ICON.text);
+    expect(icons(generateDigitalProfile({ ...base(), ocrResult: { fullText: 'abcd ef', regions: [region('abcd'), region('ef')] } }))).toContain(ICON.text);
   });
 
   it('AI positive: tool name, medium severity, a threat scenario', () => {

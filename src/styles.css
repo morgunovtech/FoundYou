@@ -1044,6 +1044,223 @@
   outline: none;
 }
 
+/* --- Section toolbar (lead text + one action) -------------------------- */
+
+.fy-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px 24px;
+  flex-wrap: wrap;
+  margin: -4px 0 16px;
+}
+
+.fy-toolbar .fy-hint {
+  flex: 1 1 320px;
+  max-width: 70ch;
+}
+
+.fy-toolbar .v4-btn {
+  flex: 0 0 auto;
+}
+
+/* --- Story: verdict, portrait, facts ---------------------------------- */
+
+.fy-verdict {
+  gap: 10px;
+}
+
+.fy-verdict-title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.fy-verdict[data-level="high"] .fy-verdict-title,
+.fy-verdict[data-level="critical"] .fy-verdict-title {
+  color: var(--v4-orange-text);
+}
+
+.fy-verdict-why {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 60ch;
+}
+
+.fy-verdict-reasons {
+  margin: 0;
+  font-size: 13px;
+  color: var(--v4-muted);
+}
+
+.fy-verdict-reasons b {
+  color: var(--v4-fg);
+  font-weight: 500;
+}
+
+.fy-verdict .fy-actions {
+  margin-top: 4px;
+}
+
+.fy-verdict-index {
+  margin: 0;
+  font-family: var(--v4-mono);
+  font-size: var(--v4-label-xs-size);
+  letter-spacing: var(--v4-label-xs-tracking);
+  text-transform: uppercase;
+  color: var(--v4-dim);
+}
+
+.fy-story p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  max-width: 72ch;
+}
+
+.fy-story-conclusion {
+  padding-left: 12px;
+  border-left: 2px solid var(--v4-orange);
+}
+
+.fy-facts {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.fy-fact {
+  background: var(--v4-paper);
+  border: 1px solid var(--v4-line);
+  border-left: 2px solid var(--v4-line);
+  padding: 14px 18px 16px;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.fy-fact[data-severity="high"] {
+  border-left-color: var(--v4-orange);
+}
+
+.fy-fact[data-severity="medium"] {
+  border-left-color: var(--v4-fg);
+}
+
+.fy-fact-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.fy-fact-title {
+  margin: 0;
+  font-family: var(--v4-mono);
+  font-size: var(--v4-label-size);
+  font-weight: var(--v4-label-weight);
+  letter-spacing: var(--v4-label-tracking);
+  text-transform: uppercase;
+  color: var(--v4-muted);
+}
+
+.fy-fact-points {
+  margin-left: auto;
+  font-family: var(--v4-mono);
+  font-size: var(--v4-label-xs-size);
+  letter-spacing: var(--v4-label-xs-tracking);
+  color: var(--v4-muted);
+  white-space: nowrap;
+}
+
+.fy-fact-value {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.fy-fact-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--v4-muted);
+}
+
+.fy-fact-so {
+  margin: 4px 0 0;
+  padding: 8px 12px;
+  background: var(--v4-bg);
+  font-size: 13px;
+  line-height: 1.5;
+  display: grid;
+  gap: 2px;
+}
+
+.fy-fact-so b {
+  font-family: var(--v4-mono);
+  font-size: var(--v4-label-xs-size);
+  font-weight: var(--v4-label-weight);
+  letter-spacing: var(--v4-label-xs-tracking);
+  text-transform: uppercase;
+  color: var(--v4-orange-text);
+}
+
+.fy-fact-details {
+  margin-top: 6px;
+  display: grid;
+  gap: 10px;
+}
+
+.fy-fact-details .fy-insights {
+  gap: 14px;
+}
+
+.fy-fact-details .fy-lists {
+  padding-top: 12px;
+  margin-top: 4px;
+}
+
+.fy-geo-note {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--v4-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+}
+
+.fy-link-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: var(--v4-fg);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--v4-line);
+  cursor: pointer;
+}
+
+.fy-link-btn:hover,
+.fy-link-btn:focus-visible {
+  color: var(--v4-orange-text);
+  text-decoration-color: var(--v4-orange-text);
+}
+
+@media (max-width: 640px) {
+  .fy-toolbar .v4-btn {
+    width: 100%;
+  }
+  .fy-verdict-title {
+    font-size: 19px;
+  }
+}
+
 /* --- Notices / errors -------------------------------------------------- */
 
 .fy-notice {
