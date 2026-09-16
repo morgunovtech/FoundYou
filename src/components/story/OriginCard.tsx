@@ -6,7 +6,8 @@ import { ORIGIN_KINDS } from '../../utils/heuristics/digitalProfile';
 import type { ContentCredentialsState } from '../../hooks/useContentCredentials';
 import type { DeviceProfile } from '../../utils/deviceProfile';
 import { buildFileHistory, type FileEvent } from '../../utils/fileHistory';
-import { formatCompactDate, formatDetailedDate, formatDimensions } from '../../utils/format';
+import { formatCompactDate, formatDetailedDate, formatDimensions, formatSecondsDuration } from '../../utils/format';
+import { DRIFT_SUSPICIOUS_SECONDS } from '../../utils/timeProfile';
 import { useI18n, useT } from '../../i18n';
 import { FactRow } from './FactRow';
 import { DeviceRows } from './DeviceRows';
@@ -18,6 +19,8 @@ interface OriginCardProps {
   metadata: StructuredMetadata | null;
   proData: ProData | null;
   credentials: ContentCredentialsState;
+  /** Camera clock minus GPS time, seconds (`TimeProfile.driftSeconds`); null without a GPS stamp. */
+  driftSeconds: number | null;
 }
 
 /** Content Credentials, when the file carries them: who signed, with what, and whether it held. */
@@ -54,12 +57,13 @@ const withEvidence = (text: string, evidence: string | null | undefined) => (evi
 
 /**
  * «На что сделан снимок»: the device and its system in the headline, the device rows, the
- * file history as two dates (created from the camera clock; edited from ModifyDate / Software,
+ * file history as two dates (created from the camera clock, with the clock drift against the GPS
+ * stamp under it when it exceeds a minute; edited from ModifyDate / Software,
  * «not edited» when nothing points to a later save, otherwise the signs: a smaller picture
  * than the camera wrote, a messenger re-encode, an embedded thumbnail that differs) and the
  * authenticity rows (AI, serial numbers, Content Credentials) in one card.
  */
-export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, fileInfo, metadata, proData, credentials }) => {
+export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, fileInfo, metadata, proData, credentials, driftSeconds }) => {
   const t = useT();
   const { lang } = useI18n();
 
@@ -110,6 +114,16 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
     ? t('historyDateUnknown')
     : t('historyNotEdited');
   const editedNote = modified?.agent ? t('historyModifiedWith', { software: modified.agent }) : null;
+  // A clock a minute or more off the GPS stamp was set by hand or edited; seconds are noise.
+  const driftNote =
+    driftSeconds != null && Math.abs(driftSeconds) >= DRIFT_SUSPICIOUS_SECONDS
+      ? t('historyClockDrift', {
+          drift:
+            driftSeconds > 0
+              ? t('driftAhead', { delta: formatSecondsDuration(driftSeconds, t) })
+              : t('driftBehind', { delta: formatSecondsDuration(-driftSeconds, t) })
+        })
+      : null;
   const signText = (event: FileEvent): string => {
     switch (event.kind) {
       case 'resized':
@@ -137,7 +151,10 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
         <h4 className="v4-h3">{t('historyTitle')}</h4>
         <dl className="fy-spec fy-spec--tight">
           <dt>{t('historyCreated')}</dt>
-          <dd>{createdText}</dd>
+          <dd>
+            <span>{createdText}</span>
+            {driftNote ? <span className="fy-muted">{driftNote}</span> : null}
+          </dd>
           <dt>{t('historyEdited')}</dt>
           <dd>
             <span>{editedText}</span>

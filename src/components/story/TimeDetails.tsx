@@ -1,9 +1,9 @@
 import React from 'react';
 import type { GeoContext } from '../../hooks/useGeoContext';
 import type { StructuredMetadata } from '../../types/metadata';
-import { DRIFT_EXACT_SECONDS, type TimeProfile } from '../../utils/timeProfile';
+import type { TimeProfile } from '../../utils/timeProfile';
 import { formatOffset } from '../../utils/stance';
-import { formatDetailedDate, formatMinutesDuration, formatSecondsDuration } from '../../utils/format';
+import { formatDetailedDate, formatMinutesDuration } from '../../utils/format';
 import { useI18n, useT } from '../../i18n';
 import { RetryButton } from './RetryButton';
 
@@ -16,9 +16,10 @@ interface TimeDetailsProps {
 
 /**
  * «Когда сделан снимок» rows under the headline (age, date, weekday, day kind, time of day and
- * the clock — see `timeHeadline`): one time-zone row with the camera and the place, the
- * difference between the two with the local clock, the drift against GPS time. Facts only;
- * what the owner was doing at that hour is not inferred.
+ * the clock — see `timeHeadline`): one time-zone row with the camera and the place and the
+ * difference between the two with the local clock. The drift against GPS time is an
+ * authenticity sign and lives in the file history. Facts only; what the owner was doing at
+ * that hour is not inferred.
  */
 export const TimeDetails: React.FC<TimeDetailsProps> = ({ timeProfile: tp, geo, metadata, remote }) => {
   const t = useT();
@@ -72,21 +73,6 @@ export const TimeDetails: React.FC<TimeDetailsProps> = ({ timeProfile: tp, geo, 
           <>
             <dt>{t('timeDiff')}</dt>
             <dd>{diffText}</dd>
-          </>
-        ) : null}
-        {tp.driftSeconds != null ? (
-          <>
-            <dt>{t('timeDrift')}</dt>
-            <dd>
-              <span>
-                {Math.abs(tp.driftSeconds) <= DRIFT_EXACT_SECONDS
-                  ? t('driftExact', { seconds: DRIFT_EXACT_SECONDS })
-                  : tp.driftSeconds > 0
-                    ? t('driftAhead', { delta: formatSecondsDuration(tp.driftSeconds, t) })
-                    : t('driftBehind', { delta: formatSecondsDuration(-tp.driftSeconds, t) })}
-              </span>
-              <span className="fy-muted">{t('driftHint')}</span>
-            </dd>
           </>
         ) : null}
       </dl>
