@@ -241,6 +241,36 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     ]
   );
 
+  /** «Только метаданные»: the picture stays pixel-identical, only the container is rebuilt. */
+  const handleMetadataOnly = useCallback(() => {
+    setPrnuCleanup(false);
+    setBlurFaces(false);
+    setBlurText(false);
+    setBlurPlates(false);
+    setManualMaskMode(false);
+    manualMasks.forEach((mask) => onManualMaskRemove(mask.id));
+    setAntiSearchEnabled(false);
+    setWatermarkEnabled(false);
+    setMirrorEnabled(false);
+    setDownscaleMax(0);
+    setQualityMode('original');
+    setOutputFormat('original');
+  }, [
+    manualMasks,
+    onManualMaskRemove,
+    setAntiSearchEnabled,
+    setBlurFaces,
+    setBlurPlates,
+    setBlurText,
+    setDownscaleMax,
+    setManualMaskMode,
+    setMirrorEnabled,
+    setOutputFormat,
+    setPrnuCleanup,
+    setQualityMode,
+    setWatermarkEnabled
+  ]);
+
   const handleApplyAll = useCallback(() => {
     setPrnuCleanup(true);
     setRenameFile(true);
@@ -449,9 +479,14 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
       <SectionHead num="03" title={t('cleanupTitle')} id="sec-cleanup" />
       <div className="fy-toolbar">
         <p className="fy-hint">{t('cleanupHint')}</p>
-        <button type="button" className="v4-btn fy-btn-sm" onClick={handleApplyAll}>
-          {t('cleanupApplyAll')}
-        </button>
+        <div className="fy-toolbar-actions">
+          <button type="button" className="v4-btn fy-btn-sm" onClick={handleApplyAll}>
+            {t('cleanupApplyAll')}
+          </button>
+          <button type="button" className="v4-btn fy-btn-sm" onClick={handleMetadataOnly}>
+            {t('cleanupMetadataOnly')}
+          </button>
+        </div>
       </div>
 
       <div className="fy-cleanup">

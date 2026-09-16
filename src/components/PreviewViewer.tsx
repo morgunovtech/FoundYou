@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BasicFileInfo } from '../types/metadata';
-import { FACE_LABEL, type BoundingBox } from '../types/detection';
-import { useT } from '../i18n';
+import { FACE_LABEL, PERSON_LABEL, type BoundingBox } from '../types/detection';
+import { useI18n, useT } from '../i18n';
+import { CONFIDENT_SCORE, isSceneObject, localizeLabel } from '../utils/sceneNarrative';
 
 interface PreviewViewerProps {
   fileInfo: BasicFileInfo;
@@ -12,6 +13,7 @@ interface PreviewViewerProps {
 
 export const PreviewViewer: React.FC<PreviewViewerProps> = ({ fileInfo, detections, sceneDescription, progress }) => {
   const t = useT();
+  const { lang } = useI18n();
   const [fullScreen, setFullScreen] = useState(false);
   const triggerRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -37,8 +39,15 @@ export const PreviewViewer: React.FC<PreviewViewerProps> = ({ fileInfo, detectio
   }, [fullScreen, closeFullscreen]);
 
   const overlays = useMemo(() => {
+    // One label per human: a face inside a person box is drawn as an inner frame without text.
+    const persons = detections.filter((det) => det.label === PERSON_LABEL && det.score >= CONFIDENT_SCORE);
+    const insidePerson = (face: BoundingBox) => {
+      const cx = face.x + face.width / 2;
+      const cy = face.y + face.height / 2;
+      return persons.some((p) => cx >= p.x && cx <= p.x + p.width && cy >= p.y && cy <= p.y + p.height);
+    };
     return detections
-      .filter((det) => det.score >= 0.5)
+      .filter((det) => (det.label === FACE_LABEL ? det.score >= CONFIDENT_SCORE : isSceneObject(det)))
       .map((det, index) => {
         const style: React.CSSProperties = {
           left: `${(det.x / fileInfo.width) * 100}%`,
@@ -46,13 +55,18 @@ export const PreviewViewer: React.FC<PreviewViewerProps> = ({ fileInfo, detectio
           width: `${(det.width / fileInfo.width) * 100}%`,
           height: `${(det.height / fileInfo.height) * 100}%`
         };
+        const face = det.label === FACE_LABEL;
+        const uncertain = !face && det.score < CONFIDENT_SCORE;
+        const silent = face && insidePerson(det);
+        const label = face ? t('detectionLabelFace') : `${localizeLabel(det.label, lang)}${uncertain ? '?' : ''}`;
+        const className = `fy-detection${silent ? ' fy-detection--face' : ''}${uncertain ? ' fy-detection--uncertain' : ''}`;
         return (
-          <div key={`${det.label}-${index}`} className="fy-detection" style={style} aria-hidden="true">
-            <span className="fy-detection-label">{det.label === FACE_LABEL ? t('detectionLabelFace') : det.label}</span>
+          <div key={`${det.label}-${index}`} className={className} style={style} aria-hidden="true">
+            {silent ? null : <span className="fy-detection-label">{label}</span>}
           </div>
         );
       });
-  }, [detections, fileInfo.height, fileInfo.width, t]);
+  }, [detections, fileInfo.height, fileInfo.width, lang, t]);
 
   return (
     <div className="fy-preview">

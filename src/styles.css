@@ -213,14 +213,14 @@
 }
 
 /* --- Explainer (educational insert) ------------------------------------
-   The reusable «why this matters» block: paper card, 2px orange rule on the
-   left (the same signal as a high-severity fact and the scene quote), mono
-   label in the text accent, prose below. It sits next to the data it
-   explains and is never collapsed or hidden behind a toggle. */
+   The reusable «why this matters» block: the same tinted background and mono
+   accent label as the «Что это значит» insert inside a fact card, so every
+   explanation on the page looks alike, and unlike a data caption (which has
+   no tint and a grey rule). It sits next to the data it explains and is
+   never collapsed or hidden behind a toggle. */
 .fy-explainer {
-  background: var(--v4-paper);
+  background: var(--v4-bg);
   border: 1px solid var(--v4-line);
-  border-left: 2px solid var(--v4-orange);
   padding: 16px 18px 18px;
   display: grid;
   gap: 10px;
@@ -576,6 +576,16 @@
   pointer-events: none;
 }
 
+/* A face inside a person box: an inner frame, the person's label speaks for both. */
+.fy-detection--face {
+  border-style: dashed;
+}
+
+/* Score between 0.4 and 0.5: shown, but the label carries a question mark. */
+.fy-detection--uncertain {
+  border-style: dashed;
+}
+
 .fy-detection-label {
   position: absolute;
   top: -1px;
@@ -592,12 +602,13 @@
   white-space: nowrap;
 }
 
+/* The scene caption is data, not an explanation: a grey rule, no tint. */
 .fy-scene {
   margin: 0;
-  padding: 12px 14px;
-  border-left: 2px solid var(--v4-orange);
+  padding: 10px 14px;
+  border-left: 2px solid var(--v4-line);
   color: var(--v4-fg);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.55;
 }
 
@@ -1174,6 +1185,13 @@
 .fy-toolbar .fy-hint {
   flex: 1 1 320px;
   max-width: 70ch;
+}
+
+/* Presets on the right of the cleanup toolbar. */
+.fy-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .fy-toolbar .v4-btn {

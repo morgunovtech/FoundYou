@@ -45,7 +45,22 @@ describe('generateSceneNarrative', () => {
       box('person', 300, 100, 50, 80),
     ];
     const result = generateSceneNarrative({ detections: dets, imageWidth: IMG_W, imageHeight: IMG_H, lang: 'en' });
-    expect(result).toContain('3 persons');
+    expect(result).toContain('3 people');
+  });
+
+  it('mentions objects between 0.4 and 0.5 as possible, people not', () => {
+    const dets = [box('person', 350, 100, 300, 500), box('dog', 700, 500, 200, 150, 0.45), box('person', 50, 500, 100, 200, 0.45)];
+    const ru = generateSceneNarrative({ detections: dets, imageWidth: IMG_W, imageHeight: IMG_H, lang: 'ru' });
+    expect(ru).toBe('На переднем плане в центре — человек. Справа — возможно, собака.');
+    const en = generateSceneNarrative({ detections: dets, imageWidth: IMG_W, imageHeight: IMG_H, lang: 'en' });
+    expect(en).toBe('A person in the foreground in the center. Possibly a dog on the right.');
+  });
+
+  it('puts the place first and the object last', () => {
+    const dets = [box('person', 700, 100, 300, 500), box('car', 50, 600, 80, 50)];
+    expect(generateSceneNarrative({ detections: dets, imageWidth: IMG_W, imageHeight: IMG_H, lang: 'ru' })).toBe(
+      'На переднем плане справа — человек. На заднем плане слева — автомобиль.'
+    );
   });
 
   it('produces Russian narrative with localized labels', () => {
