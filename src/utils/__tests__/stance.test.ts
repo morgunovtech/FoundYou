@@ -146,7 +146,7 @@ describe('buildStance', () => {
     gps: { lat: 41.36123, lon: 69.92395, altitude: 1287, accuracy: 14, heading: 312, speed: 0.4 }
   });
 
-  it('assembles heading, camera, sun, clock mismatch and terrain', () => {
+  it('assembles heading, camera, sun and terrain', () => {
     const stance = buildStance({ metadata: tashkent, placeTimezone: 'Asia/Tashkent', terrainElevation: 1270 });
     expect(stance.heading).toEqual({ degrees: 312, point: 'NW' });
     expect(stance.cameraSide).toBe('rear');
@@ -158,12 +158,6 @@ describe('buildStance', () => {
     expect(stance.sun?.azimuth).toBeGreaterThan(180);
     expect(stance.sun?.azimuth).toBeLessThan(260);
     expect(stance.sun?.relative).toBe('left');
-    expect(stance.clock).toEqual({
-      cameraOffsetMinutes: 180,
-      placeOffsetMinutes: 300,
-      placeTimezone: 'Asia/Tashkent',
-      mismatch: true
-    });
     expect(stance.elevation).toEqual({ gps: 1287, terrain: 1270, difference: 17, verdict: 'ground' });
   });
 
@@ -171,7 +165,6 @@ describe('buildStance', () => {
     const stance = buildStance({ metadata: base({ gps: { lat: 41.3, lon: 69.3 } }) });
     expect(stance.heading).toBeNull();
     expect(stance.sun).toBeNull();
-    expect(stance.clock).toBeNull();
     expect(stance.elevation).toBeNull();
     expect(stance.movement).toBeNull();
     expect(stance.fovDegrees).toBe(70);

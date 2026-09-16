@@ -102,9 +102,9 @@ const THREATS: ThreatMap = {
     uz: 'Kundalik tartib va odatlarni oshkor qiladi',
   },
   camera: {
-    ru: 'Определяет уровень дохода и технические предпочтения',
-    en: 'Reveals income level and technical preferences',
-    uz: 'Daromad darajasi va texnik afzalliklarni oshkor qiladi',
+    ru: 'Модель и возраст устройства выдают уровень дохода, версия системы и прошивка — как вы следите за обновлениями; вместе со счётчиком кадров это связывает ваши снимки между собой',
+    en: 'The model and its age reveal income level; the system version and firmware show how you keep up with updates; with the shot counter this links your photos to each other',
+    uz: 'Model va qurilma yoshi daromad darajasini, tizim versiyasi va proshivka yangilanishlarga munosabatingizni oshkor qiladi; kadr hisoblagichi bilan birga bu suratlaringizni bir-biriga bog‘laydi',
   },
   faces: {
     ru: 'Биометрическая идентификация через сервисы поиска по лицу',

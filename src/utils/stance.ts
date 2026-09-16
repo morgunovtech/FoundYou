@@ -3,9 +3,10 @@ import { sunPosition, type SunPosition } from './sun';
 
 /*
  * «How the photo was taken»: everything that can be derived from GPS, time and
- * camera tags without the network, plus two cross-checks that need a place
- * lookup (zone of the place, terrain height). Pure functions; the component
- * only maps the result to text and to the diagram.
+ * camera tags without the network, plus two lookups (zone of the place for the
+ * sun, terrain height). Pure functions; the component only maps the result to
+ * text and to the diagram. The camera-clock-versus-place comparison lives in
+ * `timeProfile.ts` and is shown in the «Time and habits» card.
  */
 
 export type CompassPoint = 'N' | 'NE' | 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW';
@@ -193,7 +194,6 @@ export interface Stance {
   fovDegrees: number;
   instant: ShotInstant | null;
   sun: (SunPosition & { phase: SunPhase; relative: RelativeDirection | null }) | null;
-  clock: { cameraOffsetMinutes: number; placeOffsetMinutes: number; placeTimezone: string; mismatch: boolean } | null;
   elevation: { gps: number; terrain: number; difference: number; verdict: ElevationVerdict } | null;
 }
 
@@ -224,19 +224,6 @@ export function buildStance(input: {
     };
   }
 
-  let clock: Stance['clock'] = null;
-  if (instant?.cameraOffsetMinutes != null && placeTimezone) {
-    const placeOffset = zoneOffsetMinutes(placeTimezone, instant.utc);
-    if (placeOffset != null) {
-      clock = {
-        cameraOffsetMinutes: instant.cameraOffsetMinutes,
-        placeOffsetMinutes: placeOffset,
-        placeTimezone,
-        mismatch: instant.cameraOffsetMinutes !== placeOffset
-      };
-    }
-  }
-
   let elevation: Stance['elevation'] = null;
   if (
     gps?.altitude != null &&
@@ -260,7 +247,6 @@ export function buildStance(input: {
     fovDegrees: fieldOfView(metadata.focalLength35mm, orientation, side),
     instant,
     sun,
-    clock,
     elevation
   };
 }
