@@ -58,7 +58,8 @@ npm run build            # prepare:assets + typecheck + vite build → dist/
 - All tests run with `npm test` (vitest; `include` pattern in the `test` block of `vite.config.ts`).
 - Utility tests live next to the code in `src/utils/__tests__/*.test.ts` (`containerMetadata`, `cleanupSummary`, `shotDate`, heuristics, `story`, `plates`, `geotagTips`, `contentCredentials`, `share`, formatters); hook-level pure functions (OCR filters) in `src/__tests__/hooks/`.
 - Functions tests live in `src/__tests__/functions/*.test.ts`, one file per endpoint plus `_geo.test.ts`, and share `_harness.ts` (`call`/`callJson` build a same-site `Request` and invoke `onRequest`, `mockFetch` stubs the upstream, `installCaches` fakes `caches.default`). Add a test there for every new endpoint or guard; remember a request without `Sec-Fetch-Site`/`Origin`/`Referer` answers 403 by design.
-- Manual smoke: `public/test/IMG_20260614_183012.jpg` (GPS, Samsung EXIF) exercises the full flow in the dev server.
+- Manual smoke: `public/test/IMG_20260614_183012.jpg` (GPS, Samsung EXIF) exercises the full flow in the dev server; it is git-ignored, so a fresh clone has none. `node scripts/make-exif-fixture.mjs in.jpg out.jpg --lat … --lon … --heading … --speed … --offset … --gps-time … --lens … --focal35 …` writes a full EXIF block (GPS, heading, speed, GPS time, offset, device, lens) into any JPEG for checking the location and «Как был сделан снимок» facts.
+- `docs/handoff-2026-09-16.md` lists open decisions, unfinished work with implementation notes and the live-data checks to run once the sandbox network allows the upstream hosts.
 
 ## Do not
 
