@@ -18,8 +18,8 @@ function formatAperture(aperture: number): string {
 
 /**
  * Device rows of the «На что сделан снимок» card, under the headline that already names the
- * device and its system: maker, model, firmware build (Samsung), launch date and age of the
- * model, camera module, shot counter, then what the Apple MakerNote and the Samsung trailer
+ * device and its system (so no maker / model rows; the model code is in the raw table):
+ * firmware build (Samsung), launch date and age of the model, camera module, shot counter, then what the Apple MakerNote and the Samsung trailer
  * add (uptime, Live Photo, burst, capture mode; SIM country, Motion Photo). The source row
  * appears only when the device is a guess from the file name or the resolution.
  */
@@ -27,14 +27,6 @@ export const DeviceRows: React.FC<DeviceRowsProps> = ({ device: d, metadata }) =
   const t = useT();
   const { lang } = useI18n();
   const rows: Array<[string, React.ReactNode]> = [];
-  if (d.make) rows.push([t('deviceMake'), d.make]);
-  rows.push([
-    t('deviceModel'),
-    <>
-      <span>{d.model}</span>
-      {d.modelCode ? <span className="fy-muted fy-mono">{t('deviceModelCode', { code: d.modelCode })}</span> : null}
-    </>
-  ]);
   if (d.firmware) {
     rows.push([
       t('deviceFirmware'),

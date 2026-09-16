@@ -221,6 +221,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
             metadata={metadata}
             proData={proData}
             credentials={credentials}
+            driftSeconds={timeProfile?.driftSeconds ?? null}
           />
         ) : null}
       </div>

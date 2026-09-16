@@ -99,8 +99,11 @@ export interface TimeProfile {
   driftSeconds: number | null;
 }
 
-/** Below this the clock counts as exact: GPS stamps are whole seconds and EXIF has no sub-second offset. */
-export const DRIFT_EXACT_SECONDS = 5;
+/**
+ * Camera clock versus the GPS stamp: below this many seconds they agree for every purpose;
+ * above it the time was set by hand or edited, which the file history reports.
+ */
+export const DRIFT_SUSPICIOUS_SECONDS = 60;
 
 export interface TimeProfileInput {
   metadata: Pick<StructuredMetadata, 'shotDateLocal' | 'utcOffset' | 'gps'> | null;
