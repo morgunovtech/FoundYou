@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { useT } from '../i18n';
 import { ErrorBanner } from './ErrorBanner';
+import { MAX_FILE_SIZE_MB } from '../hooks/useImageFile';
 
 interface UploadZoneProps {
   loading: boolean;
@@ -106,7 +107,6 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error }
       <h2 className="v4-h3" id="upload-title">
         {t('uploadTitle')}
       </h2>
-      <p className="fy-hint">{t('uploadLead')}</p>
       <div
         className={clsx('fy-drop', { 'is-drag-over': dragOver })}
         onDragEnter={(event) => {
@@ -149,9 +149,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error }
             {loading ? t('uploading') : t('uploadButton')}
           </span>
           <p className="fy-drop-hint">{t('orDrop')}</p>
-          <p className="fy-drop-meta">{t('uploadFormats')}</p>
-          <p className="fy-drop-meta">{t('uploadFormatsSupport')}</p>
-          <p className="fy-drop-meta">{t('pasteHint')}</p>
+          <p className="fy-drop-meta">{t('uploadFormats', { limit: MAX_FILE_SIZE_MB })}</p>
         </label>
       </div>
       {localHint ? (

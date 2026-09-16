@@ -787,7 +787,7 @@ const App: React.FC = () => {
         <SiteHeader />
         <main id="main" className="fy-main">
           <section className="fy-hero" aria-labelledby="hero-title">
-            <InfoBlock />
+            <InfoBlock scenariosActive={!fileInfo} />
             <UploadZone loading={loading} onFile={handleFile} error={error ?? undefined} />
           </section>
 
