@@ -1,5 +1,6 @@
 import type { AntiSearchParams, ManualMask } from '../types/cleanup';
-import { FACE_LABEL, PERSON_LABEL, type BoundingBox } from '../types/detection';
+import { FACE_LABEL, type BoundingBox } from '../types/detection';
+import { hammingDistance, phashFromImage } from './phash';
 import type { OCRRegion } from '../hooks/useOCR';
 
 export interface BlurRegion {
@@ -166,58 +167,14 @@ export interface BlurTarget extends BlurRegion {
 }
 
 /**
- * A person box is grown by this fraction of its size before testing whether a face centre
- * falls inside it: face boxes are padded, and a tight person box may cut through the hair.
- */
-const PERSON_FACE_TOLERANCE = 0.1;
-
-function containsPoint(box: BoundingBox, px: number, py: number, tolerance: number): boolean {
-  const dx = box.width * tolerance;
-  const dy = box.height * tolerance;
-  return px >= box.x - dx && px <= box.x + box.width + dx && py >= box.y - dy && py <= box.y + box.height + dy;
-}
-
-/**
- * Head-area estimate for a person without a detected face (back of the head, mask, a profile
- * the face model missed): the upper 45 % of the box, 55 % of its width, centred, plus a margin.
- */
-function personHeadRegion(det: BoundingBox): BlurRegion {
-  const pad = Math.max(det.width, det.height) * 0.08;
-  const faceWidth = det.width * 0.55;
-  const faceHeight = det.height * 0.45;
-  const centerX = det.x + det.width / 2;
-  return {
-    x: centerX - faceWidth / 2 - pad,
-    y: det.y - pad * 0.6,
-    width: faceWidth + pad * 2,
-    height: faceHeight + pad * 1.5
-  };
-}
-
-/**
- * Chooses what "hide faces" blurs. Every `face` box is a target as is (the detector output is
- * already padded). A `person` box only adds the head-area fallback when no detected face lies
- * inside it, so nobody is left unblurred while people with a real face box are not blurred
- * twice. Other labels (car, dog, …) are ignored. Pure — no canvas — so it is unit-tested directly.
+ * Chooses what «hide faces» blurs: every `face` box as is (the detector output is already
+ * padded). Person boxes are ignored on purpose: the owner asked for faces only; a person seen
+ * from the back or in a mask is covered with the brush. Pure — no canvas — so it is unit-tested.
  */
 export function selectBlurTargets(detections: BoundingBox[]): BlurTarget[] {
-  const faces = detections.filter((det) => det.label === FACE_LABEL);
-  const targets: BlurTarget[] = faces.map((face) => ({
-    x: face.x,
-    y: face.y,
-    width: face.width,
-    height: face.height,
-    source: 'face'
-  }));
-  for (const person of detections) {
-    if (person.label !== PERSON_LABEL) continue;
-    const hasFace = faces.some((face) =>
-      containsPoint(person, face.x + face.width / 2, face.y + face.height / 2, PERSON_FACE_TOLERANCE)
-    );
-    if (hasFace) continue;
-    targets.push({ ...personHeadRegion(person), source: 'person' });
-  }
-  return targets;
+  return detections
+    .filter((det) => det.label === FACE_LABEL)
+    .map((face) => ({ x: face.x, y: face.y, width: face.width, height: face.height, source: 'face' as const }));
 }
 
 export function blurDetections(
@@ -374,8 +331,83 @@ export function generateAntiSearchParams({ level }: { level: number }): AntiSear
     contrastShift,
     saturationShift,
     hueShift,
-    warpStrength
+    warpStrength,
+    cropPercent: 0.004 + 0.008 * safeLevel,
+    fieldAmplitude: 0.02 + 0.015 * safeLevel
   };
+}
+
+/**
+ * The perceptual hash reads the low-frequency luminance structure, which per-pixel noise and
+ * colour shifts leave alone. A smooth field of a few broad light and dark patches, faint enough
+ * to pass for uneven lighting, is what moves its bits. Deterministic for a seed; values in [−1, 1].
+ */
+export function smoothField(width: number, height: number, seed: number): Float32Array {
+  const rand = seededRandom(seed + 31);
+  const blobs = Array.from({ length: 3 }, () => ({
+    cx: 0.15 + rand() * 0.7,
+    cy: 0.15 + rand() * 0.7,
+    sigma: 0.2 + rand() * 0.25,
+    sign: rand() < 0.5 ? -1 : 1
+  }));
+  const field = new Float32Array(width * height);
+  let peak = 1e-6;
+  for (let y = 0; y < height; y++) {
+    const ny = (y + 0.5) / height;
+    for (let x = 0; x < width; x++) {
+      const nx = (x + 0.5) / width;
+      let v = 0;
+      for (const b of blobs) {
+        const dx = nx - b.cx;
+        const dy = ny - b.cy;
+        v += b.sign * Math.exp(-(dx * dx + dy * dy) / (2 * b.sigma * b.sigma));
+      }
+      field[y * width + x] = v;
+      if (Math.abs(v) > peak) peak = Math.abs(v);
+    }
+  }
+  for (let i = 0; i < field.length; i++) field[i] /= peak;
+  return field;
+}
+
+/** Minimum Hamming distance (of 64 bits) the export must reach for each level; ≥ 10 stops reverse image search. */
+export const ANTI_SEARCH_TARGET_BITS: Record<number, number> = { 1: 10, 2: 14, 3: 18 };
+
+export function antiSearchTargetBits(level: number): number {
+  return ANTI_SEARCH_TARGET_BITS[Math.max(1, Math.min(3, Math.round(level)))];
+}
+
+export interface MeasuredAntiSearch {
+  canvas: HTMLCanvasElement;
+  /** Distance between the input and the output hashes; null when the canvas could not be hashed. */
+  distance: number | null;
+  /** The parameters that produced the output (amplitude and crop grow until the target is met). */
+  params: AntiSearchParams;
+}
+
+/**
+ * Applies the anti-search transform and checks the result against the perceptual hash of the
+ * input, strengthening the smooth field and the crop until the distance reaches the target or
+ * the visual budget is spent. The best attempt is returned either way.
+ */
+export function applyAntiSearchMeasured(base: HTMLCanvasElement, params: AntiSearchParams, targetBits: number): MeasuredAntiSearch {
+  const reference = phashFromImage(base);
+  let current = params;
+  let best: MeasuredAntiSearch | null = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const canvas = applyAntiSearch(base, current);
+    const hash = reference ? phashFromImage(canvas) : null;
+    const distance = reference && hash ? hammingDistance(reference, hash) : null;
+    if (!best || (distance ?? -1) > (best.distance ?? -1)) best = { canvas, distance, params: current };
+    if (distance == null || distance >= targetBits || current.fieldAmplitude >= 0.16) break;
+    current = {
+      ...current,
+      fieldAmplitude: Math.min(0.16, current.fieldAmplitude + 0.03),
+      cropPercent: Math.min(0.06, current.cropPercent + 0.006),
+      noiseSeed: current.noiseSeed + 1
+    };
+  }
+  return best as MeasuredAntiSearch;
 }
 
 function cropCanvas(
@@ -399,7 +431,14 @@ export function applyAntiSearch(
   base: HTMLCanvasElement,
   params: AntiSearchParams
 ): HTMLCanvasElement {
-  const cropped = cropCanvas(base, params.crop);
+  const percentX = Math.round(base.width * (params.cropPercent ?? 0));
+  const percentY = Math.round(base.height * (params.cropPercent ?? 0));
+  const cropped = cropCanvas(base, {
+    top: Math.max(params.crop.top, percentY),
+    bottom: Math.max(params.crop.bottom, percentY),
+    left: Math.max(params.crop.left, percentX),
+    right: Math.max(params.crop.right, percentX)
+  });
   const cos = Math.cos(params.rotation);
   const sin = Math.sin(params.rotation);
   const rotatedWidth = Math.abs(cos) * cropped.width + Math.abs(sin) * cropped.height;
@@ -422,16 +461,21 @@ export function applyAntiSearch(
   const brightness = params.brightnessShift;
   const contrast = params.contrastShift;
   const factor = (259 * (contrast * 255 + 255)) / (255 * (259 - contrast * 255));
+  // The smooth luminance field is what actually moves the perceptual hash (see smoothField).
+  const amplitude = (params.fieldAmplitude ?? 0) * 255;
+  const field = amplitude > 0 ? smoothField(rotatedCanvas.width, rotatedCanvas.height, params.noiseSeed) : null;
   // One closure for the whole pass: allocating it per pixel froze the slider
   // for hundreds of milliseconds on multi-megapixel previews.
   let noise = 0;
+  let lift = 0;
   const adjust = (value: number) => {
-    let v = value + noise + brightness * 255;
+    let v = value + noise + lift + brightness * 255;
     v = factor * (v - 128) + 128;
     return clamp(v, 0, 255);
   };
   for (let i = 0; i < data.length; i += 4) {
     noise = (rand() - 0.5) * params.noiseAmplitude;
+    if (field) lift = field[i >> 2] * amplitude;
     const r = adjust(data[i]);
     const g = adjust(data[i + 1]);
     const b = adjust(data[i + 2]);

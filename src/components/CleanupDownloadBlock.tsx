@@ -5,7 +5,7 @@ import { useI18n, useT } from '../i18n';
 import { formatBytes, formatBytesPrecise } from '../utils/format';
 import { PHASH_SAME_PICTURE } from '../utils/phash';
 import { buildCleanupSummary } from '../utils/cleanupSummary';
-import { canvasBlurMode } from '../utils/cleanup';
+import { antiSearchTargetBits, canvasBlurMode } from '../utils/cleanup';
 import { SectionHead } from './SectionHead';
 
 interface CleanupDownloadBlockProps {
@@ -69,6 +69,10 @@ interface CleanupDownloadBlockProps {
   verifyResult?: VerifyResult | null;
   /** True when the person detector could not run on this device; disables the people toggle. */
   detectionUnavailable?: boolean;
+  /** OCR still running: the text row says so instead of «не обнаружено». */
+  ocrPending?: boolean;
+  /** Hash distance the anti-search transform reached on the last preview. */
+  antiSearchDistance?: number | null;
 }
 
 const BRUSH_RADIUS = 18;
@@ -135,6 +139,8 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
   platformCapped = false,
   platformCapMegapixels,
   verifyResult = null,
+  ocrPending = false,
+  antiSearchDistance = null,
   plateCount = 0,
   blurPlates = false,
   setBlurPlates = () => {},
@@ -218,6 +224,8 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
         platformCapMegapixels,
         antiSearchEnabled,
         antiSearchLevel,
+        antiSearchTargetBits: antiSearchTargetBits(antiSearchLevel),
+        antiSearchDistance,
         renameSummary,
         watermarkEnabled,
         qualityMode,
@@ -227,6 +235,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     [
       antiSearchEnabled,
       antiSearchLevel,
+      antiSearchDistance,
       blurActive,
       blurMode,
       blurSummary,
@@ -274,7 +283,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
   const handleApplyAll = useCallback(() => {
     setPrnuCleanup(true);
     setRenameFile(true);
-    if (!detectionUnavailable) setBlurFaces(true);
+    if (!detectionUnavailable && blurTargetCount > 0) setBlurFaces(true);
     setBlurText(true);
     if (plateCount > 0) setBlurPlates(true);
     setManualMaskMode(true);
@@ -284,6 +293,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     setMirrorEnabled(false); // mirror is destructive, not in "apply all"
     setDownscaleMax(1920);
   }, [
+    blurTargetCount,
     detectionUnavailable,
     setAntiSearchEnabled,
     setAntiSearchLevel,
@@ -577,33 +587,40 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
             ) : null}
           </div>
 
-          {/* Card 3: hide people, text, manual masks */}
+          {/* Card 3: hide faces, text, plates, manual masks. A row without a find is a plain line, not a dead toggle. */}
           <div className="fy-card">
             <h3 className="v4-h3">{t('hideGroupTitle')}</h3>
-            <label className="fy-check">
-              <input
-                type="checkbox"
-                checked={blurFaces && !detectionUnavailable}
-                disabled={detectionUnavailable}
-                onChange={(event) => setBlurFaces(event.target.checked)}
-              />
-              <span>{t('blurFaces')}</span>
-            </label>
-            {detectionUnavailable ? <p className="fy-hint">{t('detectionUnavailableHint')}</p> : null}
-            <label className="fy-check">
-              <input type="checkbox" checked={blurText} onChange={(event) => setBlurText(event.target.checked)} />
-              <span>{t('textWithCount', { count: ocrRegionCount })}</span>
-            </label>
-            <label className="fy-check">
-              <input
-                type="checkbox"
-                checked={blurPlates && plateCount > 0}
-                disabled={plateCount === 0}
-                onChange={(event) => setBlurPlates(event.target.checked)}
-              />
-              <span>{t('blurPlates', { count: plateCount })}</span>
-            </label>
-            {plateCount === 0 ? <p className="fy-hint">{t('platesNone')}</p> : null}
+            {blurTargetCount > 0 && !detectionUnavailable ? (
+              <label className="fy-check">
+                <input type="checkbox" checked={blurFaces} onChange={(event) => setBlurFaces(event.target.checked)} />
+                <span>{t('blurFaces', { count: blurTargetCount })}</span>
+              </label>
+            ) : (
+              <p className="fy-check fy-check--none">
+                <span>{t('hideRowNone', { label: t('hideFacesLabel'), state: detectionUnavailable ? t('hideUnavailable') : t('hideNone') })}</span>
+              </p>
+            )}
+            {ocrRegionCount > 0 ? (
+              <label className="fy-check">
+                <input type="checkbox" checked={blurText} onChange={(event) => setBlurText(event.target.checked)} />
+                <span>{t('textWithCount', { count: ocrRegionCount })}</span>
+              </label>
+            ) : (
+              <p className="fy-check fy-check--none">
+                <span>{t('hideRowNone', { label: t('hideTextLabel'), state: ocrPending ? t('hideScanning') : t('hideNone') })}</span>
+              </p>
+            )}
+            {plateCount > 0 ? (
+              <label className="fy-check">
+                <input type="checkbox" checked={blurPlates} onChange={(event) => setBlurPlates(event.target.checked)} />
+                <span>{t('blurPlates', { count: plateCount })}</span>
+              </label>
+            ) : (
+              <p className="fy-check fy-check--none">
+                <span>{t('hideRowNone', { label: t('hidePlatesLabel'), state: t('hideNone') })}</span>
+              </p>
+            )}
+            {blurTargetCount === 0 || ocrRegionCount === 0 || plateCount === 0 ? <p className="fy-hint">{t('hideNoneHint')}</p> : null}
             <label className="fy-check">
               <input type="checkbox" checked={manualMaskMode} onChange={(event) => setManualMaskMode(event.target.checked)} />
               <span>{t('manualMaskToggle')}</span>
@@ -628,13 +645,20 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
             ) : null}
           </div>
 
-          {/* Card 4: anti-search protection */}
+          {/* Card 4: anti-search protection — the toggle, its level, the mirror, and what it all does. */}
           <div className="fy-card">
             <h3 className="v4-h3">{t('searchProtectionTitle')}</h3>
             <label className="fy-check">
               <input type="checkbox" checked={antiSearchEnabled} onChange={(event) => setAntiSearchEnabled(event.target.checked)} />
               <span>{t('antiSearchLabel')}</span>
             </label>
+            <p className="fy-hint" role="status">
+              {antiSearchEnabled
+                ? antiSearchDistance != null
+                  ? t('antiSearchActiveMeasured', { bits: antiSearchTargetBits(antiSearchLevel), distance: antiSearchDistance })
+                  : t('antiSearchActiveHint', { bits: antiSearchTargetBits(antiSearchLevel) })
+                : t('antiSearchOffHint')}
+            </p>
             {antiSearchEnabled ? (
               <div className="fy-field">
                 <label className="fy-field-label" htmlFor="anti-search-level">
@@ -657,11 +681,11 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
               <input type="checkbox" checked={mirrorEnabled} onChange={(event) => setMirrorEnabled(event.target.checked)} />
               <span>{t('mirrorLabel')}</span>
             </label>
+            <p className="fy-hint">{t('antiSearchWhat')}</p>
           </div>
         </div>
 
         {manualMaskMode ? <p className="fy-hint">{t('manualMaskDrawingHint')}</p> : null}
-        <p className="fy-notice">{antiSearchEnabled ? t('antiSearchActiveHint') : t('antiSearchOffHint')}</p>
 
         <div className="fy-diff">
           <figure>
@@ -732,7 +756,6 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
           </div>
         ) : null}
 
-        {blurFaces && !detectionUnavailable && blurTargetCount === 0 ? <p className="fy-notice">{t('facesMissing')}</p> : null}
 
         <div className="fy-actions">
           <button
