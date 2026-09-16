@@ -10,6 +10,7 @@ import {
   type DetectionSummary
 } from '../types/detection';
 import type { BasicFileInfo } from '../types/metadata';
+import { isPlausibleFace, PERSON_CONTEXT_SCORE, type Rect } from '../utils/facePlausibility';
 
 /* ── self-hosted MediaPipe assets (see scripts/prepare-assets.mjs) ── */
 
@@ -295,6 +296,7 @@ export function useImageAnalysis(fileInfo: BasicFileInfo | null) {
         }
 
         setStage('process', 0.8);
+        const faces = plausibleFaces(results, scaledForDetection.canvas);
         const frame: Frame = {
           scaleX: scaledForDetection.scaleX,
           scaleY: scaledForDetection.scaleY,
@@ -303,12 +305,16 @@ export function useImageAnalysis(fileInfo: BasicFileInfo | null) {
         };
         const boxes: BoundingBox[] = [
           ...toBoundingBoxes(results.objects, frame, {}),
-          ...toBoundingBoxes(results.faces, frame, { label: FACE_LABEL, padRatio: FACE_PADDING_RATIO })
+          ...toBoundingBoxes(faces, frame, { label: FACE_LABEL, padRatio: FACE_PADDING_RATIO })
         ];
         setDetections(boxes);
         setSummary(summarizeDetections(boxes));
         if (import.meta.env.DEV) {
-          console.info('[pipeline] analyze:done', { objects: results.objects.length, faces: results.faces.length });
+          console.info('[pipeline] analyze:done', {
+            objects: results.objects.length,
+            faces: faces.length,
+            facesDropped: results.faces.length - faces.length
+          });
         }
         setStage('done', 1);
       } catch (err) {
@@ -355,6 +361,32 @@ export function useImageAnalysis(fileInfo: BasicFileInfo | null) {
 }
 
 /* ── result mapping ────────────────────────────────────────── */
+
+/**
+ * Keeps only the BlazeFace detections that pass `isPlausibleFace`: keypoints that form a face,
+ * plus either a sure score or an EfficientDet person box underneath (frame: the analysis canvas).
+ */
+function plausibleFaces(results: DetectionResults, canvas: { width: number; height: number }): Detection[] {
+  const persons: Rect[] = [];
+  for (const det of results.objects) {
+    const bb = det.boundingBox;
+    const top = det.categories[0];
+    if (!bb || top?.categoryName !== PERSON_LABEL || (top.score ?? 0) < PERSON_CONTEXT_SCORE) continue;
+    persons.push({ x: bb.originX, y: bb.originY, width: bb.width, height: bb.height });
+  }
+  return results.faces.filter((det) => {
+    const bb = det.boundingBox;
+    if (!bb) return false;
+    return isPlausibleFace(
+      {
+        box: { x: bb.originX, y: bb.originY, width: bb.width, height: bb.height },
+        score: det.categories[0]?.score ?? 0,
+        keypoints: (det.keypoints ?? []).map((kp) => ({ x: kp.x * canvas.width, y: kp.y * canvas.height }))
+      },
+      persons
+    );
+  });
+}
 
 /** Maps the downscaled analysis canvas back onto the original image. */
 interface Frame {
