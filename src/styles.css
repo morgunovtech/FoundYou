@@ -123,7 +123,7 @@
   color: var(--v4-fg);
 }
 
-/* The intro: a lead sentence, three points with a small square marker, the action line. */
+/* The intro: a lead sentence, four points with a small square marker, the closing privacy line. */
 .fy-hero-text {
   display: grid;
   gap: 12px;

@@ -21,11 +21,15 @@ const messages = {
     heroScenarioMessenger: 'в мессенджере',
     heroScenarioSocial: 'в соцсетях',
     heroScenarioBuyer: 'с покупателем',
-    introLead: 'Фото может выдать, где и когда оно снято, каким устройством и кто попал в кадр.',
-    introPoint1: 'Показывает, что файл расскажет о вас.',
-    introPoint2: 'Удаляет метаданные, скрывает лица, текст и номера машин; остальное закрасите кистью.',
-    introPoint3: 'Всё происходит в браузере: фото никуда не отправляется, оригинал не меняется.',
-    introAction: 'Выберите снимок и скачайте чистую копию.',
+    introLead: 'Без вашего ведома фото может рассказать о том, где, когда и на что оно было снято.',
+    introPoint1:
+      'Сервис наглядно показывает, что снимок может рассказать о вас, включая местоположение, погоду и даже то, где вы стояли и как держали телефон в момент съёмки.',
+    introPoint2:
+      'В один клик удалите всю чувствительную информацию и сделайте фото невозможным для распознавания в поисковиках.',
+    introPoint3: 'Автоматически скрывайте лица, тексты и номера машин.',
+    introPoint4: 'Узнайте историю редактирования изображения и проверьте на использование AI.',
+    introAction:
+      'Фотография остаётся в вашем браузере и не передаётся в сторонние сервисы. Использование бесплатно и без ограничений.',
     uploadButton: 'Выбрать фото',
     orDrop: 'или перетащите сюда, или вставьте из буфера обмена (Ctrl/Cmd+V)',
     uploadFormats: 'JPEG, PNG, WebP, HEIC, AVIF, GIF, BMP · до {limit} МБ',
@@ -572,11 +576,15 @@ const messages = {
     heroScenarioMessenger: 'in a chat',
     heroScenarioSocial: 'on social media',
     heroScenarioBuyer: 'with a buyer',
-    introLead: 'A photo can reveal where and when it was taken, on which device, and who was in the frame.',
-    introPoint1: 'Shows what the file says about you.',
-    introPoint2: 'Strips the metadata, hides faces, text and licence plates; anything else you paint over with the brush.',
-    introPoint3: 'Everything runs in your browser: the photo is never sent anywhere and the original stays untouched.',
-    introAction: 'Pick a photo and download a clean copy.',
+    introLead: 'Without your knowledge, a photo can tell where, when and on which device it was taken.',
+    introPoint1:
+      'The service shows what a photo can reveal about you: your location, the weather, even where you stood and how you held the phone at the moment of the shot.',
+    introPoint2:
+      'Remove all sensitive information in one click and make the photo unrecognisable to search engines.',
+    introPoint3: 'Hide faces, text and licence plates automatically.',
+    introPoint4: 'See the editing history of the image and check whether AI was used.',
+    introAction:
+      'The photo stays in your browser and is never sent to third-party services. Free to use, with no limits.',
     uploadButton: 'Choose photo',
     orDrop: 'or drag it here, or paste from the clipboard (Ctrl/Cmd+V)',
     uploadFormats: 'JPEG, PNG, WebP, HEIC, AVIF, GIF, BMP · up to {limit} MB',
@@ -1124,11 +1132,15 @@ const messages = {
     heroScenarioMessenger: 'messenjerda',
     heroScenarioSocial: 'ijtimoiy tarmoqlarda',
     heroScenarioBuyer: 'xaridor bilan',
-    introLead: 'Foto qayerda va qachon olinganini, qaysi qurilmada va kadrga kim tushganini oshkor qilishi mumkin.',
-    introPoint1: 'Fayl siz haqingizda nimani aytishini ko‘rsatadi.',
-    introPoint2: 'Metadatani o‘chiradi, yuzlar, matn va avtomobil raqamlarini yashiradi; qolganini mo‘yqalam bilan bo‘yaysiz.',
-    introPoint3: 'Hammasi brauzerda: foto hech qayerga yuborilmaydi, asl nusxa o‘zgarmaydi.',
-    introAction: 'Suratni tanlang va toza nusxasini yuklab oling.',
+    introLead: 'Siz bilmagan holda foto qayerda, qachon va qaysi qurilmada olinganini oshkor qilishi mumkin.',
+    introPoint1:
+      'Xizmat surat siz haqingizda nimani aytishi mumkinligini ko‘rsatadi: joylashuv, ob-havo va hatto suratga olish paytida qayerda turganingiz va telefonni qanday ushlaganingiz.',
+    introPoint2:
+      'Bir bosishda barcha maxfiy maʼlumotlarni o‘chiring va fotoni qidiruv tizimlari uchun tanib bo‘lmas qiling.',
+    introPoint3: 'Yuzlar, matn va avtomobil raqamlarini avtomatik yashiring.',
+    introPoint4: 'Rasmning tahrirlash tarixini bilib oling va AI ishlatilganini tekshiring.',
+    introAction:
+      'Foto brauzeringizda qoladi va uchinchi tomon xizmatlariga yuborilmaydi. Foydalanish bepul va cheklovsiz.',
     uploadButton: 'Fotoni tanlash',
     orDrop: 'yoki shu yerga sudrab keling, yoki buferdan qo‘ying (Ctrl/Cmd+V)',
     uploadFormats: 'JPEG, PNG, WebP, HEIC, AVIF, GIF, BMP · {limit} MB gacha',
