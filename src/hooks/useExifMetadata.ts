@@ -5,6 +5,8 @@ import { inferOrientation } from '../utils/orientation';
 import { computeMetadataCompleteness } from '../utils/metadataScore';
 import { extractMetadataFromOriginal } from '../utils/heic';
 import { formatWallClock, parseWallClock, type WallClockParts } from '../utils/format';
+import { parseAppleMakerNote } from '../utils/appleMakerNote';
+import { readSamsungTrailer } from '../utils/samsungTrailer';
 
 interface UseExifMetadataResult {
   metadata: StructuredMetadata | null;
@@ -38,6 +40,11 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
         const exifRecord = (exifData ?? {}) as Record<string, unknown>;
         const xmpRecord = (xmpData ?? {}) as Record<string, unknown>;
         const pngRecord = pngData as Record<string, unknown> | undefined;
+
+        // Vendor blocks: the Apple MakerNote bytes (parsed, then dropped from the raw group so the
+        // table does not print a byte array) and the Samsung trailer after the JPEG EOI.
+        const apple = parseAppleMakerNote(takeMakerNote(exifRecord)) ?? undefined;
+        const samsung = (await readSamsungTrailer(sourceFile).catch(() => null)) ?? undefined;
 
         const shot = resolveShotDate(
           pickFirstFromSources(
@@ -98,7 +105,9 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
             focalLength,
             gps
           }),
-          orientation: inferOrientation(fileInfo.width, fileInfo.height, orientationTag)
+          orientation: inferOrientation(fileInfo.width, fileInfo.height, orientationTag),
+          apple,
+          samsung
         };
 
         setMetadata(structured);
@@ -176,6 +185,19 @@ export function resolveShotDate(value: unknown, offsetValue?: unknown): Resolved
   const instant = new Date(`${local}${zone ?? 'Z'}`);
   if (Number.isNaN(instant.getTime())) return undefined;
   return { local, utcOffset: zone, iso: instant.toISOString() };
+}
+
+/** Removes the raw MakerNote from the EXIF record and returns its bytes (an empty array when absent). */
+function takeMakerNote(exifRecord: Record<string, unknown>): Uint8Array {
+  for (const key of ['MakerNote', 'makerNote']) {
+    const value = exifRecord[key];
+    if (value == null) continue;
+    delete exifRecord[key];
+    if (value instanceof Uint8Array) return value;
+    if (value instanceof ArrayBuffer) return new Uint8Array(value);
+    if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  }
+  return new Uint8Array(0);
 }
 
 function pickFirst<T>(source: Record<string, unknown> | undefined, keys: string[]): T | undefined {

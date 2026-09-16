@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildTimeProfile, isLeisurePlace, isWeekend, isWorkingHour, photoAge, timeOfDay } from '../timeProfile';
+import { buildTimeProfile, isWeekend, isWorkingHour, photoAge, timeOfDay } from '../timeProfile';
 
 const NOW = new Date('2026-09-16T12:00:00Z');
 
@@ -37,17 +37,6 @@ describe('photoAge', () => {
   });
 });
 
-describe('isLeisurePlace', () => {
-  it('reads Nominatim categories and a few types', () => {
-    expect(isLeisurePlace({ category: 'natural', type: 'beach' })).toBe(true);
-    expect(isLeisurePlace({ category: 'tourism', type: 'hotel' })).toBe(true);
-    expect(isLeisurePlace({ category: 'amenity', type: 'spa' })).toBe(true);
-    expect(isLeisurePlace({ category: 'building', type: 'office' })).toBe(false);
-    expect(isLeisurePlace({ category: 'highway', type: 'residential' })).toBe(false);
-    expect(isLeisurePlace(null)).toBe(false);
-  });
-});
-
 describe('buildTimeProfile', () => {
   // Sunday 16 August 2026, 10:26 on a +05:00 camera clock, shot in Tashkent.
   const sunday = { shotDateLocal: '2026-08-16T10:26:00', utcOffset: '+05:00', gps: { lat: 41.3, lon: 69.3 } };
@@ -68,8 +57,7 @@ describe('buildTimeProfile', () => {
       camera: { offsetMinutes: 300, source: 'exif-offset' },
       place: null,
       clock: null,
-      age: { kind: 'days', value: 31 },
-      travel: { zone: false, leisure: false }
+      age: { kind: 'days', value: 31 }
     });
   });
 
@@ -77,10 +65,9 @@ describe('buildTimeProfile', () => {
     const tp = buildTimeProfile({ metadata: sunday, placeTimezone: 'Asia/Tashkent', now: NOW });
     expect(tp?.place).toEqual({ timezone: 'Asia/Tashkent', offsetMinutes: 300 });
     expect(tp?.clock).toEqual({ differenceMinutes: 0, match: true, local: '2026-08-16T10:26:00', sameDay: true });
-    expect(tp?.travel.zone).toBe(false);
   });
 
-  it('a camera still on Moscow time in Tashkent: 2 h behind, local clock 12:26, a trip', () => {
+  it('a camera still on Moscow time in Tashkent: 2 h behind, local clock 12:26', () => {
     const tp = buildTimeProfile({
       metadata: { ...sunday, utcOffset: '+03:00' },
       placeTimezone: 'Asia/Tashkent',
@@ -88,7 +75,6 @@ describe('buildTimeProfile', () => {
     });
     expect(tp?.camera).toEqual({ offsetMinutes: 180, source: 'exif-offset' });
     expect(tp?.clock).toEqual({ differenceMinutes: -120, match: false, local: '2026-08-16T12:26:00', sameDay: true });
-    expect(tp?.travel.zone).toBe(true);
   });
 
   it('a late shot crossing midnight in the place zone flags a different local date', () => {
@@ -140,21 +126,4 @@ describe('buildTimeProfile', () => {
     expect(tp?.workingHours).toBe(false);
   });
 
-  it('working hours at a leisure place on a weekday read as a vacation', () => {
-    // Tuesday 11 August 2026, 14:00, at a beach.
-    const beach = { category: 'natural', type: 'beach' };
-    const tp = buildTimeProfile({ metadata: { shotDateLocal: '2026-08-11T14:00:00' }, place: beach, now: NOW });
-    expect(tp).toMatchObject({ dayKind: 'weekday', workingHours: true, travel: { zone: false, leisure: true } });
-    // …but not in the evening, and not at an office.
-    expect(
-      buildTimeProfile({ metadata: { shotDateLocal: '2026-08-11T20:00:00' }, place: beach, now: NOW })?.travel.leisure
-    ).toBe(false);
-    expect(
-      buildTimeProfile({
-        metadata: { shotDateLocal: '2026-08-11T14:00:00' },
-        place: { category: 'building', type: 'office' },
-        now: NOW
-      })?.travel.leisure
-    ).toBe(false);
-  });
 });

@@ -41,4 +41,11 @@ export interface VerifyResult {
   before: number;
   /** Fields still present in the exported file; null when the format could not be parsed (e.g. WebP). */
   after: number | null;
+  /**
+   * Hamming distance (0–64) between the perceptual hashes of the original and the export;
+   * null when either could not be computed. Reverse-image search stops matching past ~10.
+   */
+  phashDistance?: number | null;
+  /** Bytes after the end of the image in the original (Samsung trailer, Motion Photo); the export has none. */
+  trailingBytesBefore?: number;
 }

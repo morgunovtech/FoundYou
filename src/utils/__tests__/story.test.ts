@@ -57,13 +57,6 @@ const metadata = {
 } as unknown as StructuredMetadata;
 
 describe('buildStory', () => {
-  it('adds one trip sentence after the holiday: the zone mismatch beats the leisure heuristic', () => {
-    expect(buildStory(input({ travel: 'zone' })).sentences).toContain('storyTravelZone');
-    const leisure = buildStory(input({ travel: 'leisure', holidayNames: 'Navruz' })).sentences;
-    expect(leisure.indexOf('storyTravelLeisure')).toBe(leisure.indexOf('storyHoliday(holiday=Navruz)') + 1);
-    expect(buildStory(input({ travel: null })).sentences.join(' ')).not.toMatch(/storyTravel/);
-  });
-
   it('never emits placeholders: an empty analysis still reads as a short, honest paragraph', () => {
     const story = buildStory(input());
     expect(story.sentences).toEqual(['storyWhenUnknown', 'storyNoPeople', 'storyOriginal']);
@@ -87,7 +80,7 @@ describe('buildStory', () => {
     expect(when).toMatch(/^storyWhen\(when=/);
     expect(where).toBe('storyWhere(place=Tashkent)');
     expect(device).toBe('storyDevice(device=samsung SM-S918B)');
-    expect(habits).toBe('Weekend. Personal time.');
+    expect(habits).toBe('Weekend.');
     expect(weather).toBe('storyWeather(weather=36°C)');
     expect(holiday).toBe('storyHoliday(holiday=Kurban Hayit)');
     // two faces beat one person box: a close portrait is still two people

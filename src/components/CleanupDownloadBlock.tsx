@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BasicFileInfo } from '../types/metadata';
 import type { CleanupPreviewDimensions, ManualMask, OutputFormat, QualityMode, VerifyResult } from '../types/cleanup';
-import { useT } from '../i18n';
-import { formatBytesPrecise } from '../utils/format';
+import { useI18n, useT } from '../i18n';
+import { formatBytes, formatBytesPrecise } from '../utils/format';
+import { PHASH_SAME_PICTURE } from '../utils/phash';
 import { buildCleanupSummary } from '../utils/cleanupSummary';
 import { canvasBlurMode } from '../utils/cleanup';
 import { SectionHead } from './SectionHead';
@@ -143,6 +144,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
   detectionUnavailable = false
 }) => {
   const t = useT();
+  const { lang } = useI18n();
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [draftStroke, setDraftStroke] = useState<ManualMask | null>(null);
@@ -417,17 +419,30 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
 
   const verifyMessage = useMemo(() => {
     if (!verifyResult) return null;
+    // Beyond the metadata count: the perceptual fingerprint and any vendor trailer.
+    const extra: string[] = [];
+    if (verifyResult.phashDistance != null) {
+      extra.push(
+        verifyResult.phashDistance >= PHASH_SAME_PICTURE
+          ? t('verifyPhashChanged', { distance: verifyResult.phashDistance })
+          : t('verifyPhashSame', { distance: verifyResult.phashDistance })
+      );
+    }
+    if (verifyResult.trailingBytesBefore) {
+      extra.push(t('verifyTrailer', { size: formatBytes(verifyResult.trailingBytesBefore, lang) }));
+    }
     if (verifyResult.after == null) {
-      return { tone: 'neutral' as const, text: t('verifyUnavailable', { before: verifyResult.before }) };
+      return { tone: 'neutral' as const, text: t('verifyUnavailable', { before: verifyResult.before }), extra };
     }
     if (verifyResult.after > 0) {
       return {
         tone: 'negative' as const,
-        text: t('verifyResultWarning', { before: verifyResult.before, after: verifyResult.after })
+        text: t('verifyResultWarning', { before: verifyResult.before, after: verifyResult.after }),
+        extra
       };
     }
-    return { tone: 'positive' as const, text: t('verifyResult', { before: verifyResult.before }) };
-  }, [t, verifyResult]);
+    return { tone: 'positive' as const, text: t('verifyResult', { before: verifyResult.before }), extra };
+  }, [t, lang, verifyResult]);
 
   return (
     <section className="v4-section" aria-labelledby="sec-cleanup">
@@ -721,6 +736,11 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
             {verifyMessage.text}
           </p>
         ) : null}
+        {verifyMessage?.extra.map((line) => (
+          <p key={line} className="fy-hint" role="status">
+            {line}
+          </p>
+        ))}
       </div>
     </section>
   );
