@@ -140,7 +140,16 @@ const messages = {
     skipToContent: 'Перейти к основному содержимому',
     uploading: 'Загружаем…',
     storyTitle: 'Что фото рассказывает о вас',
-    storyLead: 'Вердикт, короткий портрет по одному снимку и факты с объяснением, что из каждого следует.',
+    sceneTitle: 'Что изображено на фото',
+    explainerAttackerTitle: 'Как это использует злоумышленник',
+    sceneExplainer1:
+      'Эту разметку сделала небольшая модель детекции объектов, которая работает прямо в браузере: без серверов, без LLM и без обучения под конкретного человека. Она различает восемьдесят бытовых классов предметов, от автомобиля и телефона до дивана и собаки, и отдельно находит лица.',
+    sceneExplainer2:
+      'Такая же модель прогоняет тысячи снимков за минуты, поэтому злоумышленнику не нужно смотреть их глазами. Он скачивает профиль целиком и просит модель отобрать кадры, где есть автомобиль, ноутбук, телефон, домашнее животное или обстановка квартиры; под редкий предмет модель дообучают за вечер.',
+    sceneExplainer3:
+      'Дальше по метаданным отобранных кадров он узнаёт, где и когда они сняты, а по лицам связывает аккаунты между собой и находит людей, которые не давали согласия на публикацию. Опасен не отдельный кадр, а серия: один снимок с машиной у подъезда ничего не значит, десять таких снимков дают адрес, марку и расписание.',
+    rawDataShow: 'Показать сырые данные',
+    rawDataHide: 'Скрыть сырые данные',
     storyHeading: 'Портрет по одному снимку',
     verdictPending: 'Собираем факты…',
     verdictLow: 'Можно делиться как есть',
@@ -214,7 +223,6 @@ const messages = {
     credIngredients: 'Исходников',
     credValid: 'Подпись проверена',
     credInvalid: 'Подпись не прошла проверку: {codes}',
-    proMode: 'Pro',
     copyAction: 'Копировать',
     footerBuild: 'сборка',
     footerPrivacy: 'Файлы не покидают браузер · без cookies и трекеров',
@@ -415,7 +423,16 @@ const messages = {
     skipToContent: 'Skip to main content',
     uploading: 'Loading…',
     storyTitle: 'What the photo says about you',
-    storyLead: 'A verdict, a short portrait from this one photo, and the facts with what each of them gives away.',
+    sceneTitle: 'What is in the photo',
+    explainerAttackerTitle: 'How an attacker uses this',
+    sceneExplainer1:
+      'The boxes above were drawn by a small object-detection model that runs right in your browser: no servers, no LLM, no training on you specifically. It tells apart eighty everyday classes of objects, from cars and phones to sofas and dogs, and finds faces separately.',
+    sceneExplainer2:
+      'The same model gets through thousands of photos in minutes, so an attacker never has to look at them. They download a profile in bulk and ask the model to pick out the frames with a car, a laptop, a phone, a pet or the inside of a flat; for a rarer object the model is retrained in an evening.',
+    sceneExplainer3:
+      'The metadata of the selected frames then says where and when they were taken, and faces link accounts together and identify people who never agreed to be posted. The danger is not a single frame but a series: one photo with a car by the door means nothing, ten of them give the address, the make and the schedule.',
+    rawDataShow: 'Show raw data',
+    rawDataHide: 'Hide raw data',
     storyHeading: 'A portrait from one photo',
     verdictPending: 'Gathering the facts…',
     verdictLow: 'Safe to share as is',
@@ -489,7 +506,6 @@ const messages = {
     credIngredients: 'Ingredients',
     credValid: 'Signature verified',
     credInvalid: 'Signature failed validation: {codes}',
-    proMode: 'Pro',
     copyAction: 'Copy',
     footerBuild: 'build',
     footerPrivacy: 'Files never leave the browser · no cookies, no trackers',
@@ -691,7 +707,16 @@ const messages = {
     skipToContent: 'Asosiy mazmunga o‘tish',
     uploading: 'Yuklanmoqda…',
     storyTitle: 'Surat siz haqingizda nima deydi',
-    storyLead: 'Xulosa, bitta suratdan qisqa portret va har bir faktdan nima kelib chiqishi tushuntirilgan faktlar.',
+    sceneTitle: 'Suratda nima tasvirlangan',
+    explainerAttackerTitle: 'Yomon niyatli odam buni qanday ishlatadi',
+    sceneExplainer1:
+      'Yuqoridagi ramkalarni to‘g‘ridan-to‘g‘ri brauzeringizda ishlaydigan kichik obyekt aniqlash modeli chizdi: serverlarsiz, LLMsiz va aynan sizga o‘rgatilmasdan. U avtomobil va telefondan divan va itgacha sakson turdagi kundalik buyumlarni ajratadi, yuzlarni esa alohida topadi.',
+    sceneExplainer2:
+      'Xuddi shu model minglab suratni bir necha daqiqada ko‘rib chiqadi, shuning uchun yomon niyatli odamga ularni ko‘zi bilan ko‘rish shart emas. U profilni butunlay yuklab oladi va modeldan avtomobil, noutbuk, telefon, uy hayvoni yoki kvartira ichi bor kadrlarni tanlab berishni so‘raydi; kamroq uchraydigan buyum uchun model bir kechada qayta o‘rgatiladi.',
+    sceneExplainer3:
+      'Keyin tanlangan kadrlarning metadatasi ular qayerda va qachon olinganini aytadi, yuzlar esa akkauntlarni bir-biriga bog‘laydi va e’lon qilishga rozi bo‘lmagan odamlarni topib beradi. Xavf bitta kadrda emas, seriyada: eshik oldida mashina bor bitta surat hech narsani anglatmaydi, o‘ntasi esa manzil, rusum va jadvalni beradi.',
+    rawDataShow: 'Xom ma’lumotlarni ko‘rsatish',
+    rawDataHide: 'Xom ma’lumotlarni yashirish',
     storyHeading: 'Bitta suratdan portret',
     verdictPending: 'Faktlar yig‘ilmoqda…',
     verdictLow: 'Shu holicha ulashish mumkin',
@@ -765,7 +790,6 @@ const messages = {
     credIngredients: 'Manbalar',
     credValid: 'Imzo tasdiqlandi',
     credInvalid: 'Imzo tekshiruvdan o‘tmadi: {codes}',
-    proMode: 'Pro',
     copyAction: 'Nusxalash',
     footerBuild: 'build',
     footerPrivacy: 'Fayllar brauzerdan chiqmaydi · cookie va trekerlarsiz',

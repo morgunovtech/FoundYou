@@ -9,6 +9,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { useImageFile } from './hooks/useImageFile';
 import { useExifMetadata } from './hooks/useExifMetadata';
 import { StoryBlock } from './components/StoryBlock';
+import { SceneBlock } from './components/SceneBlock';
 import { CleanupDownloadBlock } from './components/CleanupDownloadBlock';
 import { useImageAnalysis } from './hooks/useImageAnalysis';
 import { useOCR } from './hooks/useOCR';
@@ -421,13 +422,13 @@ const App: React.FC = () => {
     setVerifyResult(null);
   }, [fileInfo, replacePreviewUrl]);
 
-  // Once a file is accepted, bring the first results section into view and focus.
+  // Once a file is accepted, bring the first results section (01, the scene) into view and focus.
   const previousFileRef = useRef<BasicFileInfo | null>(null);
   useEffect(() => {
     const previous = previousFileRef.current;
     previousFileRef.current = fileInfo;
     if (!fileInfo || fileInfo === previous) return;
-    const heading = document.getElementById('sec-story');
+    const heading = document.getElementById('sec-scene');
     if (!heading) return;
     const reduceMotion =
       typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -793,11 +794,8 @@ const App: React.FC = () => {
 
           {fileInfo ? (
             <ErrorBoundary variant="inline" resetKey={fileInfo}>
-              <StoryBlock
+              <SceneBlock
                 fileInfo={fileInfo}
-                metadata={metadata}
-                profile={digitalProfile}
-                proData={proData}
                 detections={detections}
                 sceneDescription={sceneDescription}
                 detectionProgress={
@@ -805,6 +803,18 @@ const App: React.FC = () => {
                     ? { label: t(DETECTION_STAGE_KEYS[detectionStatus.stage]), value: detectionStatus.progress }
                     : null
                 }
+              />
+            </ErrorBoundary>
+          ) : null}
+
+          {fileInfo ? (
+            <ErrorBoundary variant="inline" resetKey={fileInfo}>
+              <StoryBlock
+                fileInfo={fileInfo}
+                metadata={metadata}
+                profile={digitalProfile}
+                proData={proData}
+                detections={detections}
                 ocrResult={ocrResult}
                 ocrLoading={ocrLoading}
                 ocrError={ocrError ? t(OCR_ERROR_KEYS[ocrError]) : null}
