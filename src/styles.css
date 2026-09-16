@@ -1273,18 +1273,47 @@
   margin-top: 4px;
 }
 
+/* Device recipe for switching geotags off: a <details>, closed by default.
+   It is an instruction, not an explanation, so it may collapse; the mono
+   «show / hide» word on the right comes from data-more / data-less. */
 .fy-tip {
   margin: 0;
   padding: 10px 12px;
   border: 1px solid var(--v4-line);
   font-size: 13px;
   line-height: 1.5;
-  display: grid;
-  gap: 2px;
 }
-
-.fy-tip b {
+.fy-tip summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
   font-weight: 500;
+}
+.fy-tip summary::-webkit-details-marker {
+  display: none;
+}
+.fy-tip summary::after {
+  content: attr(data-more);
+  flex-shrink: 0;
+  font-family: var(--v4-mono);
+  font-size: var(--v4-label-xs-size);
+  font-weight: var(--v4-label-weight);
+  letter-spacing: var(--v4-label-xs-tracking);
+  text-transform: uppercase;
+  color: var(--v4-muted);
+}
+.fy-tip[open] summary::after {
+  content: attr(data-less);
+}
+.fy-tip summary:focus-visible {
+  outline: 2px solid var(--v4-orange);
+  outline-offset: 2px;
+}
+.fy-tip p {
+  margin: 8px 0 0;
 }
 
 .fy-cred {

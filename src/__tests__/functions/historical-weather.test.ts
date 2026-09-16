@@ -28,7 +28,8 @@ function openMeteo(date: string, timezone: string) {
       precipitation: time.map((_, h) => h / 10),
       cloudcover: time.map((_, h) => h),
       wind_speed_10m: time.map((_, h) => h + 1),
-      pressure_msl: time.map((_, h) => 1000 + h)
+      pressure_msl: time.map((_, h) => 1000 + h),
+      weather_code: time.map((_, h) => h % 4)
     }
   };
 }
@@ -122,7 +123,7 @@ describe('historical-weather: target resolution', () => {
     expect(response.headers.get('Cache-Control')).toBe('public, max-age=86400, s-maxage=86400');
     expect(response.headers.get('X-Cache')).toBe('MISS');
     expect(body.ok).toBe(true);
-    expect(body.data).toMatchObject({ temperature: 38, cloudCover: 18, windSpeed: 19, pressure: 1018, timezone: 'Asia/Tashkent' });
+    expect(body.data).toMatchObject({ temperature: 38, cloudCover: 18, windSpeed: 19, pressure: 1018, weatherCode: 2, timezone: 'Asia/Tashkent' });
     expect(body.data!.precipitation).toBeCloseTo(1.8, 6);
 
     const url = new URL(fetchCall(fetch).url);
@@ -132,7 +133,7 @@ describe('historical-weather: target resolution', () => {
     expect(url.searchParams.get('start_date')).toBe('2024-06-14');
     expect(url.searchParams.get('end_date')).toBe('2024-06-14');
     expect(url.searchParams.get('timezone')).toBe('auto');
-    expect(url.searchParams.get('hourly')).toBe('temperature_2m,precipitation,cloudcover,wind_speed_10m,pressure_msl');
+    expect(url.searchParams.get('hourly')).toBe('temperature_2m,precipitation,cloudcover,wind_speed_10m,pressure_msl,weather_code');
   });
 
   it('local= without seconds is accepted', async () => {
@@ -210,7 +211,7 @@ describe('historical-weather: payload handling', () => {
       return jsonResponse({ ...payload, timezone: 42 });
     });
     const { body } = await callJson<ApiResponse<HistoricalWeatherResult>>(onRequest, urlOf(PATH, { ...TASHKENT, timestamp: '2024-06-14T10:00:00Z' }));
-    expect(body.data).toEqual({ temperature: null, precipitation: null, cloudCover: 55, windSpeed: 11, pressure: null, timezone: undefined });
+    expect(body.data).toEqual({ temperature: null, precipitation: null, cloudCover: 55, windSpeed: 11, pressure: null, weatherCode: 2, timezone: undefined });
   });
 });
 

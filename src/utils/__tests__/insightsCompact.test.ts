@@ -4,7 +4,6 @@ import {
   formatCoords,
   formatDateTime,
   formatDistance,
-  formatWeatherLine,
   dedupeByNameAndDistance,
   localizeCategoryKey
 } from '../insightsCompact';
@@ -43,28 +42,6 @@ describe('formatDistance', () => {
   it('formats small distances', () => {
     const result = formatDistance(50, 'en');
     expect(result).toContain('50');
-  });
-});
-
-describe('formatWeatherLine', () => {
-  it('returns null for null weather', () => {
-    expect(formatWeatherLine(null, 'en')).toBeNull();
-  });
-
-  it('returns null when temperature is null', () => {
-    expect(formatWeatherLine({ temperature: null as any, precipitation: 0, cloudCover: 50, windSpeed: 10, pressure: 1013 }, 'en')).toBeNull();
-  });
-
-  it('uses English units for en locale', () => {
-    const result = formatWeatherLine({ temperature: 20, precipitation: 0, cloudCover: 50, windSpeed: 10, pressure: 1013 }, 'en');
-    expect(result).toContain('km/h');
-    expect(result).toContain('hPa');
-  });
-
-  it('uses Russian units for ru locale', () => {
-    const result = formatWeatherLine({ temperature: 20, precipitation: 0, cloudCover: 50, windSpeed: 10, pressure: 1013 }, 'ru');
-    expect(result).toContain('км/ч');
-    expect(result).toContain('гПа');
   });
 });
 

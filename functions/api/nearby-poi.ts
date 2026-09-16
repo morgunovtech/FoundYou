@@ -24,7 +24,10 @@ export const onRequest = defineHandler(async ({ url, context }) => {
       tags.amenity ||
       tags.shop ||
       tags.tourism ||
+      tags.historic ||
       tags.leisure ||
+      tags.natural ||
+      tags.place ||
       tags.man_made ||
       'poi';
     items.push({ name, category, distance });

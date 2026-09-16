@@ -24,6 +24,8 @@ export interface HistoricalWeatherResult {
   cloudCover: number;
   windSpeed: number;
   pressure: number;
+  /** WMO 4677 weather code (Open-Meteo `weather_code`); absent in answers cached before it was requested. */
+  weatherCode?: number | null;
   /** IANA zone the hour was resolved in (Open-Meteo `timezone=auto`); absent for legacy UTC lookups. */
   timezone?: string;
 }

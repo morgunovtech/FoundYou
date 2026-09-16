@@ -1,5 +1,5 @@
 import type { MessageKey } from '../i18n';
-import type { ReverseGeocodeResult, HistoricalWeatherResult, PoiResult } from '../types/api';
+import type { ReverseGeocodeResult, PoiResult } from '../types/api';
 import { hasZoneDesignator, parseWallClock, wallClockAsUtcDate } from './format';
 
 const RU_PLACE_MAP: Record<string, string> = {
@@ -101,19 +101,6 @@ export function dedupeByNameAndDistance(items: PoiResult[]): PoiResult[] {
   });
 }
 
-export function formatWeatherLine(weather: HistoricalWeatherResult | null | undefined, locale: string): string | null {
-  if (!weather) return null;
-  if (weather.temperature == null) return null;
-  const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
-  const windUnit = locale === 'en' ? 'km/h' : locale === 'uz' ? 'km/s' : 'км/ч';
-  const pressureUnit = locale === 'en' ? 'hPa' : locale === 'uz' ? 'gPa' : 'гПа';
-  const parts: string[] = [`${number.format(Math.round(weather.temperature))}°C`];
-  if (weather.cloudCover != null) parts.push(`${number.format(Math.round(weather.cloudCover))}%`);
-  if (weather.windSpeed != null) parts.push(`${number.format(Math.round(weather.windSpeed))} ${windUnit}`);
-  if (weather.pressure != null) parts.push(`${number.format(Math.round(weather.pressure))} ${pressureUnit}`);
-  return parts.join(' · ');
-}
-
 const CATEGORY_KEYS: Record<string, string> = {
   cafe: 'poiCategory_cafe',
   restaurant: 'poiCategory_restaurant',
@@ -136,7 +123,49 @@ const CATEGORY_KEYS: Record<string, string> = {
   hospital: 'poiCategory_hospital',
   bus_stop: 'poiCategory_bus_stop',
   subway_entrance: 'poiCategory_subway',
-  station: 'poiCategory_station'
+  station: 'poiCategory_station',
+  attraction: 'poiCategory_attraction',
+  viewpoint: 'poiCategory_viewpoint',
+  camp_site: 'poiCategory_camp_site',
+  picnic_site: 'poiCategory_picnic_site',
+  guest_house: 'poiCategory_guest_house',
+  information: 'poiCategory_information',
+  artwork: 'poiCategory_artwork',
+  monument: 'poiCategory_monument',
+  memorial: 'poiCategory_memorial',
+  castle: 'poiCategory_castle',
+  ruins: 'poiCategory_ruins',
+  archaeological_site: 'poiCategory_archaeological_site',
+  peak: 'poiCategory_peak',
+  spring: 'poiCategory_spring',
+  waterfall: 'poiCategory_waterfall',
+  cave_entrance: 'poiCategory_cave_entrance',
+  nature_reserve: 'poiCategory_nature_reserve',
+  garden: 'poiCategory_garden',
+  playground: 'poiCategory_playground',
+  stadium: 'poiCategory_stadium',
+  sports_centre: 'poiCategory_sports_centre',
+  village: 'poiCategory_village',
+  hamlet: 'poiCategory_hamlet',
+  neighbourhood: 'poiCategory_neighbourhood',
+  suburb: 'poiCategory_suburb',
+  locality: 'poiCategory_locality',
+  place_of_worship: 'poiCategory_place_of_worship',
+  kindergarten: 'poiCategory_kindergarten',
+  university: 'poiCategory_university',
+  college: 'poiCategory_college',
+  police: 'poiCategory_police',
+  clinic: 'poiCategory_clinic',
+  doctors: 'poiCategory_doctors',
+  dentist: 'poiCategory_dentist',
+  marketplace: 'poiCategory_marketplace',
+  cinema: 'poiCategory_cinema',
+  theatre: 'poiCategory_theatre',
+  library: 'poiCategory_library',
+  bench: 'poiCategory_bench',
+  toilets: 'poiCategory_toilets',
+  drinking_water: 'poiCategory_drinking_water',
+  shelter: 'poiCategory_shelter'
 };
 
 function toLocalizedPlace(value: string, locale: string): string {

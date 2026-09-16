@@ -11,13 +11,8 @@ import { buildProGroups } from '../utils/proTable';
 import { geotagTipKey } from '../utils/geotagTips';
 import type { PlateCandidate } from '../utils/plates';
 import type { ContentCredentialsState } from '../hooks/useContentCredentials';
-import {
-  formatCoords,
-  formatDistance,
-  formatWeatherLine,
-  localizeCategoryKey,
-  localizePlaceParts
-} from '../utils/insightsCompact';
+import { formatCoords, formatDistance, localizeCategoryKey, localizePlaceParts } from '../utils/insightsCompact';
+import { capitalize, describeWeather } from '../utils/weather';
 import { formatBytes, formatDetailedDate, formatDimensions, formatMegapixels, describeFileType } from '../utils/format';
 import { googleMapsLink, streetViewLink } from '../utils/mapLinks';
 import type { PoiResult } from '../types/api';
@@ -76,8 +71,8 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   const place = remote && !geo.reverse.status.loading && !geo.reverse.status.error ? placeInfo.place || null : null;
   const accuracyLabel = geo.accuracyMeters != null ? formatDistance(geo.accuracyMeters, lang) : null;
   const weatherLine = useMemo(
-    () => (remote && geo.weather.data ? formatWeatherLine(geo.weather.data, lang) : null),
-    [remote, geo.weather.data, lang]
+    () => (remote && geo.weather.data ? describeWeather(geo.weather.data, t, lang) : null),
+    [remote, geo.weather.data, t, lang]
   );
   const holidayNames = useMemo(() => {
     if (!remote || !geo.holidays.data?.isHoliday) return null;
@@ -140,12 +135,18 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       </button>
     ) : null;
 
+  // Natural features and settlements can be a kilometre away; metres stop reading well past 1 km.
+  const formatPoiDistance = (metres: number) =>
+    metres >= 1000
+      ? t('insightPoiDistanceKm', { distance: new Intl.NumberFormat(lang, { maximumFractionDigits: 1 }).format(metres / 1000) })
+      : t('insightPoiDistance', { distance: Math.round(metres) });
+
   const renderRows = (items: PoiResult[], labelOf: (poi: PoiResult) => string) => (
     <ul className="fy-rows">
       {items.map((poi, index) => (
         <li key={`${poi.name}-${index}`}>
           <span>{labelOf(poi)}</span>
-          <span className="fy-mono">{t('insightPoiDistance', { distance: Math.round(poi.distance) })}</span>
+          <span className="fy-mono">{formatPoiDistance(poi.distance)}</span>
         </li>
       ))}
     </ul>
@@ -195,15 +196,6 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
           <dt>{t('insightCompactCoordinates')}</dt>
           <dd>
             <span className="fy-mono">{formatCoords(geo.coords.lat, geo.coords.lon)}</span>
-            <button
-              type="button"
-              className="v4-btn fy-btn-sm"
-              onClick={handleCopyCoords}
-              aria-label={t('insightCompactCopyCoordinates')}
-              title={t('insightCompactCopyCoordinates')}
-            >
-              {copied ? t('coordinatesCopied') : t('copyAction')}
-            </button>
             {!remote && accuracyLabel ? <span className="fy-muted">{accuracyLabel}</span> : null}
           </dd>
           {metadata?.gps?.altitude != null ? (
@@ -221,7 +213,9 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
                     ? t('insightCompactLoading')
                     : geo.weather.status.error
                     ? t('insightCompactWeatherUnavailable')
-                    : weatherLine ?? t('insightCompactWeatherUnavailable')}
+                    : weatherLine
+                    ? capitalize(weatherLine)
+                    : t('insightCompactWeatherUnavailable')}
                 </span>
                 {retryButton(geo.weather.status)}
               </dd>
@@ -234,24 +228,25 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
             </>
           ) : null}
         </dl>
-        {remote ? (
-          <div>
-            <MapBlock lat={geo.coords.lat} lon={geo.coords.lon} accuracy={geo.accuracyMeters ?? undefined} />
-            <div className="fy-map-actions">
-              <a className="v4-btn fy-btn-sm" href={googleMapsLink(geo.coords.lat, geo.coords.lon)} target="_blank" rel="noreferrer">
-                {t('openMaps')}
-              </a>
-              <a
-                className="v4-btn fy-btn-sm"
-                href={streetViewLink(geo.coords.lat, geo.coords.lon, metadata?.gps?.heading)}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {t('openStreetView')}
-              </a>
-            </div>
+        <div>
+          {remote ? <MapBlock lat={geo.coords.lat} lon={geo.coords.lon} accuracy={geo.accuracyMeters ?? undefined} /> : null}
+          <div className="fy-map-actions">
+            <button type="button" className="v4-btn fy-btn-sm" onClick={handleCopyCoords} aria-live="polite">
+              {copied ? t('coordinatesCopied') : t('insightCompactCopyCoordinates')}
+            </button>
+            <a className="v4-btn fy-btn-sm" href={googleMapsLink(geo.coords.lat, geo.coords.lon)} target="_blank" rel="noreferrer">
+              {t('openMaps')}
+            </a>
+            <a
+              className="v4-btn fy-btn-sm"
+              href={streetViewLink(geo.coords.lat, geo.coords.lon, metadata?.gps?.heading)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t('openStreetView')}
+            </a>
           </div>
-        ) : null}
+        </div>
       </div>
       {remote ? (
         <div className="fy-lists">
@@ -263,17 +258,17 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
           </div>
           <div>
             <h4 className="v4-h3">{t('insightSurveillanceTitle')}</h4>
-            <p className="fy-hint">{t('insightSurveillanceHelper')}</p>
+            {geo.surveillance.items.length > 0 ? <p className="fy-hint">{t('insightSurveillanceHelper')}</p> : null}
             {renderList(geo.surveillance.status, geo.surveillance.items, 'insightSurveillanceError', 'insightSurveillanceEmpty', (poi) =>
               localizeCategoryKey(poi.category, t)
             )}
           </div>
         </div>
       ) : null}
-      <p className="fy-tip">
-        <b>{t('geotagTipTitle')}</b>
-        <span>{t(geotagTipKey(metadata?.cameraMake, metadata?.cameraModel, proData?.filename.platform))}</span>
-      </p>
+      <details className="fy-tip">
+        <summary data-more={t('showAction')} data-less={t('hideAction')}>{t('geotagTipTitle')}</summary>
+        <p>{t(geotagTipKey(metadata?.cameraMake, metadata?.cameraModel, proData?.filename.platform))}</p>
+      </details>
       <p className="fy-geo-note">
         <span>{geo.enabled ? t('geoDisclosure') : t('geoDisabledNote')}</span>
         <button type="button" className="fy-link-btn" onClick={() => geo.setEnabled(!geo.enabled)}>
@@ -390,7 +385,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
         severity={section.severity}
         points={section.leakPoints}
         value={kind === 'location' ? null : section.text}
-        sub={section.subtext}
+        sub={kind === 'location' ? null : section.subtext}
         soWhat={section.threatScenario}
       >
         {details}
