@@ -135,14 +135,12 @@ describe('generateDigitalProfile: full EXIF + GPS', () => {
     const device = section(profile, 'device');
     expect(device).toMatchObject({ text: 'iPhone 15 Pro (Apple)', leakPoints: 15, severity: 'high' });
     expect(device.subtext).toBeTruthy();
-    expect(device.threatScenario).toBeTruthy();
   });
 
   it('location: 25 points, 5-decimal coordinates, altitude and accuracy', () => {
     const location = section(profile, 'location');
     expect(location).toMatchObject({ text: '41.31116, 69.27974 (455m)', leakPoints: 25, severity: 'high' });
     expect(location.subtext).toContain('5');
-    expect(location.threatScenario).toBeTruthy();
   });
 
   it('time: joins every fact, keeps only non-empty inferences, takes the max severity', () => {
@@ -150,7 +148,6 @@ describe('generateDigitalProfile: full EXIF + GPS', () => {
     expect(time.text).toBe('Night photo (2:00). Weekend');
     expect(time.subtext).toBe('You were awake late at night');
     expect(time).toMatchObject({ leakPoints: 15, severity: 'high' });
-    expect(time.threatScenario).toBeTruthy();
   });
 
   it('people: counts only persons with score ≥ 0.5', () => {
@@ -165,11 +162,10 @@ describe('generateDigitalProfile: full EXIF + GPS', () => {
     const text = section(profile, 'text');
     expect(text).toMatchObject({ leakPoints: 10, severity: 'medium' });
     expect(text.text).toContain('2');
-    expect(text.threatScenario).toBeTruthy();
   });
 
   it('AI check negative: no points, low, no threat', () => {
-    expect(section(profile, 'ai')).toMatchObject({ leakPoints: 0, severity: 'low', threatScenario: null });
+    expect(section(profile, 'ai')).toMatchObject({ leakPoints: 0, severity: 'low' });
   });
 
   it('editing: lists software, first hint as subtext, 5 points', () => {
@@ -177,7 +173,7 @@ describe('generateDigitalProfile: full EXIF + GPS', () => {
   });
 
   it('origin: original file, no points', () => {
-    expect(section(profile, 'origin')).toMatchObject({ leakPoints: 0, severity: 'low', threatScenario: null });
+    expect(section(profile, 'origin')).toMatchObject({ leakPoints: 0, severity: 'low' });
   });
 
   it('content type: the resolution hint', () => {
@@ -212,7 +208,7 @@ describe('generateDigitalProfile: stripped messenger file', () => {
   });
 
   it('time section says nothing was found', () => {
-    expect(section(profile, 'time')).toMatchObject({ leakPoints: 0, severity: 'low', threatScenario: null });
+    expect(section(profile, 'time')).toMatchObject({ leakPoints: 0, severity: 'low' });
   });
 
   it('origin names the messenger and cites the first sign', () => {
@@ -308,7 +304,6 @@ describe('generateDigitalProfile: individual branches', () => {
     const profile = generateDigitalProfile({ ...base(), editing: AI_MIDJOURNEY });
     const ai = section(profile, 'ai');
     expect(ai).toMatchObject({ text: 'Midjourney', leakPoints: 0, severity: 'medium' });
-    expect(ai.threatScenario).toBeTruthy();
     // isAiGenerated without a tool name still gets a label
     const unknownTool = generateDigitalProfile({ ...base(), editing: { ...AI_MIDJOURNEY, aiTool: null } });
     expect(section(unknownTool, 'ai').text).toBe('AI');
@@ -361,7 +356,6 @@ describe('generateDigitalProfile: languages', () => {
         expect(s.text.trim().length, `${s.kind} text (${lang})`).toBeGreaterThan(0);
         expect(s.text).not.toContain('undefined');
         if (s.subtext !== null) expect(s.subtext.trim().length).toBeGreaterThan(0);
-        if (s.threatScenario !== null) expect(s.threatScenario.trim().length).toBeGreaterThan(0);
       }
 
     }

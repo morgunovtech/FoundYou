@@ -239,12 +239,7 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
         </summary>
         <p>{t(geotagTipKey(metadata?.cameraMake, metadata?.cameraModel, platform))}</p>
       </details>
-      <p className="fy-geo-note">
-        <span>{geo.enabled ? t('geoDisclosure') : t('geoDisabledNote')}</span>
-        <button type="button" className="fy-link-btn" onClick={() => geo.setEnabled(!geo.enabled)}>
-          {geo.enabled ? t('geoDisable') : t('geoEnable')}
-        </button>
-      </p>
+      <p className="fy-geo-note">{t('geoDisclosure')}</p>
     </div>
   );
 };

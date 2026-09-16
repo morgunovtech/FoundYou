@@ -76,7 +76,7 @@ export function buildProGroups(
       (s) =>
         [
           s.title,
-          `${s.text}${s.subtext ? ` — ${s.subtext}` : ''}${s.threatScenario ? ` [${s.threatScenario}]` : ''}`
+          `${s.text}${s.subtext ? ` — ${s.subtext}` : ''}`
         ] as ProRow
     )
   ];

@@ -7,16 +7,14 @@ export interface FactRowProps {
   severity: Severity;
   value: string | null;
   sub: string | null;
-  /** How an attacker uses this fact. */
-  soWhat: string | null;
   children?: React.ReactNode;
 }
 
 /**
- * One fact card: what the file says (value, rows) and how an attacker uses it. The severity
- * colours the left rule and is also read out, so it is never carried by colour alone.
+ * One fact card: what the file says (value, rows) and nothing else. The severity colours the
+ * left rule and is also read out, so it is never carried by colour alone.
  */
-export const FactRow: React.FC<FactRowProps> = ({ title, severity, value, sub, soWhat, children }) => {
+export const FactRow: React.FC<FactRowProps> = ({ title, severity, value, sub, children }) => {
   const t = useT();
   return (
     <article className="fy-fact" data-severity={severity}>
@@ -29,12 +27,6 @@ export const FactRow: React.FC<FactRowProps> = ({ title, severity, value, sub, s
       {value ? <p className="fy-fact-value">{value}</p> : null}
       {sub ? <p className="fy-fact-sub">{sub}</p> : null}
       {children}
-      {soWhat ? (
-        <p className="fy-fact-so">
-          <b>{t('factSoWhat')}</b>
-          <span>{soWhat}</span>
-        </p>
-      ) : null}
     </article>
   );
 };

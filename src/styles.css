@@ -235,68 +235,23 @@
 
 /* --- Sections & layout grids ------------------------------------------ */
 
-.fy-grid-2 {
-  display: grid;
-  gap: 16px;
-  align-items: start;
+/* Sticky corner buttons: the DS scroll-to-top and, 8px above it, «new photo» with the picture-plus icon. */
+.fy-sticky-new {
+  bottom: 68px;
 }
 
-@media (min-width: 960px) {
-  .fy-grid-2 {
-    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
-  }}
-
-/* --- Explainer (educational insert) ------------------------------------
-   The reusable «why this matters» block: the same tinted background and mono
-   accent label as the «Что это значит» insert inside a fact card, so every
-   explanation on the page looks alike, and unlike a data caption (which has
-   no tint and a grey rule). It sits next to the data it explains and is
-   never collapsed or hidden behind a toggle. */
-.fy-explainer {
-  background: var(--v4-bg);
-  border: 1px solid var(--v4-line);
-  padding: 16px 18px 18px;
-  display: grid;
-  gap: 10px;
-  align-content: start;
-  min-width: 0;
-  transition: background-color 0.2s ease, border-color 0.2s ease;
+.fy-sticky-icon {
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
 }
 
-.fy-explainer-label {
-  margin: 0;
-  font-family: var(--v4-mono);
-  font-size: var(--v4-label-size);
-  font-weight: var(--v4-label-weight);
-  letter-spacing: var(--v4-label-tracking);
-  text-transform: uppercase;
-  color: var(--v4-orange-text);
-}
-
-.fy-explainer-body {
-  display: grid;
-  gap: 10px;
-}
-
-.fy-explainer-body p {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.55;
-  max-width: 62ch;
-}
-
-/* --- «How the photo was taken»: top-down sketch + list ------------------- */
-
-.fy-shot {
-  display: grid;
-  gap: 14px;
-}
-
-@media (min-width: 720px) {
-  .fy-shot {
-    grid-template-columns: 200px minmax(0, 1fr);
-    align-items: start;
-  }
+/* Section 01: the preview card alone, capped so a portrait photo does not fill the whole viewport. */
+.fy-scene-card {
+  max-width: 760px;
 }
 
 .fy-shot-diagram {
@@ -311,6 +266,16 @@
   font-size: 9px;
   letter-spacing: 0.08em;
   fill: var(--v4-muted);
+}
+
+/* Legend under the sketch and the list, spanning both columns. */
+.fy-shot-legend {
+  grid-column: 1 / -1;
+  margin: 0;
+  max-width: 72ch;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--v4-muted);
 }
 
 .fy-shot-rim {
@@ -722,6 +687,24 @@
   gap: 8px 14px;
 }
 
+/* One «time zone» row: the camera and the place, each on its own line behind a small label. */
+.fy-zone-part {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+}
+
+.fy-zone-part > b {
+  font-family: var(--v4-mono);
+  font-size: var(--v4-label-xs-size);
+  font-weight: var(--v4-label-weight);
+  letter-spacing: var(--v4-label-xs-tracking);
+  text-transform: uppercase;
+  color: var(--v4-muted);
+}
+
 @media (max-width: 480px) {
   .fy-spec,
   .fy-spec--tight {
@@ -1112,33 +1095,10 @@
   color: var(--v4-muted);
 }
 
-.fy-fact-so {
-  margin: 4px 0 0;
-  padding: 8px 12px;
-  background: var(--v4-bg);
-  font-size: 13px;
-  line-height: 1.5;
-  display: grid;
-  gap: 2px;
-}
-
-.fy-fact-so b {
-  font-family: var(--v4-mono);
-  font-size: var(--v4-label-xs-size);
-  font-weight: var(--v4-label-weight);
-  letter-spacing: var(--v4-label-xs-tracking);
-  text-transform: uppercase;
-  color: var(--v4-orange-text);
-}
-
 .fy-fact-details {
   margin-top: 6px;
   display: grid;
   gap: 10px;
-}
-
-.fy-facts-cta {
-  margin-top: 16px;
 }
 
 /* «Откуда файл»: three sub-blocks under one card, each with its own small heading. */
@@ -1151,56 +1111,19 @@
   margin: 4px 0 0;
 }
 
-/* File history: a dated list; the date column is mono, events are prose. */
-.fy-timeline {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 8px;
-}
-
-.fy-timeline li {
-  display: grid;
-  grid-template-columns: minmax(100px, 130px) minmax(0, 1fr);
-  gap: 4px 14px;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.fy-timeline-when {
-  font-family: var(--v4-mono);
-  font-size: var(--v4-label-xs-size);
-  letter-spacing: var(--v4-label-xs-tracking);
-  text-transform: uppercase;
-  color: var(--v4-muted);
-  padding-top: 3px;
-}
-
-.fy-timeline-body {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-
-.fy-timeline-thumb {
+/* File history: a sign of a later save, with the embedded thumbnail when it differs from the frame. */
+.fy-history-sign {
+  flex-basis: 100%;
   display: flex;
   gap: 12px;
   align-items: flex-start;
 }
 
-.fy-timeline-thumb img {
+.fy-history-sign img {
   width: 96px;
   height: auto;
   border: 1px solid var(--v4-line);
   flex: 0 0 auto;
-}
-
-@media (max-width: 480px) {
-  .fy-timeline li {
-    grid-template-columns: 1fr;
-    gap: 2px;
-  }
 }
 
 .fy-fact-details .fy-insights {
@@ -1267,24 +1190,6 @@
   flex-wrap: wrap;
   gap: 4px 12px;
   align-items: baseline;
-}
-
-.fy-link-btn {
-  border: none;
-  background: transparent;
-  padding: 0;
-  font: inherit;
-  color: var(--v4-fg);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  text-decoration-color: var(--v4-line);
-  cursor: pointer;
-}
-
-.fy-link-btn:hover,
-.fy-link-btn:focus-visible {
-  color: var(--v4-orange-text);
-  text-decoration-color: var(--v4-orange-text);
 }
 
 @media (max-width: 640px) {

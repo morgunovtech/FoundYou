@@ -20,7 +20,7 @@ interface StanceFactProps {
 /**
  * «Как был сделан снимок»: where the photographer stood, where the camera looked, how the
  * phone was held, where the sun was, whether they moved, and the GPS altitude against the
- * terrain, next to the top-down sketch.
+ * terrain, next to the top-down sketch, with a one-paragraph legend on how to read it.
  */
 export const StanceFact: React.FC<StanceFactProps> = ({ stance, geo, metadata, remote, accuracyLabel }) => {
   const t = useT();
@@ -65,7 +65,7 @@ export const StanceFact: React.FC<StanceFactProps> = ({ stance, geo, metadata, r
     return t('stanceTerrainPending');
   })();
   return (
-    <FactRow title={t('stanceTitle')} severity="low" value={null} sub={null} soWhat={t('stanceSoWhat')}>
+    <FactRow title={t('stanceTitle')} severity="low" value={null} sub={null}>
       <div className="fy-fact-details fy-shot">
         <ShotDiagram
           stance={stance}
@@ -96,6 +96,7 @@ export const StanceFact: React.FC<StanceFactProps> = ({ stance, geo, metadata, r
             {!stance.elevation && remote ? <RetryButton status={geo.elevation.status} /> : null}
           </dd>
         </dl>
+        <p className="fy-shot-legend">{t('stanceLegend')}</p>
       </div>
     </FactRow>
   );

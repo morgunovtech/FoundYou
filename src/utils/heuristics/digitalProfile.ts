@@ -45,7 +45,6 @@ export interface ProfileSection {
   subtext: string | null;
   leakPoints: number;
   severity: Severity;
-  threatScenario: string | null;
 }
 
 export interface LeakLevel {
@@ -94,66 +93,6 @@ function getLeakLevel(score: number, lang: Lang): LeakLevel {
 }
 
 /* ── threat scenarios ───────────────────────────────────── */
-
-interface ThreatMap { [key: string]: Record<Lang, string> }
-
-const THREATS: ThreatMap = {
-  gps: {
-    ru: 'Злоумышленник может определить домашний адрес, место работы или маршрут',
-    en: 'An attacker can determine your home address, workplace, or route',
-    uz: 'Tajovuzkor uy manzili, ish joyi yoki marshrutni aniqlay oladi',
-  },
-  datetime: {
-    ru: 'Позволяет установить распорядок дня и привычки',
-    en: 'Reveals daily schedule and habits',
-    uz: 'Kundalik tartib va odatlarni oshkor qiladi',
-  },
-  camera: {
-    ru: 'Модель и возраст устройства выдают уровень дохода, версия системы и прошивка — как вы следите за обновлениями; вместе со счётчиком кадров это связывает ваши снимки между собой',
-    en: 'The model and its age reveal income level; the system version and firmware show how you keep up with updates; with the shot counter this links your photos to each other',
-    uz: 'Model va qurilma yoshi daromad darajasini, tizim versiyasi va proshivka yangilanishlarga munosabatingizni oshkor qiladi; kadr hisoblagichi bilan birga bu suratlaringizni bir-biriga bog‘laydi',
-  },
-  faces: {
-    ru: 'Биометрическая идентификация через сервисы поиска по лицу',
-    en: 'Biometric identification via face search services',
-    uz: 'Yuz qidiruv xizmatlari orqali biometrik identifikatsiya',
-  },
-  text: {
-    ru: 'Текст на фото (вывески, номера) раскрывает местоположение или контекст',
-    en: 'Text in photo (signs, plates) reveals location or context',
-    uz: 'Fotodagi matn (belgilar, raqamlar) joylashuv yoki kontekstni oshkor qiladi',
-  },
-  serial: {
-    ru: 'Серийный номер связывает все фото с одного устройства',
-    en: 'Serial number links all photos from one device',
-    uz: 'Seriya raqami bitta qurilmadan barcha fotolarni bog\'laydi',
-  },
-  hash: {
-    ru: 'По отпечатку картинки поиск по изображению находит копии этого фото на любом сервисе, куда оно загружалось',
-    en: 'By the picture fingerprint, reverse image search finds copies of this photo on any service it was uploaded to',
-    uz: 'Rasm izi bo‘yicha rasm qidiruvi bu suratning nusxalarini u yuklangan har qanday xizmatda topadi',
-  },
-  plates: {
-    ru: 'По номеру машины находят владельца через базы штрафов и чаты; вместе с местом съёмки это адрес стоянки',
-    en: 'A plate leads to the owner through fine databases and chats; with the location it is a parking address',
-    uz: 'Avtomobil raqami orqali egasini jarima bazalari va chatlar orqali topadilar; joylashuv bilan birga bu turargoh manzili',
-  },
-  qr: {
-    ru: 'QR-код читается с фото любым телефоном: Wi-Fi-пароль, контакт, посадочный талон или ссылка-приглашение уходят вместе со снимком',
-    en: 'A QR code is read off a photo by any phone: a Wi-Fi password, a contact, a boarding pass or an invite link leaves with the picture',
-    uz: 'QR-kodni fotodan istalgan telefon o‘qiydi: Wi-Fi paroli, kontakt, bort talon yoki taklif havolasi surat bilan birga ketadi',
-  },
-  documents: {
-    ru: 'Номер карты, паспорт и телефон читаются с фото так же, как с бумаги: этого хватает для мошенничества и поиска аккаунтов',
-    en: 'A card number, a passport and a phone number are read off a photo as easily as off paper: enough for fraud and account lookup',
-    uz: 'Karta raqami, pasport va telefon fotodan qog‘ozdagidek o‘qiladi: bu firibgarlik va akkauntlarni topish uchun yetarli',
-  },
-  ai: {
-    ru: 'Фото сгенерировано нейросетью — не является реальной фотографией',
-    en: 'Photo is AI-generated — not a real photograph',
-    uz: 'Foto neyrotarmoq tomonidan yaratilgan — haqiqiy fotosurat emas',
-  },
-};
 
 /* ── new copy lives in one table (no ternaries per CLAUDE.md) ─ */
 
@@ -272,7 +211,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
         : (lang === 'ru' ? 'Определено по косвенным признакам' : lang === 'uz' ? 'Bilvosita belgilar bo\'yicha aniqlangan' : 'Identified by indirect signs'),
       leakPoints: fromExif ? 15 : 8,
       severity: fromExif ? 'high' : 'medium',
-      threatScenario: THREATS.camera[lang],
     });
   }
 
@@ -280,14 +218,13 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   if (metadata?.gps) {
     sections.push({
       kind: 'location',
-      title: lang === 'ru' ? 'Местоположение' : lang === 'uz' ? 'Joylashuv' : 'Location',
+      title: lang === 'ru' ? 'Где сделан снимок' : lang === 'uz' ? 'Surat qayerda olingan' : 'Where the photo was taken',
       text: `${metadata.gps.lat.toFixed(5)}, ${metadata.gps.lon.toFixed(5)}` + (metadata.gps.altitude != null ? ` (${Math.round(metadata.gps.altitude)}m)` : ''),
       subtext: metadata.gps.accuracy != null
         ? (lang === 'ru' ? `Точность: ±${Math.round(metadata.gps.accuracy)}м` : `Accuracy: ±${Math.round(metadata.gps.accuracy)}m`)
         : null,
       leakPoints: 25,
       severity: 'high',
-      threatScenario: THREATS.gps[lang],
     });
   }
 
@@ -308,7 +245,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       subtext: allInferences || null,
       leakPoints: maxSeverity === 'high' ? 15 : 8,
       severity: maxSeverity,
-      threatScenario: THREATS.datetime[lang],
     });
   } else {
     sections.push({
@@ -318,7 +254,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       subtext: lang === 'ru' ? 'Временные метаданные отсутствуют или были удалены' : 'Temporal metadata is missing or was stripped',
       leakPoints: 0,
       severity: 'low',
-      threatScenario: null,
     });
   }
 
@@ -344,7 +279,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
         : 'Faces can be found via image search services',
       leakPoints: 20,
       severity: 'high',
-      threatScenario: THREATS.faces[lang],
     });
   }
 
@@ -360,7 +294,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       subtext: null,
       leakPoints: 10,
       severity: 'medium',
-      threatScenario: THREATS.text[lang],
     });
   }
 
@@ -375,7 +308,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       subtext: TEXTS.platesSub[lang],
       leakPoints: 15,
       severity: 'high',
-      threatScenario: THREATS.plates[lang],
     });
   }
 
@@ -391,7 +323,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       subtext: TEXTS.qrSub[lang],
       leakPoints: sensitive ? 20 : 10,
       severity: sensitive ? 'high' : 'medium',
-      threatScenario: THREATS.qr[lang],
     });
   }
 
@@ -407,7 +338,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       subtext: TEXTS.documentsSub[lang],
       leakPoints: heavy ? 25 : 10,
       severity: heavy ? 'high' : 'medium',
-      threatScenario: THREATS.documents[lang],
     });
   }
 
@@ -423,7 +353,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       subtext: `${TEXTS.credSignedBy[lang]} ${signer}${cred.valid ? TEXTS.credValidSuffix[lang] : TEXTS.credInvalidSuffix[lang]}`,
       leakPoints: 0,
       severity: 'medium',
-      threatScenario: THREATS.ai[lang],
     });
   } else if (editing.isAiGenerated) {
     sections.push({
@@ -433,7 +362,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       subtext: lang === 'ru' ? 'Фото создано нейросетью' : 'Photo created by AI',
       leakPoints: 0,
       severity: 'medium',
-      threatScenario: THREATS.ai[lang],
     });
   } else if (cred) {
     sections.push({
@@ -443,7 +371,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       subtext: `${TEXTS.credSignedBy[lang]} ${signer}${cred.valid ? TEXTS.credValidSuffix[lang] : TEXTS.credInvalidSuffix[lang]}`,
       leakPoints: 0,
       severity: 'low',
-      threatScenario: null,
     });
   } else {
     sections.push({
@@ -458,7 +385,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
             : TEXTS.credNone[lang],
       leakPoints: 0,
       severity: 'low',
-      threatScenario: null,
     });
   }
 
@@ -471,7 +397,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       subtext: editing.hints[0] ?? null,
       leakPoints: 5,
       severity: 'low',
-      threatScenario: null,
     });
   } else {
     sections.push({
@@ -481,7 +406,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       subtext: null,
       leakPoints: 0,
       severity: 'low',
-      threatScenario: null,
     });
   }
 
@@ -496,7 +420,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       subtext: stripped.evidence[0] ?? null,
       leakPoints: 5,
       severity: 'medium',
-      threatScenario: null,
     });
   } else {
     sections.push({
@@ -506,7 +429,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       subtext: lang === 'ru' ? 'Метаданные сохранены — файл не проходил через сервисы сжатия' : 'Metadata preserved — file was not re-compressed by a service',
       leakPoints: 0,
       severity: 'low',
-      threatScenario: null,
     });
   }
 
@@ -519,7 +441,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       subtext: null,
       leakPoints: 0,
       severity: 'low',
-      threatScenario: null,
     });
   }
 
@@ -533,7 +454,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       subtext: null,
       leakPoints: 10,
       severity: 'medium',
-      threatScenario: THREATS.serial[lang],
     });
   }
 
@@ -546,7 +466,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       subtext: TEXTS.hashSub[lang],
       leakPoints: 5,
       severity: 'low',
-      threatScenario: THREATS.hash[lang],
     });
   }
 

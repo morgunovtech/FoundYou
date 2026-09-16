@@ -6,8 +6,7 @@ import { ORIGIN_KINDS } from '../../utils/heuristics/digitalProfile';
 import type { ContentCredentialsState } from '../../hooks/useContentCredentials';
 import type { DeviceProfile } from '../../utils/deviceProfile';
 import { buildFileHistory, type FileEvent } from '../../utils/fileHistory';
-import { countMetadataFields } from '../../utils/metadataFields';
-import { describeFileType, formatBytes, formatCompactDate, formatDetailedDate, formatDimensions, formatMegapixels } from '../../utils/format';
+import { formatCompactDate, formatDetailedDate, formatDimensions } from '../../utils/format';
 import { useI18n, useT } from '../../i18n';
 import { FactRow } from './FactRow';
 import { DeviceRows } from './DeviceRows';
@@ -51,10 +50,14 @@ const CredentialsDetails: React.FC<{ credentials: ContentCredentialsState }> = (
   );
 };
 
+const withEvidence = (text: string, evidence: string | null | undefined) => (evidence ? `${text} (${evidence})` : text);
+
 /**
- * «Откуда файл»: the device rows, the file history (the events derived from tags and bytes,
- * in the order they happened, with the embedded thumbnail) and the authenticity rows (AI,
- * serial numbers, Content Credentials) in one card.
+ * «На что сделан снимок»: the device and its system in the headline, the device rows, the
+ * file history as two dates (created from the camera clock; edited from ModifyDate / Software,
+ * «not edited» when nothing points to a later save, otherwise the signs: a smaller picture
+ * than the camera wrote, a messenger re-encode, an embedded thumbnail that differs) and the
+ * authenticity rows (AI, serial numbers, Content Credentials) in one card.
  */
 export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, fileInfo, metadata, proData, credentials }) => {
   const t = useT();
@@ -74,7 +77,6 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
       }),
     [metadata, proData, credentials.data, fileInfo]
   );
-  const metadataFieldCount = useMemo(() => countMetadataFields(metadata), [metadata]);
 
   const parts = Array.from(ORIGIN_KINDS)
     .map((kind) => sectionsByKind.get(kind))
@@ -84,96 +86,70 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
   const severity = parts.some((p) => p.severity === 'high') ? 'high' : parts.some((p) => p.severity === 'medium') ? 'medium' : 'low';
   const ai = sectionsByKind.get('ai');
   const serial = sectionsByKind.get('serial');
-  const headline = device ? [device.make, device.model].filter(Boolean).join(' ') : sectionsByKind.get('origin')?.text ?? null;
-  const { format } = describeFileType(fileInfo.originalMimeType ?? fileInfo.mimeType, fileInfo.originalName ?? fileInfo.file.name);
-  const fileLine = t('historyFile', {
-    name: fileInfo.originalName ?? fileInfo.file.name,
-    format,
-    size: formatBytes(fileInfo.originalSizeBytes ?? fileInfo.sizeBytes, lang),
-    mp: formatMegapixels(fileInfo.width, fileInfo.height, lang)
-  });
+  const headline = device
+    ? [[device.make, device.model].filter(Boolean).join(' '), device.os ? `${device.os.name} ${device.os.version}` : null]
+        .filter(Boolean)
+        .join(', ')
+    : sectionsByKind.get('origin')?.text ?? null;
 
-  const eventText = (event: FileEvent): { text: string; why?: string } => {
+  // Two dates and the evidence: the camera clock, then ModifyDate / Software or the signs of a
+  // later save (smaller than the camera wrote, a messenger re-encode, a thumbnail that differs).
+  const shot = history.find((event) => event.kind === 'shot') ?? null;
+  const modified = history.find((event) => event.kind === 'modified') ?? null;
+  const signs = history.filter(
+    (event) =>
+      event.kind === 'resized' ||
+      event.kind === 'messenger' ||
+      event.kind === 'stripped' ||
+      (event.kind === 'thumbnail' && event.same === false)
+  );
+  const createdText = shot?.at ? formatCompactDate(shot.at, lang) ?? shot.at : t('historyDateUnknown');
+  const editedText = modified?.at
+    ? formatCompactDate(modified.at, lang) ?? modified.at
+    : modified || signs.length > 0
+    ? t('historyDateUnknown')
+    : t('historyNotEdited');
+  const editedNote = modified?.agent ? t('historyModifiedWith', { software: modified.agent }) : null;
+  const signText = (event: FileEvent): string => {
     switch (event.kind) {
-      case 'shot':
-        return { text: event.agent ? t('historyShot', { device: event.agent }) : t('historyShotUnknownDevice') };
-      case 'modified':
-        return { text: event.agent ? t('historyModifiedWith', { software: event.agent }) : t('historyModified') };
       case 'resized':
-        return {
-          text: t('historyResized', {
-            from: formatDimensions(event.from?.width ?? 0, event.from?.height ?? 0),
-            to: formatDimensions(event.to?.width ?? 0, event.to?.height ?? 0)
-          })
-        };
+        return t('historyResized', {
+          from: formatDimensions(event.from?.width ?? 0, event.from?.height ?? 0),
+          to: formatDimensions(event.to?.width ?? 0, event.to?.height ?? 0)
+        });
       case 'messenger':
-        return { text: t('historyMessenger', { platform: event.agent ?? '' }), why: event.evidence ?? undefined };
+        return withEvidence(t('historyMessenger', { platform: event.agent ?? '' }), event.evidence);
       case 'stripped':
-        return { text: t('historyStripped'), why: event.evidence ?? undefined };
-      case 'signed':
-        return { text: t('historySigned', { signer: event.agent ?? 'C2PA' }) };
-      case 'ai':
-        return { text: t('historyAi', { tool: event.agent ?? 'AI' }) };
-      case 'disk':
-        return { text: t('historyDisk') };
+        return withEvidence(t('historyStripped'), event.evidence);
       case 'thumbnail':
-        return {
-          text: event.same == null ? t('historyThumbUnknown') : event.same ? t('historyThumbSame') : t('historyThumbDiffers'),
-          why: metadata?.thumbnail ? t('historyThumbWhy', { w: metadata.thumbnail.width, h: metadata.thumbnail.height }) : undefined
-        };
+        return metadata?.thumbnail
+          ? `${t('historyThumbDiffers')}. ${t('historyThumbWhy', { w: metadata.thumbnail.width, h: metadata.thumbnail.height })}`
+          : t('historyThumbDiffers');
       default:
-        return { text: '' };
+        return '';
     }
   };
 
   return (
-    <FactRow title={t('factOriginTitle')} severity={severity} value={headline} sub={null} soWhat={t('originSoWhat')}>
+    <FactRow title={t('factOriginTitle')} severity={severity} value={headline} sub={null}>
       <div className="fy-fact-details fy-origin">
-        {device ? (
-          <>
-            <h4 className="v4-h3">{t('deviceSubTitle')}</h4>
-            <DeviceRows device={device} metadata={metadata} />
-          </>
-        ) : null}
+        {device ? <DeviceRows device={device} metadata={metadata} /> : null}
         <h4 className="v4-h3">{t('historyTitle')}</h4>
-        <ol className="fy-timeline">
-          <li>
-            <span className="fy-timeline-when">{t('factFile')}</span>
-            <span className="fy-timeline-body">
-              <span>{fileLine}</span>
-              <span className="fy-muted">
-                {metadataFieldCount ? t('historyFields', { count: new Intl.NumberFormat(lang).format(metadataFieldCount) }) : t('metadataFieldsLabel') + ': 0'}
+        <dl className="fy-spec fy-spec--tight">
+          <dt>{t('historyCreated')}</dt>
+          <dd>{createdText}</dd>
+          <dt>{t('historyEdited')}</dt>
+          <dd>
+            <span>{editedText}</span>
+            {editedNote ? <span className="fy-muted">{editedNote}</span> : null}
+            {signs.map((event, index) => (
+              <span key={`${event.kind}-${index}`} className="fy-history-sign">
+                {event.kind === 'thumbnail' && metadata?.thumbnail ? <img src={metadata.thumbnail.url} alt="" width={96} /> : null}
+                <span className="fy-muted">{signText(event)}</span>
               </span>
-            </span>
-          </li>
-          {history.map((event, index) => {
-            const { text, why } = eventText(event);
-            const when = event.at ? formatCompactDate(event.at, lang) ?? event.at : t('historyWhenUnknown');
-            const thumb = event.kind === 'thumbnail' ? metadata?.thumbnail : null;
-            return (
-              <li key={`${event.kind}-${index}`}>
-                <span className="fy-timeline-when">{when}</span>
-                <span className="fy-timeline-body">
-                  {thumb ? (
-                    <span className="fy-timeline-thumb">
-                      <img src={thumb.url} alt="" width={96} />
-                      <span>{text}</span>
-                    </span>
-                  ) : (
-                    <span>{text}</span>
-                  )}
-                  {why ? <span className="fy-muted">{why}</span> : null}
-                </span>
-              </li>
-            );
-          })}
-          {history.every((event) => event.kind === 'shot') ? (
-            <li>
-              <span className="fy-timeline-when">{t('historyWhenUnknown')}</span>
-              <span className="fy-timeline-body">{t('historyNone')}</span>
-            </li>
-          ) : null}
-        </ol>
+            ))}
+          </dd>
+        </dl>
         {ai || serial ? (
           <>
             <h4 className="v4-h3">{t('authenticityTitle')}</h4>

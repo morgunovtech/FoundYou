@@ -8,6 +8,8 @@ interface UploadZoneProps {
   loading: boolean;
   onFile: (file: File) => void;
   error?: string | null;
+  /** Receives the «open the picker» function so a button elsewhere (the sticky corner one) can call it. */
+  pickerRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 const IMAGE_NAME_PATTERN = /\.(jpe?g|png|webp|avif|gif|bmp|heic|heif)$/i;
@@ -22,7 +24,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
 }
 
-export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error }) => {
+export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error, pickerRef }) => {
   const t = useT();
   const uploadInputId = `upload-input-${useId().replace(/[:]/g, '')}`;
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -36,6 +38,14 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error }
     if (loading) return;
     inputRef.current?.click();
   }, [loading]);
+
+  useEffect(() => {
+    if (!pickerRef) return undefined;
+    pickerRef.current = openPicker;
+    return () => {
+      pickerRef.current = null;
+    };
+  }, [pickerRef, openPicker]);
 
   const acceptFile = useCallback(
     (file: File) => {
