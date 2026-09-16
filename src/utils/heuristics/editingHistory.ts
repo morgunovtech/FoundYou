@@ -178,6 +178,20 @@ function collectSoftwareSources(metadata: Record<string, unknown>, xmp: Record<s
 
 /* ── analysis ────────────────────────────────────────────────── */
 
+/** `DigitalSourceType` wherever exifr put it: a top-level key, or nested under `Iptc4xmpExt` / `iptcExt`. */
+function digitalSourceTypeOf(xmp: Record<string, unknown>): string | null {
+  const direct = xmp.DigitalSourceType ?? xmp.digitalSourceType ?? xmp['Iptc4xmpExt:DigitalSourceType'];
+  if (typeof direct === 'string') return direct;
+  for (const key of ['Iptc4xmpExt', 'iptcExt', 'iptc']) {
+    const nested = xmp[key];
+    if (nested && typeof nested === 'object') {
+      const value = (nested as Record<string, unknown>).DigitalSourceType ?? (nested as Record<string, unknown>).digitalSourceType;
+      if (typeof value === 'string') return value;
+    }
+  }
+  return null;
+}
+
 export function analyzeEditingHistory(
   metadata: Record<string, unknown>,
   xmp: Record<string, unknown>,
@@ -223,6 +237,14 @@ export function analyzeEditingHistory(
       aiTool = marker.tool;
       break;
     }
+  }
+
+  // IPTC DigitalSourceType (Iptc4xmpExt): the one industry standard the generators themselves write —
+  // OpenAI, Adobe, Google and Microsoft mark their output as trainedAlgorithmicMedia (or a composite of it).
+  const digitalSourceType = digitalSourceTypeOf(xmp);
+  if (!isAiGenerated && digitalSourceType && /trainedalgorithmicmedia|algorithmicmedia/i.test(digitalSourceType)) {
+    isAiGenerated = true;
+    aiTool = softwareSources.find((sw) => !isCameraFirmware(sw)) ?? (/composite/i.test(digitalSourceType) ? 'AI (composite, IPTC DigitalSourceType)' : 'AI (IPTC DigitalSourceType)');
   }
 
   // Check XMP for explicit AI markers

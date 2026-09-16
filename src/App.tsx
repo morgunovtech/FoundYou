@@ -10,13 +10,14 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { useImageFile } from './hooks/useImageFile';
 import { useExifMetadata } from './hooks/useExifMetadata';
 import { StoryBlock } from './components/StoryBlock';
-import { ResultsBar } from './components/ResultsBar';
 import { SceneBlock } from './components/SceneBlock';
 import { CleanupDownloadBlock } from './components/CleanupDownloadBlock';
 import { useImageAnalysis } from './hooks/useImageAnalysis';
 import { useOCR } from './hooks/useOCR';
 import { useContentCredentials } from './hooks/useContentCredentials';
 import { findPlateCandidates } from './utils/plates';
+import { findPii } from './utils/pii';
+import { useQrCodes } from './hooks/useQrCodes';
 import { canShareFiles, shareFile } from './utils/share';
 import { useI18n, useT, type MessageKey } from './i18n';
 import { FACE_LABEL, type DetectionErrorCode, type DetectionStage } from './types/detection';
@@ -260,6 +261,8 @@ const App: React.FC = () => {
   });
 
   // Plates are OCR tokens that read like a plate or sit on a detected vehicle; shared by the profile and the blur.
+  const { codes: qrCodes } = useQrCodes(fileInfo);
+  const piiFindings = useMemo(() => findPii(ocrResult), [ocrResult]);
   const plateCandidates = useMemo(
     () => (fileInfo ? findPlateCandidates(ocrResult, detections, { width: fileInfo.width, height: fileInfo.height }) : []),
     [fileInfo, ocrResult, detections]
@@ -310,6 +313,8 @@ const App: React.FC = () => {
         detections,
         ocrResult: ocrResult ?? null,
         plates: plateCandidates,
+        qrCodes,
+        pii: piiFindings,
         credentials: credentials.data,
         credentialsStatus: credentials.status,
         originalFilename: originalName,
@@ -319,7 +324,7 @@ const App: React.FC = () => {
       setProData({ filename: filenameResult, resolution: resolutionResult, stripped: strippedResult, editing: editingResult, hash: hashResult, temporal: temporalResult });
     })();
     return () => { cancelled = true; };
-  }, [fileInfo, metadata, detections, ocrResult, plateCandidates, credentials.data, credentials.status, analysisLoading, ocrLoading, lang]);
+  }, [fileInfo, metadata, detections, ocrResult, plateCandidates, qrCodes, piiFindings, credentials.data, credentials.status, analysisLoading, ocrLoading, lang]);
 
   type NoticeState = { type: 'success' | 'error' | 'info'; message: string };
 
@@ -338,6 +343,7 @@ const App: React.FC = () => {
   const [watermarkText, setWatermarkText] = useState('');
   const [blurText, setBlurText] = useState(false);
   const [blurPlates, setBlurPlates] = useState(false);
+  const [blurQr, setBlurQr] = useState(false);
   /**
    * Cleaned file kept for a second tap when the share sheet needs a fresh user gesture. It is
    * stored with the settings it was made for, so any change simply makes it stale.
@@ -457,6 +463,7 @@ const App: React.FC = () => {
       setWatermarkEnabled(false);
       setWatermarkText('');
       setBlurText(false);
+      setBlurQr(false);
       setMirrorEnabled(false);
       setDownscaleMax(0);
       setOutputFormat('original');
@@ -521,6 +528,17 @@ const App: React.FC = () => {
         blurPlateRegions(ctx, baseCanvas, plateCandidates, blurStrength, scale);
       }
 
+      if (blurQr && qrCodes.length > 0) {
+        // A QR box is blurred like a text region: the same padding, the same strength.
+        blurOcrRegions(
+          ctx,
+          baseCanvas,
+          qrCodes.map((code) => ({ text: '', confidence: 100, x: code.x, y: code.y, width: code.width, height: code.height })),
+          blurStrength,
+          scale
+        );
+      }
+
       if (scaledMasks.length > 0) {
         blurManualMasks(ctx, baseCanvas, scaledMasks, blurStrength);
       }
@@ -562,6 +580,8 @@ const App: React.FC = () => {
       blurText,
       blurPlates,
       plateCandidates,
+      blurQr,
+      qrCodes,
       ocrResult,
       blurCandidates,
       blurStrength,
@@ -796,24 +816,6 @@ const App: React.FC = () => {
     heading.focus({ preventScroll: true });
   }, []);
 
-  // «What to do» buttons in the facts: switch the option on and go to the cleanup section.
-  const handleBlurFaces = useCallback(() => {
-    setBlurFaces(true);
-    handleMakeSafeCopy();
-  }, [handleMakeSafeCopy]);
-  const handleBlurText = useCallback(() => {
-    setBlurText(true);
-    handleMakeSafeCopy();
-  }, [handleMakeSafeCopy]);
-  const handleBlurPlates = useCallback(() => {
-    setBlurPlates(true);
-    handleMakeSafeCopy();
-  }, [handleMakeSafeCopy]);
-  const factActions = useMemo(
-    () => ({ blurFaces: handleBlurFaces, blurText: handleBlurText, blurPlates: handleBlurPlates }),
-    [handleBlurFaces, handleBlurText, handleBlurPlates]
-  );
-
   const sceneDescription = useMemo(() => {
     if (analysisLoading) return t('sceneDescriptionLoading');
     // An unavailable model must never read as "nothing found".
@@ -838,11 +840,6 @@ const App: React.FC = () => {
           <section className="fy-hero" aria-labelledby="hero-title">
             <InfoBlock scenariosActive={!fileInfo} />
             <UploadZone loading={loading} onFile={handleFile} error={error ?? undefined} />
-            {fileInfo ? (
-              <ErrorBoundary variant="inline" resetKey={fileInfo}>
-                <ResultsBar fileInfo={fileInfo} profile={digitalProfile} onMakeSafeCopy={handleMakeSafeCopy} />
-              </ErrorBoundary>
-            ) : null}
           </section>
 
           {fileInfo ? (
@@ -851,8 +848,6 @@ const App: React.FC = () => {
                 fileInfo={fileInfo}
                 detections={detections}
                 sceneDescription={sceneDescription}
-                onMakeSafeCopy={handleMakeSafeCopy}
-                onBlurFaces={handleBlurFaces}
                 detectionProgress={
                   analysisLoading && detectionStatus
                     ? { label: t(DETECTION_STAGE_KEYS[detectionStatus.stage]), value: detectionStatus.progress }
@@ -875,9 +870,9 @@ const App: React.FC = () => {
                 ocrError={ocrError ? t(OCR_ERROR_KEYS[ocrError]) : null}
                 ocrProgressLabel={ocrProgress ? t(OCR_STAGE_KEYS[ocrProgress.stage]) : null}
                 onMakeSafeCopy={handleMakeSafeCopy}
-                actions={factActions}
                 credentials={credentials}
-                plates={plateCandidates}
+                qrCodes={qrCodes}
+                pii={piiFindings}
               />
             </ErrorBoundary>
           ) : null}
@@ -922,6 +917,9 @@ const App: React.FC = () => {
                 plateCount={plateCandidates.length}
                 blurPlates={blurPlates}
                 setBlurPlates={setBlurPlates}
+                qrCount={qrCodes.length}
+                blurQr={blurQr}
+                setBlurQr={setBlurQr}
                 shareSupported={shareSupported}
                 shareReady={shareReady !== null}
                 onShare={handleShare}

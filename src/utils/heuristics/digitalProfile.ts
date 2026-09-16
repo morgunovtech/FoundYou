@@ -1,5 +1,7 @@
 import type { StructuredMetadata } from '../../types/metadata';
 import type { PlateCandidate } from '../plates';
+import type { QrCode, QrKind } from '../qr';
+import type { PiiFinding, PiiKind } from '../pii';
 import type { ContentCredentials } from '../contentCredentials';
 import type { CredentialsStatus } from '../../hooks/useContentCredentials';
 import type { BoundingBox } from '../../types/detection';
@@ -27,7 +29,12 @@ export type ProfileSectionKind =
   | 'content'
   | 'serial'
   | 'hash'
-  | 'plates';
+  | 'plates'
+  | 'qr'
+  | 'documents';
+
+/** Sections rendered together in the «Откуда файл» card. */
+export const ORIGIN_KINDS = new Set<ProfileSectionKind>(['device', 'serial', 'origin', 'editing', 'ai', 'content']);
 
 export interface ProfileSection {
   /** Stable id of the fact the section describes; the UI attaches details (map, OCR text) by it. */
@@ -131,6 +138,16 @@ const THREATS: ThreatMap = {
     en: 'A plate leads to the owner through fine databases and chats; with the location it is a parking address',
     uz: 'Avtomobil raqami orqali egasini jarima bazalari va chatlar orqali topadilar; joylashuv bilan birga bu turargoh manzili',
   },
+  qr: {
+    ru: 'QR-код читается с фото любым телефоном: Wi-Fi-пароль, контакт, посадочный талон или ссылка-приглашение уходят вместе со снимком',
+    en: 'A QR code is read off a photo by any phone: a Wi-Fi password, a contact, a boarding pass or an invite link leaves with the picture',
+    uz: 'QR-kodni fotodan istalgan telefon o‘qiydi: Wi-Fi paroli, kontakt, bort talon yoki taklif havolasi surat bilan birga ketadi',
+  },
+  documents: {
+    ru: 'Номер карты, паспорт и телефон читаются с фото так же, как с бумаги: этого хватает для мошенничества и поиска аккаунтов',
+    en: 'A card number, a passport and a phone number are read off a photo as easily as off paper: enough for fraud and account lookup',
+    uz: 'Karta raqami, pasport va telefon fotodan qog‘ozdagidek o‘qiladi: bu firibgarlik va akkauntlarni topish uchun yetarli',
+  },
   ai: {
     ru: 'Фото сгенерировано нейросетью — не является реальной фотографией',
     en: 'Photo is AI-generated — not a real photograph',
@@ -162,7 +179,45 @@ const TEXTS: Record<string, Record<Lang, string>> = {
   platesTitle: { ru: 'Номера машин', en: 'Licence plates', uz: 'Avtomobil raqamlari' },
   platesText: { ru: 'Возможных номеров: {count}', en: 'Possible plates: {count}', uz: 'Ehtimoliy raqamlar: {count}' },
   platesSub: { ru: 'Найдены по распознанному тексту, проверьте в предпросмотре', en: 'Found via recognised text; check the preview', uz: 'Aniqlangan matn bo‘yicha topildi; ko‘rib chiqing' },
+  qrTitle: { ru: 'QR-коды', en: 'QR codes', uz: 'QR-kodlar' },
+  qrText: { ru: 'QR-кодов: {count}', en: 'QR codes: {count}', uz: 'QR-kodlar: {count}' },
+  qrSub: { ru: 'Любой телефон прочитает их за секунду, даже с экрана', en: 'Any phone reads them in a second, even off a screen', uz: 'Istalgan telefon ularni bir soniyada o‘qiydi, hatto ekrandan ham' },
+  documentsTitle: { ru: 'Документы и контакты', en: 'Documents and contacts', uz: 'Hujjatlar va kontaktlar' },
+  documentsSub: { ru: 'Прочитано из текста на снимке', en: 'Read from the text in the picture', uz: 'Suratdagi matndan o‘qildi' },
 };
+
+const QR_KIND_LABELS: Record<QrKind, Record<Lang, string>> = {
+  wifi: { ru: 'Wi-Fi с паролем', en: 'Wi-Fi with password', uz: 'parolli Wi-Fi' },
+  contact: { ru: 'контакт', en: 'contact card', uz: 'kontakt' },
+  boarding: { ru: 'посадочный талон', en: 'boarding pass', uz: 'bort talon' },
+  payment: { ru: 'платёжный код', en: 'payment code', uz: 'to‘lov kodi' },
+  url: { ru: 'ссылка', en: 'link', uz: 'havola' },
+  phone: { ru: 'телефон', en: 'phone number', uz: 'telefon' },
+  email: { ru: 'e-mail', en: 'e-mail', uz: 'e-mail' },
+  sms: { ru: 'SMS', en: 'SMS', uz: 'SMS' },
+  geo: { ru: 'координаты', en: 'coordinates', uz: 'koordinatalar' },
+  text: { ru: 'текст', en: 'text', uz: 'matn' }
+};
+
+const PII_KIND_LABELS: Record<PiiKind, Record<Lang, string>> = {
+  card: { ru: 'банковская карта', en: 'bank card', uz: 'bank kartasi' },
+  iban: { ru: 'IBAN', en: 'IBAN', uz: 'IBAN' },
+  mrz: { ru: 'паспорт (машиночитаемая зона)', en: 'passport (machine-readable zone)', uz: 'pasport (mashina o‘qiydigan zona)' },
+  phone: { ru: 'телефон', en: 'phone number', uz: 'telefon' },
+  email: { ru: 'e-mail', en: 'e-mail', uz: 'e-mail' },
+  handle: { ru: 'аккаунт', en: 'account handle', uz: 'akkaunt' },
+  document: { ru: 'документ', en: 'document', uz: 'hujjat' }
+};
+
+/** Kind labels for the story and the cards, in the UI language. */
+export function qrKindLabel(kind: QrKind, lang: Lang): string {
+  return QR_KIND_LABELS[kind][lang];
+}
+export function piiKindLabel(kind: PiiKind, lang: Lang): string {
+  return PII_KIND_LABELS[kind][lang];
+}
+
+const PII_HEAVY = new Set<PiiKind>(['card', 'iban', 'mrz']);
 
 /* ── serial number extraction ───────────────────────────── */
 
@@ -191,6 +246,10 @@ function extractSerialNumbers(exif: Record<string, unknown>): string[] {
 export interface ProfileInput {
   /** Licence-plate candidates from OCR + vehicle boxes (`findPlateCandidates`). */
   plates?: PlateCandidate[];
+  /** Decoded QR codes (`findQrCodes`). */
+  qrCodes?: QrCode[];
+  /** Documents and contacts found in the OCR text (`findPii`). */
+  pii?: PiiFinding[];
   /** Parsed Content Credentials (C2PA), when the file carries them. */
   credentials?: ContentCredentials | null;
   credentialsStatus?: CredentialsStatus;
@@ -338,6 +397,40 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       leakPoints: 15,
       severity: 'high',
       threatScenario: THREATS.plates[lang],
+    });
+  }
+
+  // ── QR codes: what any phone reads off the picture ──
+  const qrCodes = input.qrCodes ?? [];
+  if (qrCodes.length > 0) {
+    const kinds = Array.from(new Set(qrCodes.map((code) => qrKindLabel(code.kind, lang))));
+    const sensitive = qrCodes.some((code) => code.sensitive);
+    sections.push({
+      kind: 'qr',
+      icon: '▣',
+      title: TEXTS.qrTitle[lang],
+      text: `${TEXTS.qrText[lang].replace('{count}', String(qrCodes.length))}: ${kinds.join(', ')}`,
+      subtext: TEXTS.qrSub[lang],
+      leakPoints: sensitive ? 20 : 10,
+      severity: sensitive ? 'high' : 'medium',
+      threatScenario: THREATS.qr[lang],
+    });
+  }
+
+  // ── Documents and contacts in the recognised text ──
+  const pii = input.pii ?? [];
+  if (pii.length > 0) {
+    const kinds = Array.from(new Set(pii.map((finding) => piiKindLabel(finding.kind, lang))));
+    const heavy = pii.some((finding) => PII_HEAVY.has(finding.kind));
+    sections.push({
+      kind: 'documents',
+      icon: '▤',
+      title: TEXTS.documentsTitle[lang],
+      text: kinds.join(', '),
+      subtext: TEXTS.documentsSub[lang],
+      leakPoints: heavy ? 25 : 10,
+      severity: heavy ? 'high' : 'medium',
+      threatScenario: THREATS.documents[lang],
     });
   }
 
