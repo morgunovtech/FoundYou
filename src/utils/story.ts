@@ -159,8 +159,9 @@ const VERDICT_KEYS: Record<Verdict['level'], MessageKey> = {
 
 export function buildVerdict(profile: DigitalProfile, t: Translate): Verdict {
   const level = profile.leakLevel.level;
+  // The fingerprint has no card of its own (it lives in the raw data), so it is never a reason.
   const reasons = [...profile.sections]
-    .filter((s) => s.leakPoints > 0)
+    .filter((s) => s.leakPoints > 0 && s.kind !== 'hash')
     .sort((a, b) => b.leakPoints - a.leakPoints)
     .slice(0, 3)
     .map((s) => s.title);

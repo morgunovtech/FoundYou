@@ -172,10 +172,11 @@ describe('buildVerdict', () => {
         section('device', 5, 'Device'),
         section('location', 30, 'Location'),
         section('time', 10, 'Time'),
-        section('hash', 3, 'Hash')
+        section('hash', 40, 'Hash')
       ]),
       t
     );
+    // The fingerprint never makes the list: it has no card, only a row in the raw data.
     expect(verdict.reasons).toEqual(['Location', 'Time', 'Device']);
   });
 });
