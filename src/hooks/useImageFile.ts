@@ -3,7 +3,9 @@ import { useT } from '../i18n';
 import type { BasicFileInfo } from '../types/metadata';
 import { decodeHeicToJpegForPreview } from '../utils/heic';
 
-const MAX_SIZE_BYTES = 20 * 1024 * 1024;
+/** Upload limit in megabytes; the drop zone shows it and `fileTooLarge` quotes it. */
+export const MAX_FILE_SIZE_MB = 20;
+const MAX_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 const MAX_PIXEL_COUNT = 40_000_000; // guard overly large resolution that may crash canvases
 const NATIVE_SUPPORTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif', 'image/bmp'];
 const HEIC_TYPES = ['image/heic', 'image/heif'];
@@ -114,7 +116,7 @@ export function useImageFile() {
         if (!isCurrent()) return;
 
         if (file.size > MAX_SIZE_BYTES) {
-          setError(t('fileTooLarge', { limit: 20 }));
+          setError(t('fileTooLarge', { limit: MAX_FILE_SIZE_MB }));
           return;
         }
         if (!SUPPORTED_TYPES.includes(inferredType)) {

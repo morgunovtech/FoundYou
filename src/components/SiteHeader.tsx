@@ -9,8 +9,8 @@ export const SiteHeader: React.FC = () => (
       <a href="/" aria-current="page">
         Found You
       </a>
-      <a href="https://morgunov.tech" rel="noopener noreferrer">
-        morgunov.tech
+      <a href="https://s.morgunov.tech" rel="noopener noreferrer">
+        s.morgunov.tech
       </a>
     </div>
     <div className="v4-bar-right">

@@ -81,24 +81,6 @@
   min-width: 0;
 }
 
-.fy-eyebrow {
-  font-family: var(--v4-mono);
-  font-size: var(--v4-label-size);
-  font-weight: var(--v4-label-weight);
-  text-transform: uppercase;
-  letter-spacing: var(--v4-label-tracking);
-  color: var(--v4-muted);
-  margin: 0 0 16px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-}
-
-.fy-eyebrow b {
-  color: var(--v4-fg);
-  font-weight: var(--v4-label-weight);
-}
-
 .fy-h1 {
   font-size: clamp(30px, 4.2vw, 48px);
   line-height: 1.05;
@@ -107,20 +89,32 @@
   margin: 0 0 16px;
 }
 
+/* Rotating sharing scenario in the title. Every phrase is stacked in one
+   inline-grid cell, so the slot is as wide as the longest one and the heading
+   keeps its line breaks when the phrase changes. Only opacity moves: a
+   dissolve, no slide. Reduced motion never reaches this markup (InfoBlock
+   renders the plain title), so no animation guard is needed here. */
+.fy-h1-scenario {
+  display: inline-grid;
+}
+
+.fy-h1-scenario-item {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.fy-h1-scenario-item.is-current {
+  opacity: 1;
+}
+
 .fy-tagline {
   font-size: 17px;
   line-height: 1.45;
   max-width: 52ch;
-  margin: 0 0 22px;
+  margin: 0;
   color: var(--v4-fg);
-}
-
-.fy-hero .v4-list {
-  color: var(--v4-fg);
-}
-
-.fy-hero .v4-h3 {
-  margin-top: 22px;
 }
 
 /* --- Upload card ------------------------------------------------------- */
@@ -1382,6 +1376,15 @@
   .fy-lightbox-media img {
     max-width: 96vw;
     max-height: 78vh;
+  }
+}
+
+/* Phones have neither drag-and-drop nor Ctrl+V: the button is the only path,
+   and the hint would only push the upload card further down the first screen.
+   Tablets keep it (they do drag between apps), hence the width bound. */
+@media (max-width: 640px) and (hover: none) and (pointer: coarse) {
+  .fy-drop-hint {
+    display: none;
   }
 }
 
