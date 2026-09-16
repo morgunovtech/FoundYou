@@ -244,12 +244,7 @@
 @media (min-width: 960px) {
   .fy-grid-2 {
     grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
-  }
-  /* Section 02: the short verdict comes first, the prose gets the wide column. */
-  .fy-grid-2--lead {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
-  }
-}
+  }}
 
 /* --- Explainer (educational insert) ------------------------------------
    The reusable «why this matters» block: the same tinted background and mono
@@ -385,14 +380,6 @@
 .v4-section-head .fy-section-actions {
   align-self: center;
 }
-
-.fy-section-lead {
-  margin: -6px 0 16px;
-  color: var(--v4-muted);
-  font-size: 13px;
-  max-width: 70ch;
-}
-
 /* --- Buttons (small variant on top of .v4-btn) ------------------------- */
 
 .fy-btn-sm {
@@ -756,22 +743,6 @@
 .fy-muted {
   color: var(--v4-muted);
 }
-
-.fy-notes {
-  margin-top: 6px;
-  padding-top: 14px;
-  border-top: 1px solid var(--v4-line-soft);
-}
-
-.fy-notes .v4-h3 {
-  margin-top: 0;
-}
-
-.fy-notes .v4-list {
-  color: var(--v4-muted);
-  font-size: 13px;
-}
-
 /* --- OCR --------------------------------------------------------------- */
 
 .fy-ocr-text {
@@ -803,145 +774,6 @@
   right: 8px;
   bottom: 8px;
 }
-
-/* --- Digital profile --------------------------------------------------- */
-
-.fy-score {
-  display: grid;
-  gap: 10px;
-  margin-bottom: 18px;
-}
-
-.fy-score-bar {
-  height: 4px;
-  background: var(--v4-line-soft);
-  overflow: hidden;
-}
-
-.fy-score-fill {
-  height: 100%;
-  background: var(--v4-orange);
-  transition: width 0.6s ease;
-}
-
-.fy-score-label {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.fy-score-value {
-  font-size: 32px;
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: -0.025em;
-  font-variant-numeric: tabular-nums lining-nums;
-}
-
-.fy-score-level {
-  font-family: var(--v4-mono);
-  font-size: var(--v4-label-size);
-  font-weight: var(--v4-label-weight);
-  letter-spacing: var(--v4-label-tracking);
-  text-transform: uppercase;
-  color: var(--v4-fg);
-}
-
-.fy-score[data-level="critical"] .fy-score-level,
-.fy-score[data-level="high"] .fy-score-level {
-  color: var(--v4-orange-text);
-}
-
-.fy-score[data-level="low"] .fy-score-fill {
-  background: var(--v4-fg);
-}
-
-.fy-score[data-level="medium"] .fy-score-fill {
-  background: var(--v4-fg);
-}
-
-.fy-score-desc {
-  margin: 0;
-  color: var(--v4-muted);
-  font-size: 13px;
-  max-width: 70ch;
-}
-
-.fy-findings {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 18px;
-}
-
-.fy-finding {
-  background: var(--v4-paper);
-  border: 1px solid var(--v4-line);
-  border-left: 2px solid var(--v4-line);
-  padding: 12px 14px;
-  text-align: left;
-  width: 100%;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  display: grid;
-  gap: 4px;
-  transition: border-color 0.15s ease, background-color 0.2s ease;
-}
-
-.fy-finding:hover,
-.fy-finding:focus-visible {
-  border-color: var(--v4-fg);
-}
-
-.fy-finding[data-severity="high"] {
-  border-left-color: var(--v4-orange);
-}
-
-.fy-finding[data-severity="medium"] {
-  border-left-color: var(--v4-fg);
-}
-
-.fy-finding-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.fy-finding-title {
-  font-weight: 600;
-  font-size: 13px;
-}
-
-.fy-finding-points {
-  margin-left: auto;
-  font-family: var(--v4-mono);
-  font-size: var(--v4-label-xs-size);
-  letter-spacing: var(--v4-label-xs-tracking);
-  color: var(--v4-muted);
-  white-space: nowrap;
-}
-
-.fy-finding-text {
-  font-size: 13px;
-  line-height: 1.5;
-  word-break: break-word;
-}
-
-.fy-finding-sub {
-  font-size: 12.5px;
-  color: var(--v4-muted);
-}
-
-.fy-finding-threat {
-  margin-top: 6px;
-  padding: 8px 10px;
-  border-left: 2px solid var(--v4-orange);
-  background: var(--v4-bg);
-  font-size: 12.5px;
-  color: var(--v4-fg);
-}
-
 .fy-actions {
   display: flex;
   gap: 8px;
@@ -1083,23 +915,6 @@
   background: var(--v4-paper);
   border-radius: 0;
 }
-
-/* --- Insights: opt-in panel & map fallback ----------------------------- */
-.fy-optin {
-  display: grid;
-  gap: 10px;
-  justify-items: start;
-  align-content: start;
-  padding: 16px;
-  border: 1px solid var(--v4-line);
-  background: var(--v4-bg);
-  border-radius: 0;
-}
-
-.fy-optin .v4-h3 {
-  margin: 0;
-}
-
 .fy-map--unavailable {
   display: grid;
   place-items: center;
@@ -1228,6 +1043,7 @@
 
 /* A hide row with nothing to hide: the same slot as a toggle, muted, no checkbox. */
 .fy-check--none {
+  cursor: default;
   margin: 0;
   color: var(--v4-muted);
 }
@@ -1242,58 +1058,6 @@
 .fy-toolbar .v4-btn {
   flex: 0 0 auto;
 }
-
-/* --- Story: verdict, portrait, facts ---------------------------------- */
-
-.fy-verdict {
-  gap: 10px;
-}
-
-.fy-verdict-title {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: -0.015em;
-  line-height: 1.2;
-  margin: 0;
-  text-wrap: balance;
-}
-
-.fy-verdict[data-level="high"] .fy-verdict-title,
-.fy-verdict[data-level="critical"] .fy-verdict-title {
-  color: var(--v4-orange-text);
-}
-
-.fy-verdict-why {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.5;
-  max-width: 60ch;
-}
-
-.fy-verdict-reasons {
-  margin: 0;
-  font-size: 13px;
-  color: var(--v4-muted);
-}
-
-.fy-verdict-reasons b {
-  color: var(--v4-fg);
-  font-weight: 500;
-}
-
-.fy-verdict .fy-actions {
-  margin-top: 4px;
-}
-
-.fy-verdict-index {
-  margin: 0;
-  font-family: var(--v4-mono);
-  font-size: var(--v4-label-xs-size);
-  letter-spacing: var(--v4-label-xs-tracking);
-  text-transform: uppercase;
-  color: var(--v4-dim);
-}
-
 .fy-facts {
   display: grid;
   gap: 12px;
@@ -1333,15 +1097,6 @@
   letter-spacing: var(--v4-label-tracking);
   text-transform: uppercase;
   color: var(--v4-muted);
-}
-
-.fy-fact-points {
-  margin-left: auto;
-  font-family: var(--v4-mono);
-  font-size: var(--v4-label-xs-size);
-  letter-spacing: var(--v4-label-xs-tracking);
-  color: var(--v4-muted);
-  white-space: nowrap;
 }
 
 .fy-fact-value {
@@ -1535,11 +1290,7 @@
 @media (max-width: 640px) {
   .fy-toolbar .v4-btn {
     width: 100%;
-  }
-  .fy-verdict-title {
-    font-size: 19px;
-  }
-}
+  }}
 
 /* --- Notices / errors -------------------------------------------------- */
 

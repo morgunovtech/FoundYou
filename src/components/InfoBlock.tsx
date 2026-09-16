@@ -2,22 +2,7 @@ import React, { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { useT } from '../i18n';
 import { HERO_SCENARIO_HOLD_MS, HERO_SCENARIO_KEYS } from '../utils/heroScenarios';
-
-const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
-
-function usePrefersReducedMotion(): boolean {
-  const [reduced, setReduced] = useState(
-    () => typeof window.matchMedia === 'function' && window.matchMedia(REDUCED_MOTION_QUERY).matches
-  );
-  useEffect(() => {
-    if (typeof window.matchMedia !== 'function') return undefined;
-    const query = window.matchMedia(REDUCED_MOTION_QUERY);
-    const onChange = (event: MediaQueryListEvent) => setReduced(event.matches);
-    query.addEventListener('change', onChange);
-    return () => query.removeEventListener('change', onChange);
-  }, []);
-  return reduced;
-}
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 
 interface InfoBlockProps {
   /** Rotate the sharing scenario in the title; off once a photo is loaded. */

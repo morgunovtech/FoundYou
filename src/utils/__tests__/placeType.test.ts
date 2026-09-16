@@ -9,9 +9,12 @@ describe('placeTypeLabel', () => {
     expect(placeTypeLabel({ category: 'building', type: 'warehouse' })).toEqual({ key: 'placeType_industrial' });
     expect(placeTypeLabel({ category: 'building', type: 'yes' })).toEqual({ key: 'placeType_building' });
     expect(placeTypeLabel({ category: 'building', type: 'hotel' })).toEqual({ key: 'poiCategory_hotel' });
+    // Nominatim's place=house is any address point (a shop door as often as a home), not a private house.
     expect(placeTypeLabel({ category: 'place', type: 'house', addressType: 'house' })).toEqual({
-      key: 'placeType_house'
+      key: 'placeType_address'
     });
+    // `<category>=yes` names the category, not the venue.
+    expect(placeTypeLabel({ category: 'tourism', type: 'yes' })).toEqual({ key: 'placeType_building' });
   });
 
   it('uses the venue vocabulary for amenities and sights, with a readable fallback', () => {

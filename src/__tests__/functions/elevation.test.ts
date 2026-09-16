@@ -45,6 +45,12 @@ describe('elevation: success and failure', () => {
     expect(first.body).toEqual({ ok: false, error: 'upstream-invalid' });
     mockFetch(async () => jsonResponse({ error: true, reason: 'nope' }));
     expect((await call(onRequest, urlOf(PATH, { lat: '10', lon: '10' }))).status).toBe(502);
+    // Open-Meteo answers `[null]` off the DEM; `Number(null)` is 0 and must not become sea level for a month.
+    mockFetch(async () => jsonResponse({ elevation: [null] }));
+    const nulled = await callJson(onRequest, urlOf(PATH, { lat: '20', lon: '20' }));
+    expect(nulled.response.status).toBe(502);
+    expect(nulled.body).toEqual({ ok: false, error: 'upstream-invalid' });
+    expect(nulled.response.headers.get('Cache-Control')).toContain('no-store');
   });
 
   it('X-Cache HIT on the second identical call with a single upstream fetch', async () => {

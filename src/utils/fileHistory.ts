@@ -26,8 +26,8 @@ export interface FileEvent {
   /** «resized»: the size the camera wrote and the size the file has now. */
   from?: { width: number; height: number };
   to?: { width: number; height: number };
-  /** «thumbnail»: whether the embedded thumbnail still shows the same frame. */
-  same?: boolean;
+  /** «thumbnail»: whether the embedded thumbnail still shows the same frame; null when it could not be compared. */
+  same?: boolean | null;
   /** «thumbnail»: Hamming distance between the thumbnail and the frame; null when either hash is missing. */
   distance?: number | null;
   /** «stripped»: the first sign the detector quoted. */
@@ -166,7 +166,9 @@ export function buildFileHistory(input: FileHistoryInput): FileEvent[] {
     const thumbRatio = thumbnail.width / Math.max(1, thumbnail.height);
     const ratio = width / Math.max(1, height);
     const ratioMatches = Math.abs(thumbRatio - ratio) / Math.max(ratio, thumbRatio) <= 0.06 || Math.abs(thumbRatio - 1 / ratio) / Math.max(1 / ratio, thumbRatio) <= 0.06;
-    const same = ratioMatches && (distance == null || distance <= PHASH_SAME_PICTURE);
+    // A different aspect ratio is a crop whatever the hashes say; with matching proportions the
+    // hashes decide, and without them the comparison is reported as not made, not as a match.
+    const same = !ratioMatches ? false : distance == null ? null : distance <= PHASH_SAME_PICTURE;
     events.push({ kind: 'thumbnail', at: null, agent: null, same, distance });
   }
 

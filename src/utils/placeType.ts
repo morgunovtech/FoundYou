@@ -35,12 +35,17 @@ export function placeTypeLabel(
     const venue = categoryKey(type);
     return venue ? { key: venue } : { key: 'placeType_building' };
   }
-  if (category === 'place' && HOUSE.has(type)) return { key: 'placeType_house' };
+  // Nominatim's `place=house` is an address point (a house number without a building tag): a
+  // shop entrance or an office door as often as a home, so it is not called a private house.
+  if (category === 'place' && HOUSE.has(type)) return { key: 'placeType_address' };
   if (category === 'highway') return { key: 'placeType_road' };
   if (category === 'landuse' && type === 'residential') return { key: 'placeType_residential' };
   if (VENUE_CATEGORIES.has(category)) {
-    const venue = categoryKey(type);
-    return venue ? { key: venue } : { key: 'poiCategory_other', params: { category: type.replace(/[_-]+/g, ' ') } };
+    // `tourism=yes` / `shop=yes` name the category, not the venue: label by the category.
+    const venue = categoryKey(type === 'yes' ? category : type);
+    if (venue) return { key: venue };
+    if (type === 'yes') return { key: 'placeType_building' };
+    return { key: 'poiCategory_other', params: { category: type.replace(/[_-]+/g, ' ') } };
   }
   return null;
 }

@@ -25,6 +25,8 @@ interface CleanupSummaryInput {
   watermarkEnabled: boolean;
   qualityMode: QualityMode;
   qualityPercent: number;
+  /** The export keeps the original picture bytes and only rewrites the container (JPEG/PNG source, no pixel operation). */
+  losslessContainer?: boolean;
   t: Translate;
 }
 
@@ -44,12 +46,16 @@ export function buildCleanupSummary({
   watermarkEnabled,
   qualityMode,
   qualityPercent,
+  losslessContainer = false,
   t
 }: CleanupSummaryInput): string[] {
   const items: string[] = [];
   // Re-encoding through a canvas never carries EXIF/XMP/IPTC/ICC over, so this
   // line is unconditional; only the sensor-noise pass is optional.
   items.push(t('privacyDiffMetadataRemoved'));
+  if (losslessContainer) {
+    items.push(t('privacyDiffLossless'));
+  }
   if (prnuCleanup) {
     items.push(t('privacyDiffPrnuOn'));
   }

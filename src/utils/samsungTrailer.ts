@@ -41,8 +41,13 @@ const SEFH = 'SEFH';
 /** Enough for the directory and every small block; the Motion Photo video is measured, not read. */
 export const SAMSUNG_TAIL_BYTES = 256 * 1024;
 
-const ascii = (bytes: Uint8Array, start: number, length: number) =>
-  String.fromCharCode(...bytes.subarray(start, Math.min(bytes.length, start + length)));
+/** Latin-1 view of a byte range. A loop, not a spread: spreading a 256 KB tail overflows the call stack. */
+const ascii = (bytes: Uint8Array, start: number, length: number): string => {
+  const end = Math.min(bytes.length, start + length);
+  let text = '';
+  for (let i = Math.max(0, start); i < end; i++) text += String.fromCharCode(bytes[i]);
+  return text;
+};
 
 const u32 = (bytes: Uint8Array, offset: number) =>
   offset + 4 <= bytes.length
@@ -86,7 +91,21 @@ const digits = (value: Uint8Array, max: number) => {
  * bytes of the file; `fileSize` lets offsets that point before the tail be validated and the
  * Motion Photo video be measured without reading it.
  */
-export function parseSamsungTrailer(tail: Uint8Array, fileSize = tail.length): SamsungTrailer | null {
+interface DirectoryEntry {
+  /** Absolute offset of the block in the file. */
+  start: number;
+  /** Block length from the directory: header, name and payload. */
+  length: number;
+}
+
+interface Directory {
+  /** Index of «SEFH» inside the tail. */
+  dirStart: number;
+  entries: DirectoryEntry[];
+}
+
+/** The SEFH directory at the end of the tail; null when the tail does not end in a trailer. */
+function readDirectory(tail: Uint8Array, fileSize: number): Directory | null {
   const n = tail.length;
   if (n < 16 || ascii(tail, n - 4, 4) !== SEFT) return null;
   const dirLength = u32(tail, n - 8);
@@ -95,33 +114,64 @@ export function parseSamsungTrailer(tail: Uint8Array, fileSize = tail.length): S
   if (ascii(tail, dirStart, 4) !== SEFH) return null;
   const count = u32(tail, dirStart + 8) ?? 0;
   const tailStart = fileSize - n;
-
-  const blocks: SamsungTrailerBlock[] = [];
-  let mcc: string | null = null;
-  let imageUtc: string | null = null;
-  let motionPhotoBytes: number | null = null;
-  let earliest = tailStart + dirStart;
-
+  const entries: DirectoryEntry[] = [];
   for (let i = 0; i < count && i < 64; i++) {
     const entry = dirStart + 12 + i * 12;
     if (entry + 12 > dirStart + dirLength) break;
     const offset = u32(tail, entry + 4);
     const length = u32(tail, entry + 8);
     if (offset == null || length == null || length < 8 || offset < length) continue;
-    const absoluteStart = tailStart + dirStart - offset;
-    if (absoluteStart < 0) continue;
+    const start = tailStart + dirStart - offset;
+    if (start < 0) continue;
+    entries.push({ start, length });
+  }
+  return { dirStart, entries };
+}
+
+/** Bytes of a block worth reading on their own: the 8-byte header, the name and a small payload (MCC, UTC stamp). */
+export const BLOCK_HEAD_BYTES = 96;
+
+/** Directory entries that begin before the tail; `readSamsungTrailer` fetches their heads separately. */
+export function blocksOutsideTail(tail: Uint8Array, fileSize: number): DirectoryEntry[] {
+  const directory = readDirectory(tail, fileSize);
+  if (!directory) return [];
+  const tailStart = fileSize - tail.length;
+  return directory.entries.filter((entry) => entry.start < tailStart);
+}
+
+/**
+ * `heads` holds the first bytes of blocks that begin before the tail, keyed by absolute
+ * offset. Without a head such a block is known by size only: one larger than the whole tail
+ * window can only be the Motion Photo video; a smaller one is listed as unknown.
+ */
+export function parseSamsungTrailer(tail: Uint8Array, fileSize = tail.length, heads?: Map<number, Uint8Array>): SamsungTrailer | null {
+  const directory = readDirectory(tail, fileSize);
+  if (!directory) return null;
+  const n = tail.length;
+  const tailStart = fileSize - n;
+
+  const blocks: SamsungTrailerBlock[] = [];
+  let mcc: string | null = null;
+  let imageUtc: string | null = null;
+  let motionPhotoBytes: number | null = null;
+  let earliest = tailStart + directory.dirStart;
+
+  for (const { start: absoluteStart, length } of directory.entries) {
     earliest = Math.min(earliest, absoluteStart);
-    const start = absoluteStart - tailStart;
-    if (start < 0) {
-      // The block begins before the tail we hold: it is the video (or another large payload).
-      blocks.push({ name: 'MotionPhoto_Data', size: length });
-      motionPhotoBytes = length;
+    const inTail = absoluteStart >= tailStart;
+    const bytes = inTail ? tail : heads?.get(absoluteStart);
+    if (!bytes) {
+      const known = length > n;
+      blocks.push({ name: known ? 'MotionPhoto_Data' : 'unknown', size: length });
+      if (known) motionPhotoBytes = length;
       continue;
     }
-    const name = blockName(tail, start, length);
+    const start = inTail ? absoluteStart - tailStart : 0;
+    const available = Math.min(length, bytes.length - start);
+    const name = blockName(bytes, start, available);
     if (!name) continue;
     blocks.push({ name, size: length });
-    const value = payload(tail, start, length, name);
+    const value = payload(bytes, start, available, name);
     if (name === 'MCC_Data') {
       const found = digits(value, 16);
       if (found && found.length >= 3) mcc = found.slice(0, 3);
@@ -129,7 +179,7 @@ export function parseSamsungTrailer(tail: Uint8Array, fileSize = tail.length): S
       const found = digits(value, 24);
       if (found && found.length >= 12 && found.length <= 14) imageUtc = new Date(Number(found)).toISOString();
     } else if (name === 'MotionPhoto_Data') {
-      motionPhotoBytes = value.length;
+      motionPhotoBytes = length;
     }
   }
 
@@ -158,7 +208,18 @@ export async function readSamsungTrailer(file: Blob): Promise<SamsungTrailer | n
   if (file.size < 16) return null;
   const start = Math.max(0, file.size - SAMSUNG_TAIL_BYTES);
   const tail = new Uint8Array(await file.slice(start).arrayBuffer());
-  return parseSamsungTrailer(tail, file.size);
+  // Blocks that begin before the tail (the Motion Photo video, or small blocks written before it)
+  // are named from their own first bytes: a few short reads instead of one large one.
+  const heads = new Map<number, Uint8Array>();
+  await Promise.all(
+    blocksOutsideTail(tail, file.size)
+      .slice(0, 16)
+      .map(async (entry) => {
+        const end = entry.start + Math.min(entry.length, BLOCK_HEAD_BYTES);
+        heads.set(entry.start, new Uint8Array(await file.slice(entry.start, end).arrayBuffer()));
+      })
+  );
+  return parseSamsungTrailer(tail, file.size, heads);
 }
 
 /* ── Mobile Country Codes → ISO 3166-1 alpha-2 (ITU-T E.212) ─────────────────── */

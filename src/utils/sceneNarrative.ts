@@ -1,4 +1,5 @@
 import { FACE_LABEL, PERSON_LABEL, type BoundingBox } from '../types/detection';
+import { capitalize } from './weather';
 
 type Lang = 'ru' | 'en' | 'uz';
 
@@ -234,10 +235,6 @@ function buildPhrase(entry: GroupedEntry, lang: Lang): string {
   const article = entry.count === 1 ? (EN_VOWEL.test(counted) ? 'an ' : 'a ') : '';
   const object = `${entry.uncertain ? MAYBE_EN : ''}${article}${counted}`;
   return `${object} ${place}`;
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /* ── main export ─────────────────────────────────────────── */

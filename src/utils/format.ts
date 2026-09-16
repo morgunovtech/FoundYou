@@ -1,3 +1,4 @@
+import type { MessageKey } from '../i18n';
 /** Wall-clock date/time parts exactly as a camera wrote them (no time zone attached). */
 export interface WallClockParts {
   year: number;
@@ -183,4 +184,72 @@ export function describeFileType(mime: string, fileName?: string): { typeKey: Fi
   const fallback = extension ? extension.toUpperCase() : mime.split('/')[1]?.toUpperCase() ?? mime;
   const format = MIME_FORMATS[normalized] ?? fallback;
   return { typeKey, format };
+}
+
+/** File extension for an image mime type; JPEG for anything the app cannot name. */
+export function extensionForMime(mime: string): string {
+  if (mime.includes('png')) return 'png';
+  if (mime.includes('webp')) return 'webp';
+  return 'jpg';
+}
+
+type Translate = (key: MessageKey, params?: Record<string, string | number>) => string;
+
+/** «Узбекистан» for `UZ` in the UI language; the code itself when the browser has no names. */
+export function regionName(code: string, locale: string): string {
+  try {
+    return new Intl.DisplayNames([locale], { type: 'region' }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/** `YYYY-MM` → «сентябрь 2023 г.» in the UI language. */
+export function formatMonthYear(ym: string, locale: string): string {
+  const date = new Date(`${ym}-01T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return ym;
+  return new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date);
+}
+
+/** «2 ч 30 мин» / «45 мин» for a clock difference in minutes (the sign is dropped). */
+export function formatMinutesDuration(minutes: number, t: Translate): string {
+  const abs = Math.abs(minutes);
+  const hours = Math.floor(abs / 60);
+  const rest = abs % 60;
+  const parts: string[] = [];
+  if (hours > 0) parts.push(t('durationHoursShort', { count: hours }));
+  if (rest > 0 || hours === 0) parts.push(t('durationMinutesShort', { count: rest }));
+  return parts.join(' ');
+}
+
+/** «12 дн. 4 ч» / «3 ч 20 мин» for an uptime in seconds. */
+export function formatUptime(seconds: number, t: Translate): string {
+  const days = Math.floor(seconds / 86_400);
+  const hours = Math.floor((seconds % 86_400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const parts: string[] = [];
+  if (days > 0) parts.push(t('durationDaysShort', { count: days }));
+  if (hours > 0 || days > 0) parts.push(t('durationHoursShort', { count: hours }));
+  if (days === 0) parts.push(t('durationMinutesShort', { count: minutes }));
+  return parts.join(' ');
+}
+
+/** «2 мин 40 с» / «12 с» for a clock drift in seconds (non-negative). */
+export function formatSecondsDuration(seconds: number, t: Translate): string {
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  const parts: string[] = [];
+  if (minutes > 0) parts.push(t('durationMinutesShort', { count: minutes }));
+  if (rest > 0 || minutes === 0) parts.push(t('durationSecondsShort', { count: rest }));
+  return parts.join(' ');
+}
+
+/** «2 г. 11 мес.» for an age in months. */
+export function formatMonthsAge(months: number, t: Translate): string {
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  const parts: string[] = [];
+  if (years > 0) parts.push(t('durationYearsShort', { count: years }));
+  if (rest > 0) parts.push(t('durationMonthsShort', { count: rest }));
+  return parts.length > 0 ? parts.join(' ') : t('durationLessThanMonth');
 }

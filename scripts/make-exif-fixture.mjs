@@ -18,7 +18,12 @@
  *
  * File history: --modify-date "2026:09:20 11:00:00" (IFD0 ModifyDate later than the shot),
  * --exif-size 4032x3024 (the pixel size the camera "wrote", to make the file look downscaled),
- * --thumbnail other.jpg (an IFD1 thumbnail; pass a different picture to make it mismatch).
+ * --thumbnail other.jpg (an IFD1 thumbnail; pass a different picture to make it mismatch),
+ * --orientation 6 (the IFD0 Orientation tag: 6 = rotate 90° CW, the usual portrait phone photo).
+ *
+ * Samsung layout: --samsung-video-size 300000 (bytes of the MotionPhoto_Data payload; above 256 KB
+ * the video starts before the tail window the parser reads) and --samsung-video-last (the small
+ * MCC/UTC blocks written before the video instead of after it).
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -32,7 +37,7 @@ const args = process.argv.slice(2);
 const [input, output] = args;
 if (!input || !output) {
   console.error(
-    'usage: make-exif-fixture.mjs in.jpg out.jpg [--lat --lon --alt --acc --heading --speed --date --offset --gps-time --make --model --lens --focal35]'
+    'usage: make-exif-fixture.mjs in.jpg out.jpg [--lat --lon --alt --acc --heading --speed --date --offset --gps-time --make --model --lens --focal35 --software --apple-uptime --samsung-mcc --samsung-video-size --samsung-video-last --modify-date --exif-size --thumbnail --orientation]'
   );
   process.exit(1);
 }
@@ -60,6 +65,9 @@ const samsungMcc = opt('samsung-mcc', null);
 const modifyDate = opt('modify-date', null);
 const exifSize = opt('exif-size', null);
 const thumbnailPath = opt('thumbnail', null);
+const orientation = opt('orientation') != null ? Number(opt('orientation')) : null;
+const samsungVideoSize = opt('samsung-video-size') != null ? Number(opt('samsung-video-size')) : 24_000;
+const samsungVideoLast = args.includes('--samsung-video-last');
 
 const ascii = (s) => Buffer.from(`${s}\0`, 'latin1');
 const short = (v) => {
@@ -191,11 +199,12 @@ function appleMakerNote(seconds) {
 /** A Samsung SEF trailer: blocks, then the SEFH directory, its length and "SEFT". */
 function samsungTrailer(mcc, dateText) {
   const utc = String(Date.parse(dateText.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3').replace(' ', 'T') + (offset ?? 'Z')));
-  const blocks = [
-    { type: 0x0a30, name: 'MotionPhoto_Data', data: Buffer.alloc(24_000, 0x42) },
+  const video = { type: 0x0a30, name: 'MotionPhoto_Data', data: Buffer.alloc(samsungVideoSize, 0x42) };
+  const small = [
     { type: 0x0a01, name: 'Image_UTC_Data', data: Buffer.from(utc, 'latin1') },
     { type: 0x0aa1, name: 'MCC_Data', data: Buffer.from(mcc, 'latin1') }
   ];
+  const blocks = samsungVideoLast ? [...small, video] : [video, ...small];
   const encoded = blocks.map((b) => Buffer.concat([long(b.type), long(b.name.length), Buffer.from(b.name, 'latin1'), b.data]));
   const body = Buffer.concat(encoded);
   const entries = [];
@@ -260,6 +269,7 @@ const ifd0Entries = [
   { tag: 0x0110, type: ASCII, count: model.length + 1, data: ascii(model) },
   ...(software ? [{ tag: 0x0131, type: ASCII, count: software.length + 1, data: ascii(software) }] : []),
   ...(modifyDate ? [{ tag: 0x0132, type: ASCII, count: modifyDate.length + 1, data: ascii(modifyDate) }] : []),
+  ...(orientation != null ? [{ tag: 0x0112, type: SHORT, count: 1, data: short(orientation) }] : []),
   { tag: 0x8769, type: LONG, count: 1, data: long(0) },
   { tag: 0x8825, type: LONG, count: 1, data: long(0) }
 ];
@@ -290,6 +300,10 @@ const tiff = Buffer.concat([
   ...(thumbnail ? [ifd(ifd1Entries, ifd1Offset), thumbnail] : [])
 ]);
 const payload = Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), tiff]);
+if (payload.length + 2 > 0xffff) {
+  console.error(`the EXIF segment would be ${payload.length + 2} bytes; a JPEG segment holds at most 65535 (use a smaller --thumbnail)`);
+  process.exit(1);
+}
 const marker = Buffer.alloc(4);
 marker.writeUInt16BE(0xffe1, 0);
 marker.writeUInt16BE(payload.length + 2, 2);

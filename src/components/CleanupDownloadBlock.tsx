@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { BasicFileInfo } from '../types/metadata';
 import type { CleanupPreviewDimensions, ManualMask, OutputFormat, QualityMode, VerifyResult } from '../types/cleanup';
 import { useI18n, useT } from '../i18n';
-import { formatBytes, formatBytesPrecise } from '../utils/format';
+import { extensionForMime, formatBytes, formatBytesPrecise } from '../utils/format';
 import { PHASH_SAME_PICTURE } from '../utils/phash';
 import { buildCleanupSummary } from '../utils/cleanupSummary';
 import { antiSearchTargetBits, canvasBlurMode } from '../utils/cleanup';
@@ -52,6 +52,10 @@ interface CleanupDownloadBlockProps {
   qrCount: number;
   blurQr: boolean;
   setBlurQr: (value: boolean) => void;
+  /** OCR boxes a card number, passport line, phone or e-mail was read from; the toggle blurs them. */
+  documentCount: number;
+  blurDocuments: boolean;
+  setBlurDocuments: (value: boolean) => void;
   /** Web Share API with files is available here; shows the share button. */
   shareSupported: boolean;
   /** A cleaned file is prepared and waits for one more tap (the activation window closed). */
@@ -75,8 +79,12 @@ interface CleanupDownloadBlockProps {
   detectionUnavailable?: boolean;
   /** OCR still running: the text row says so instead of «не обнаружено». */
   ocrPending?: boolean;
+  /** QR decoding still running: the QR row says so instead of «не обнаружено». */
+  qrPending?: boolean;
   /** Hash distance the anti-search transform reached on the last preview. */
   antiSearchDistance?: number | null;
+  /** The export keeps the original picture bytes (JPEG/PNG source, nothing touches the pixels). */
+  losslessExport?: boolean;
 }
 
 const BRUSH_RADIUS = 18;
@@ -144,12 +152,17 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
   platformCapMegapixels,
   verifyResult = null,
   ocrPending = false,
+  qrPending = false,
   antiSearchDistance = null,
+  losslessExport = false,
   plateCount = 0,
   blurPlates = false,
   qrCount = 0,
   blurQr = false,
   setBlurQr,
+  documentCount = 0,
+  blurDocuments = false,
+  setBlurDocuments,
   setBlurPlates = () => {},
   shareSupported = false,
   shareReady = false,
@@ -203,13 +216,14 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     else if (blurFaces) parts.push(t('privacyDiffBlurFacesNoDetections'));
     if (blurPlates && plateCount > 0) parts.push(t('privacyDiffBlurPlates', { count: plateCount }));
     if (blurQr && qrCount > 0) parts.push(t('privacyDiffBlurQr', { count: qrCount }));
+    if (blurDocuments && documentCount > 0) parts.push(t('privacyDiffBlurDocuments', { count: documentCount }));
     if (manualMasks.length > 0) parts.push(t('privacyDiffBlurManual', { count: manualMasks.length }));
     return parts.length > 0 ? parts.join(' ') : t('privacyDiffBlurNone');
-  }, [blurFaces, blurPlates, plateCount, blurQr, qrCount, manualMasks.length, blurTargetCount, t]);
+  }, [blurFaces, blurPlates, plateCount, blurQr, qrCount, blurDocuments, documentCount, manualMasks.length, blurTargetCount, t]);
 
   const renameSummary = useMemo(() => {
     if (!fileInfo) return t('privacyDiffRenameOff', { name: t('emptyValue') });
-    const extension = fileInfo.mimeType.includes('png') ? 'png' : fileInfo.mimeType.includes('webp') ? 'webp' : 'jpg';
+    const extension = extensionForMime(fileInfo.mimeType);
     const baseName = (fileInfo.originalName ?? fileInfo.file.name).replace(/\.[^/.]+$/, '');
     if (renameFile) {
       return t('privacyDiffRenameOn', { name: `photo-xxxxxx.${extension}` });
@@ -222,6 +236,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     (blurText && ocrRegionCount > 0) ||
     (blurPlates && plateCount > 0) ||
     (blurQr && qrCount > 0) ||
+    (blurDocuments && documentCount > 0) ||
     manualMasks.length > 0;
 
   const summaryItems = useMemo(
@@ -238,6 +253,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
         antiSearchLevel,
         antiSearchTargetBits: antiSearchTargetBits(antiSearchLevel),
         antiSearchDistance,
+        losslessContainer: losslessExport,
         renameSummary,
         watermarkEnabled,
         qualityMode,
@@ -248,6 +264,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
       antiSearchEnabled,
       antiSearchLevel,
       antiSearchDistance,
+      losslessExport,
       blurActive,
       blurMode,
       blurSummary,
@@ -262,13 +279,18 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     ]
   );
 
-  /** «Только метаданные»: the picture stays pixel-identical, only the container is rebuilt. */
+  /**
+   * «Только метаданные»: no pixel operation, no resize, the original format. With a JPEG or PNG
+   * source the app then keeps the picture bytes as they are and only rewrites the container
+   * (see `exportCleanFile`); other sources are re-encoded once at the highest quality.
+   */
   const handleMetadataOnly = useCallback(() => {
     setPrnuCleanup(false);
     setBlurFaces(false);
     setBlurText(false);
     setBlurPlates(false);
     setBlurQr(false);
+    setBlurDocuments(false);
     setManualMaskMode(false);
     manualMasks.forEach((mask) => onManualMaskRemove(mask.id));
     setAntiSearchEnabled(false);
@@ -282,6 +304,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     onManualMaskRemove,
     setAntiSearchEnabled,
     setBlurFaces,
+    setBlurDocuments,
     setBlurPlates,
     setBlurQr,
     setBlurText,
@@ -297,10 +320,13 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
   const handleApplyAll = useCallback(() => {
     setPrnuCleanup(true);
     setRenameFile(true);
-    if (!detectionUnavailable && blurTargetCount > 0) setBlurFaces(true);
+    // The flags are set regardless of what has been found so far: detection, OCR and QR
+    // decoding may still be running, and a row with nothing found renders without a toggle.
+    if (!detectionUnavailable) setBlurFaces(true);
     setBlurText(true);
-    if (plateCount > 0) setBlurPlates(true);
-    if (qrCount > 0) setBlurQr(true);
+    setBlurPlates(true);
+    setBlurQr(true);
+    setBlurDocuments(true);
     setManualMaskMode(true);
     setAntiSearchEnabled(true);
     setAntiSearchLevel(3);
@@ -308,18 +334,21 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     setMirrorEnabled(false); // mirror is destructive, not in "apply all"
     setDownscaleMax(1920);
   }, [
-    blurTargetCount,
     detectionUnavailable,
     setAntiSearchEnabled,
     setAntiSearchLevel,
+    setBlurDocuments,
     setBlurFaces,
+    setBlurPlates,
+    setBlurQr,
     setBlurText,
     setDownscaleMax,
     setManualMaskMode,
     setMirrorEnabled,
     setPrnuCleanup,
     setRenameFile,
-    setWatermarkEnabled, plateCount, setBlurPlates, qrCount, setBlurQr]);
+    setWatermarkEnabled
+  ]);
 
   const toImagePoint = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -470,7 +499,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     }
   }, [draftStroke, fileInfo, manualMasks, mapStrokeToOverlay, overlayRedrawKey, previewDataUrl]);
 
-  const showBlurStrength = blurFaces || blurText || blurPlates || blurQr || manualMaskMode;
+  const showBlurStrength = blurFaces || blurText || blurPlates || blurQr || blurDocuments || manualMaskMode;
 
   const verifyMessage = useMemo(() => {
     if (!verifyResult) return null;
@@ -511,7 +540,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
           <button type="button" className="v4-btn fy-btn-sm" onClick={handleApplyAll}>
             {t('cleanupApplyAll')}
           </button>
-          <button type="button" className="v4-btn fy-btn-sm" onClick={handleMetadataOnly}>
+          <button type="button" className="v4-btn fy-btn-sm" data-smoke="metadata-only" onClick={handleMetadataOnly}>
             {t('cleanupMetadataOnly')}
           </button>
         </div>
@@ -647,10 +676,22 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
               </label>
             ) : (
               <p className="fy-check fy-check--none">
-                <span>{t('hideRowNone', { label: t('hideQrLabel'), state: t('hideNone') })}</span>
+                <span>{t('hideRowNone', { label: t('hideQrLabel'), state: qrPending ? t('hideScanning') : t('hideNone') })}</span>
               </p>
             )}
-            {blurTargetCount === 0 || ocrRegionCount === 0 || plateCount === 0 || qrCount === 0 ? <p className="fy-hint">{t('hideNoneHint')}</p> : null}
+            {documentCount > 0 ? (
+              <label className="fy-check">
+                <input type="checkbox" checked={blurDocuments} onChange={(event) => setBlurDocuments(event.target.checked)} />
+                <span>{t('blurDocuments', { count: documentCount })}</span>
+              </label>
+            ) : (
+              <p className="fy-check fy-check--none">
+                <span>{t('hideRowNone', { label: t('hideDocumentsLabel'), state: ocrPending ? t('hideScanning') : t('hideNone') })}</span>
+              </p>
+            )}
+            {blurTargetCount === 0 || ocrRegionCount === 0 || plateCount === 0 || qrCount === 0 || documentCount === 0 ? (
+              <p className="fy-hint">{t('hideNoneHint')}</p>
+            ) : null}
             <label className="fy-check">
               <input type="checkbox" checked={manualMaskMode} onChange={(event) => setManualMaskMode(event.target.checked)} />
               <span>{t('manualMaskToggle')}</span>
@@ -751,7 +792,9 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
                 </div>
               </div>
             ) : (
-              <p className="fy-notice">{previewLoading ? t('cleanupPreviewGenerating') : t('cleanupPreviewUnavailable')}</p>
+              <p className="fy-notice" role="status">
+                {previewLoading ? t('cleanupPreviewGenerating') : t('cleanupPreviewUnavailable')}
+              </p>
             )}
             {previewDataUrl && previewLoading ? (
               <p className="fy-notice" role="status">
@@ -791,6 +834,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
           <button
             type="button"
             className="v4-btn v4-btn-primary"
+            data-smoke="download"
             onClick={() => {
               void onClean();
             }}

@@ -5,6 +5,7 @@ import type { PiiFinding, PiiKind } from '../pii';
 import type { ContentCredentials } from '../contentCredentials';
 import type { CredentialsStatus } from '../../hooks/useContentCredentials';
 import type { BoundingBox } from '../../types/detection';
+import { messages, type MessageKey } from '../../i18n';
 import type { OCRResult } from '../../hooks/useOCR';
 import type { FilenameAnalysis } from './filenameAnalyzer';
 import type { ResolutionAnalysis } from './resolutionAnalyzer';
@@ -39,7 +40,6 @@ export const ORIGIN_KINDS = new Set<ProfileSectionKind>(['device', 'serial', 'or
 export interface ProfileSection {
   /** Stable id of the fact the section describes; the UI attaches details (map, OCR text) by it. */
   kind: ProfileSectionKind;
-  icon: string;
   title: string;
   text: string;
   subtext: string | null;
@@ -184,37 +184,24 @@ const TEXTS: Record<string, Record<Lang, string>> = {
   qrSub: { ru: 'Любой телефон прочитает их за секунду, даже с экрана', en: 'Any phone reads them in a second, even off a screen', uz: 'Istalgan telefon ularni bir soniyada o‘qiydi, hatto ekrandan ham' },
   documentsTitle: { ru: 'Документы и контакты', en: 'Documents and contacts', uz: 'Hujjatlar va kontaktlar' },
   documentsSub: { ru: 'Прочитано из текста на снимке', en: 'Read from the text in the picture', uz: 'Suratdagi matndan o‘qildi' },
+  timeTitle: { ru: 'Когда сделан снимок', en: 'When the photo was taken', uz: 'Surat qachon olingan' },
+  personOne: { ru: 'чел.', en: 'person', uz: 'kishi' },
+  personMany: { ru: 'чел.', en: 'people', uz: 'kishi' },
+  peopleFaces: { ru: '{count} {noun}, лиц различимо: {faces}', en: '{count} {noun}, recognisable faces: {faces}', uz: '{count} {noun}, yuzlar aniq: {faces}' },
+  peopleNoFace: { ru: '{count} {noun}, лицо не найдено', en: '{count} {noun}, no face found', uz: '{count} {noun}, yuz topilmadi' },
+  hashSub: {
+    ru: 'Перцептуальный отпечаток картинки переживает сжатие и лёгкие правки: по нему находят копии; SHA-256 меняется от любого пересохранения',
+    en: 'The perceptual fingerprint survives compression and light edits: copies are found by it; SHA-256 changes with any re-save',
+    uz: 'Rasmning pertseptual izi siqish va yengil tahrirlardan keyin ham saqlanadi: u orqali nusxalar topiladi; SHA-256 har qanday qayta saqlashda o‘zgaradi',
+  },
 };
 
-const QR_KIND_LABELS: Record<QrKind, Record<Lang, string>> = {
-  wifi: { ru: 'Wi-Fi с паролем', en: 'Wi-Fi with password', uz: 'parolli Wi-Fi' },
-  contact: { ru: 'контакт', en: 'contact card', uz: 'kontakt' },
-  boarding: { ru: 'посадочный талон', en: 'boarding pass', uz: 'bort talon' },
-  payment: { ru: 'платёжный код', en: 'payment code', uz: 'to‘lov kodi' },
-  url: { ru: 'ссылка', en: 'link', uz: 'havola' },
-  phone: { ru: 'телефон', en: 'phone number', uz: 'telefon' },
-  email: { ru: 'e-mail', en: 'e-mail', uz: 'e-mail' },
-  sms: { ru: 'SMS', en: 'SMS', uz: 'SMS' },
-  geo: { ru: 'координаты', en: 'coordinates', uz: 'koordinatalar' },
-  text: { ru: 'текст', en: 'text', uz: 'matn' }
-};
-
-const PII_KIND_LABELS: Record<PiiKind, Record<Lang, string>> = {
-  card: { ru: 'банковская карта', en: 'bank card', uz: 'bank kartasi' },
-  iban: { ru: 'IBAN', en: 'IBAN', uz: 'IBAN' },
-  mrz: { ru: 'паспорт (машиночитаемая зона)', en: 'passport (machine-readable zone)', uz: 'pasport (mashina o‘qiydigan zona)' },
-  phone: { ru: 'телефон', en: 'phone number', uz: 'telefon' },
-  email: { ru: 'e-mail', en: 'e-mail', uz: 'e-mail' },
-  handle: { ru: 'аккаунт', en: 'account handle', uz: 'akkaunt' },
-  document: { ru: 'документ', en: 'document', uz: 'hujjat' }
-};
-
-/** Kind labels for the story and the cards, in the UI language. */
+/** Kind labels for the cards, read from the UI dictionaries so the strings live in one place. */
 export function qrKindLabel(kind: QrKind, lang: Lang): string {
-  return QR_KIND_LABELS[kind][lang];
+  return messages[lang][`qrKind_${kind}` as MessageKey];
 }
 export function piiKindLabel(kind: PiiKind, lang: Lang): string {
-  return PII_KIND_LABELS[kind][lang];
+  return messages[lang][`piiKind_${kind}` as MessageKey];
 }
 
 const PII_HEAVY = new Set<PiiKind>(['card', 'iban', 'mrz']);
@@ -278,7 +265,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     const fromExif = !!metadata?.cameraModel;
     sections.push({
       kind: 'device',
-      icon: '📱',
       title: lang === 'ru' ? 'Устройство' : lang === 'uz' ? 'Qurilma' : 'Device',
       text: device + (metadata?.cameraMake ? ` (${metadata.cameraMake})` : ''),
       subtext: fromExif
@@ -294,7 +280,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   if (metadata?.gps) {
     sections.push({
       kind: 'location',
-      icon: '📍',
       title: lang === 'ru' ? 'Местоположение' : lang === 'uz' ? 'Joylashuv' : 'Location',
       text: `${metadata.gps.lat.toFixed(5)}, ${metadata.gps.lon.toFixed(5)}` + (metadata.gps.altitude != null ? ` (${Math.round(metadata.gps.altitude)}m)` : ''),
       subtext: metadata.gps.accuracy != null
@@ -318,8 +303,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     }, 'low');
     sections.push({
       kind: 'time',
-      icon: '🕐',
-      title: lang === 'ru' ? 'Когда сделан снимок' : lang === 'uz' ? 'Surat qachon olingan' : 'When the photo was taken',
+      title: TEXTS.timeTitle[lang],
       text: allFacts,
       subtext: allInferences || null,
       leakPoints: maxSeverity === 'high' ? 15 : 8,
@@ -329,8 +313,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   } else {
     sections.push({
       kind: 'time',
-      icon: '🕐',
-      title: lang === 'ru' ? 'Когда сделан снимок' : lang === 'uz' ? 'Surat qachon olingan' : 'When the photo was taken',
+      title: TEXTS.timeTitle[lang],
       text: lang === 'ru' ? 'Дата/время съёмки не найдены' : lang === 'uz' ? 'Suratga olish sanasi/vaqti topilmadi' : 'Shot date/time not found',
       subtext: lang === 'ru' ? 'Временные метаданные отсутствуют или были удалены' : 'Temporal metadata is missing or was stripped',
       leakPoints: 0,
@@ -345,15 +328,13 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   const peopleCount = Math.max(personDetections.length, faceDetections.length);
   if (peopleCount > 0) {
     const faces = faceDetections.length;
-    const text =
-      lang === 'ru'
-        ? `${peopleCount} чел., ${faces > 0 ? `лиц различимо: ${faces}` : 'лицо не найдено'}`
-        : lang === 'uz'
-        ? `${peopleCount} kishi, ${faces > 0 ? `yuzlar aniq: ${faces}` : 'yuz topilmadi'}`
-        : `${peopleCount} ${peopleCount === 1 ? 'person' : 'people'}, ${faces > 0 ? `recognisable faces: ${faces}` : 'no face found'}`;
+    const noun = (peopleCount === 1 ? TEXTS.personOne : TEXTS.personMany)[lang];
+    const text = (faces > 0 ? TEXTS.peopleFaces : TEXTS.peopleNoFace)[lang]
+      .replace('{count}', String(peopleCount))
+      .replace('{noun}', noun)
+      .replace('{faces}', String(faces));
     sections.push({
       kind: 'people',
-      icon: '👤',
       title: lang === 'ru' ? 'Люди на фото' : lang === 'uz' ? 'Fotodagi odamlar' : 'People in photo',
       text,
       subtext: lang === 'ru'
@@ -372,7 +353,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   if (ocrResult && ocrResult.regions.length >= 2 && ocrResult.fullText.length > 3) {
     sections.push({
       kind: 'text',
-      icon: '🔤',
       title: lang === 'ru' ? 'Текст на фото' : lang === 'uz' ? 'Fotodagi matn' : 'Text in photo',
       text: lang === 'ru'
         ? `${ocrResult.regions.length} фрагментов текста`
@@ -390,7 +370,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     const sample = plates.slice(0, 2).map((p) => p.text).join(', ');
     sections.push({
       kind: 'plates',
-      icon: '🚘',
       title: TEXTS.platesTitle[lang],
       text: `${TEXTS.platesText[lang].replace('{count}', String(plates.length))}: ${sample}`,
       subtext: TEXTS.platesSub[lang],
@@ -407,7 +386,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     const sensitive = qrCodes.some((code) => code.sensitive);
     sections.push({
       kind: 'qr',
-      icon: '▣',
       title: TEXTS.qrTitle[lang],
       text: `${TEXTS.qrText[lang].replace('{count}', String(qrCodes.length))}: ${kinds.join(', ')}`,
       subtext: TEXTS.qrSub[lang],
@@ -424,7 +402,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     const heavy = pii.some((finding) => PII_HEAVY.has(finding.kind));
     sections.push({
       kind: 'documents',
-      icon: '▤',
       title: TEXTS.documentsTitle[lang],
       text: kinds.join(', '),
       subtext: TEXTS.documentsSub[lang],
@@ -441,7 +418,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   if (cred && cred.generative !== 'none') {
     sections.push({
       kind: 'ai',
-      icon: '🤖',
       title: TEXTS.aiTitle[lang],
       text: cred.generativeAgents.length > 0 ? cred.generativeAgents.join(', ') : cred.generator ?? 'AI',
       subtext: `${TEXTS.credSignedBy[lang]} ${signer}${cred.valid ? TEXTS.credValidSuffix[lang] : TEXTS.credInvalidSuffix[lang]}`,
@@ -452,7 +428,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   } else if (editing.isAiGenerated) {
     sections.push({
       kind: 'ai',
-      icon: '🤖',
       title: TEXTS.aiTitle[lang],
       text: editing.aiTool ?? 'AI',
       subtext: lang === 'ru' ? 'Фото создано нейросетью' : 'Photo created by AI',
@@ -463,7 +438,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   } else if (cred) {
     sections.push({
       kind: 'ai',
-      icon: '🤖',
       title: TEXTS.aiCheckTitle[lang],
       text: TEXTS.aiNoneSigned[lang],
       subtext: `${TEXTS.credSignedBy[lang]} ${signer}${cred.valid ? TEXTS.credValidSuffix[lang] : TEXTS.credInvalidSuffix[lang]}`,
@@ -474,7 +448,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   } else {
     sections.push({
       kind: 'ai',
-      icon: '🤖',
       title: TEXTS.aiCheckTitle[lang],
       text: TEXTS.aiNone[lang],
       subtext:
@@ -493,7 +466,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   if (editing.edited) {
     sections.push({
       kind: 'editing',
-      icon: '🖌️',
       title: lang === 'ru' ? 'Обработка' : lang === 'uz' ? 'Tahrirlash' : 'Editing',
       text: editing.software.join(', '),
       subtext: editing.hints[0] ?? null,
@@ -504,7 +476,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   } else {
     sections.push({
       kind: 'editing',
-      icon: '🖌️',
       title: lang === 'ru' ? 'Обработка' : lang === 'uz' ? 'Tahrirlash' : 'Editing',
       text: lang === 'ru' ? 'Следов редактирования не обнаружено' : lang === 'uz' ? 'Tahrirlash izlari topilmadi' : 'No editing traces detected',
       subtext: null,
@@ -518,7 +489,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   if (stripped.stripped) {
     sections.push({
       kind: 'origin',
-      icon: '💬',
       title: lang === 'ru' ? 'Происхождение' : lang === 'uz' ? 'Kelib chiqishi' : 'Origin',
       text: stripped.strippedBy
         ? (lang === 'ru' ? `Прошло через ${stripped.strippedBy}` : `Passed through ${stripped.strippedBy}`)
@@ -531,7 +501,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   } else {
     sections.push({
       kind: 'origin',
-      icon: '💬',
       title: lang === 'ru' ? 'Происхождение' : lang === 'uz' ? 'Kelib chiqishi' : 'Origin',
       text: lang === 'ru' ? 'Оригинальный файл (не из мессенджера)' : lang === 'uz' ? 'Original fayl (messenjerdan emas)' : 'Original file (not from a messenger)',
       subtext: lang === 'ru' ? 'Метаданные сохранены — файл не проходил через сервисы сжатия' : 'Metadata preserved — file was not re-compressed by a service',
@@ -545,7 +514,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   if (resolution.contentHint) {
     sections.push({
       kind: 'content',
-      icon: resolution.isScreenshot ? '🖥️' : '📐',
       title: lang === 'ru' ? 'Тип контента' : lang === 'uz' ? 'Kontent turi' : 'Content type',
       text: resolution.contentHint,
       subtext: null,
@@ -560,7 +528,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   if (serials.length > 0) {
     sections.push({
       kind: 'serial',
-      icon: '🔢',
       title: lang === 'ru' ? 'Серийные номера' : lang === 'uz' ? 'Seriya raqamlari' : 'Serial numbers',
       text: serials.join('; '),
       subtext: null,
@@ -574,14 +541,9 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   if (hash) {
     sections.push({
       kind: 'hash',
-      icon: '🔑',
       title: lang === 'ru' ? 'Цифровой отпечаток' : lang === 'uz' ? 'Raqamli barmoq izi' : 'Digital fingerprint',
       text: hash.phash ? `pHash ${hash.phash} · SHA-256 ${hash.sha256.substring(0, 16)}…` : `SHA-256: ${hash.sha256.substring(0, 16)}...`,
-      subtext: lang === 'ru'
-        ? 'Перцептуальный отпечаток картинки переживает сжатие и лёгкие правки: по нему находят копии; SHA-256 меняется от любого пересохранения'
-        : lang === 'uz'
-        ? 'Rasmning pertseptual izi siqish va yengil tahrirlardan keyin ham saqlanadi: u orqali nusxalar topiladi; SHA-256 har qanday qayta saqlashda o‘zgaradi'
-        : 'The perceptual fingerprint survives compression and light edits: copies are found by it; SHA-256 changes with any re-save',
+      subtext: TEXTS.hashSub[lang],
       leakPoints: 5,
       severity: 'low',
       threatScenario: THREATS.hash[lang],
@@ -596,28 +558,4 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     leakLevel: getLeakLevel(leakScore, lang),
     serialNumbers: serials,
   };
-}
-
-/* ── report export ──────────────────────────────────────── */
-
-export function generateReport(profile: DigitalProfile, lang: Lang): string {
-  const header = lang === 'ru' ? '=== ОТЧЁТ Found You ===' : '=== Found You Report ===';
-  const dateLabel = lang === 'ru' ? 'Дата анализа' : 'Analysis date';
-  const leakLabel = lang === 'ru' ? 'Уровень утечки' : 'Leak level';
-
-  let report = `${header}\n`;
-  report += `${dateLabel}: ${new Date().toISOString()}\n`;
-  report += `${leakLabel}: ${profile.leakScore}/100 (${profile.leakLevel.label})\n`;
-  report += `${profile.leakLevel.description}\n\n`;
-
-  for (const section of profile.sections) {
-    report += `${section.icon} ${section.title}\n`;
-    report += `  ${section.text}\n`;
-    if (section.subtext) report += `  → ${section.subtext}\n`;
-    if (section.threatScenario) report += `  ⚠ ${section.threatScenario}\n`;
-    report += '\n';
-  }
-
-  report += `\n=== https://foundyou.morgunov.tech ===\n`;
-  return report;
 }

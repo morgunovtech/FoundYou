@@ -2,6 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import exifr from 'exifr';
 import { stripContainerMetadata } from './utils/containerMetadata';
 import { hammingDistance, phashFromBlob } from './utils/phash';
+import { usePrefersReducedMotion } from './hooks/usePrefersReducedMotion';
+import { extensionForMime } from './utils/format';
+import { countMetadataFields } from './utils/metadataFields';
 import { InfoBlock } from './components/InfoBlock';
 import { SiteHeader } from './components/SiteHeader';
 import { SiteFooter } from './components/SiteFooter';
@@ -30,7 +33,7 @@ import type {
   QualityMode,
   VerifyResult
 } from './types/cleanup';
-import type { BasicFileInfo, StructuredMetadata } from './types/metadata';
+import type { BasicFileInfo } from './types/metadata';
 import { generateSceneNarrative } from './utils/sceneNarrative';
 import { analyzeFilename } from './utils/heuristics/filenameAnalyzer';
 import { analyzeResolution } from './utils/heuristics/resolutionAnalyzer';
@@ -55,8 +58,10 @@ export interface ProData {
   temporal: TemporalInsight[];
 }
 import {
+  applyAntiSearch,
   applyAntiSearchMeasured,
   antiSearchTargetBits,
+  blurBoxes,
   applyColorReduction,
   applyMirror,
   applyPrnuCleanup,
@@ -163,26 +168,11 @@ function resolveExportMime(outputFormat: OutputFormat, originalMime: string): { 
   return { requested, mime };
 }
 
-function extensionForMime(mime: string): string {
-  if (mime.includes('png')) return 'png';
-  if (mime.includes('webp')) return 'webp';
-  return 'jpg';
-}
-
 function mimeLabel(mime: string): string {
   const sub = mime.replace(/^image\//, '');
   if (sub === 'jpeg' || sub === 'jpg') return 'JPEG';
   if (sub === 'webp') return 'WebP';
   return sub.toUpperCase();
-}
-
-function countMetadataFields(metadata: StructuredMetadata | null): number {
-  if (!metadata) return 0;
-  const groups = metadata.groups;
-  return (['exif', 'xmp', 'iptc', 'icc'] as const).reduce(
-    (sum, key) => sum + Object.keys(groups[key] ?? {}).length,
-    0
-  );
 }
 
 /**
@@ -226,9 +216,9 @@ interface ProcessedResult {
 }
 
 const SEO_DESCRIPTIONS: Record<string, string> = {
-  ru: 'Бесплатный онлайн-инструмент для анализа и удаления метаданных из фотографий. EXIF, GPS, OCR, поиск людей и объектов. Фото не покидает браузер; контекст места — только по запросу и по округлённым координатам.',
-  en: 'Free browser-based tool to analyze and remove photo metadata. EXIF, GPS, OCR, people and object detection. The photo never leaves your browser; place context only on request, from rounded coordinates.',
-  uz: "Fotosuratlar metama'lumotlarini tahlil qilish va olib tashlash uchun bepul vosita. EXIF, GPS, OCR, odamlar va obyektlarni aniqlash. Surat brauzerdan chiqmaydi; joy konteksti faqat so'rov bo'yicha, yaxlitlangan koordinatalar asosida.",
+  ru: 'Бесплатный онлайн-инструмент для анализа и удаления метаданных из фотографий. EXIF, GPS, OCR, поиск людей и объектов. Фото не покидает браузер; контекст места — только по округлённым координатам, с раскрытием и выключателем.',
+  en: 'Free browser-based tool to analyze and remove photo metadata. EXIF, GPS, OCR, people and object detection. The photo never leaves your browser; place context from rounded coordinates only, disclosed and switchable off.',
+  uz: "Fotosuratlar metama'lumotlarini tahlil qilish va olib tashlash uchun bepul vosita. EXIF, GPS, OCR, odamlar va obyektlarni aniqlash. Surat brauzerdan chiqmaydi; joy konteksti faqat yaxlitlangan koordinatalar asosida, ochiq ko‘rsatiladi va o‘chirib qo‘yiladi.",
 };
 
 const SEO_TITLES: Record<string, string> = {
@@ -249,6 +239,7 @@ const App: React.FC = () => {
       metaDesc.setAttribute('content', SEO_DESCRIPTIONS[lang] ?? SEO_DESCRIPTIONS.ru);
     }
   }, [lang]);
+  const reducedMotion = usePrefersReducedMotion();
   const { fileInfo, error, loading, processFile } = useImageFile();
   const { metadata } = useExifMetadata(fileInfo);
   const credentials = useContentCredentials(fileInfo);
@@ -260,20 +251,48 @@ const App: React.FC = () => {
     enabled: settledFile === fileInfo
   });
 
+  /**
+   * Decoded source for the current file, shared by the perceptual hash, the QR pass,
+   * every preview regeneration and the export. Stored as a promise so parallel callers await one decode.
+   */
+  const sourceImageRef = useRef<{ url: string; promise: Promise<HTMLImageElement> } | null>(null);
+  const getSourceImage = useCallback((info: BasicFileInfo) => {
+    const cached = sourceImageRef.current;
+    if (cached && cached.url === info.dataUrl) return cached.promise;
+    const promise = loadImageElement(info.dataUrl).catch((err) => {
+      if (sourceImageRef.current?.promise === promise) sourceImageRef.current = null;
+      throw err;
+    });
+    sourceImageRef.current = { url: info.dataUrl, promise };
+    return promise;
+  }, []);
+
+  const { codes: qrCodes, loading: qrLoading } = useQrCodes(fileInfo, getSourceImage);
   // Plates are OCR tokens that read like a plate or sit on a detected vehicle; shared by the profile and the blur.
-  const { codes: qrCodes } = useQrCodes(fileInfo);
   const piiFindings = useMemo(() => findPii(ocrResult), [ocrResult]);
+  /** OCR boxes a document or contact was read from: what «Скрыть документы» blurs. */
+  const documentBoxes = useMemo(() => {
+    if (!ocrResult) return [];
+    const indexes = new Set(piiFindings.flatMap((finding) => finding.regions));
+    return ocrResult.regions.filter((_, index) => indexes.has(index));
+  }, [ocrResult, piiFindings]);
   const plateCandidates = useMemo(
     () => (fileInfo ? findPlateCandidates(ocrResult, detections, { width: fileInfo.width, height: fileInfo.height }) : []),
     [fileInfo, ocrResult, detections]
   );
 
-  const [digitalProfile, setDigitalProfile] = useState<DigitalProfile | null>(null);
-  const [proData, setProData] = useState<ProData | null>(null);
+  /**
+   * The profile is stored with the file it was built for and read back only while that file
+   * is the current one, so section 02 never shows another photo's facts while this one is
+   * still being analysed.
+   */
+  const [profileEntry, setProfileEntry] = useState<{ file: BasicFileInfo; profile: DigitalProfile; proData: ProData } | null>(null);
+  const digitalProfile = profileEntry && profileEntry.file === fileInfo ? profileEntry.profile : null;
+  const proData = profileEntry && profileEntry.file === fileInfo ? profileEntry.proData : null;
 
   // Compute digital profile when analysis completes
   useEffect(() => {
-    if (!fileInfo) { setDigitalProfile(null); setProData(null); return; }
+    if (!fileInfo) return;
     if (analysisLoading) return; // OCR joins later: the profile is recomputed when ocrResult arrives
 
     let cancelled = false;
@@ -297,7 +316,7 @@ const App: React.FC = () => {
       // Wall-clock of the camera, not the viewer's zone: "night photo" must be night where it was taken.
       const temporalResult = analyzeDateTime(metadata?.shotDateLocal ?? metadata?.shotDate, lang);
       // The perceptual hash needs the decoded picture; the byte hash needs the original bytes.
-      const decoded = await loadImageElement(fileInfo.dataUrl).catch(() => null);
+      const decoded = await getSourceImage(fileInfo).catch(() => null);
       const hashResult = await generateFileHash(fileInfo.originalFile ?? fileInfo.file, decoded);
 
       if (cancelled) return;
@@ -320,11 +339,14 @@ const App: React.FC = () => {
         originalFilename: originalName,
         lang,
       });
-      setDigitalProfile(profile);
-      setProData({ filename: filenameResult, resolution: resolutionResult, stripped: strippedResult, editing: editingResult, hash: hashResult, temporal: temporalResult });
+      setProfileEntry({
+        file: fileInfo,
+        profile,
+        proData: { filename: filenameResult, resolution: resolutionResult, stripped: strippedResult, editing: editingResult, hash: hashResult, temporal: temporalResult }
+      });
     })();
     return () => { cancelled = true; };
-  }, [fileInfo, metadata, detections, ocrResult, plateCandidates, qrCodes, piiFindings, credentials.data, credentials.status, analysisLoading, ocrLoading, lang]);
+  }, [fileInfo, metadata, detections, ocrResult, plateCandidates, qrCodes, piiFindings, credentials.data, credentials.status, analysisLoading, ocrLoading, lang, getSourceImage]);
 
   type NoticeState = { type: 'success' | 'error' | 'info'; message: string };
 
@@ -338,12 +360,12 @@ const App: React.FC = () => {
   const [manualMasks, setManualMasks] = useState<ManualMask[]>([]);
   const [antiSearchEnabled, setAntiSearchEnabled] = useState(false);
   const [antiSearchLevel, setAntiSearchLevel] = useState(2);
-  const [antiSearchParams, setAntiSearchParams] = useState<AntiSearchParams | null>(null);
   const [watermarkEnabled, setWatermarkEnabled] = useState(false);
   const [watermarkText, setWatermarkText] = useState('');
   const [blurText, setBlurText] = useState(false);
   const [blurPlates, setBlurPlates] = useState(false);
   const [blurQr, setBlurQr] = useState(false);
+  const [blurDocuments, setBlurDocuments] = useState(false);
   /**
    * Cleaned file kept for a second tap when the share sheet needs a fresh user gesture. It is
    * stored with the settings it was made for, so any change simply makes it stale.
@@ -362,6 +384,32 @@ const App: React.FC = () => {
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
   const reduceColor = antiSearchEnabled && antiSearchLevel === 3;
   const watermark = watermarkEnabled;
+  /**
+   * «Только метаданные» on a JPEG or PNG source: nothing in the settings touches the pixels, so
+   * the export keeps the original picture bytes and only rewrites the container (every
+   * metadata segment and anything after the end of the image go). Other sources (HEIC,
+   * WebP) have no original JPEG/PNG bytes to keep and are re-encoded once instead.
+   */
+  const losslessExport = useMemo(
+    () =>
+      Boolean(fileInfo) &&
+      !fileInfo?.wasConverted &&
+      (fileInfo?.mimeType === 'image/jpeg' || fileInfo?.mimeType === 'image/png') &&
+      !prnuCleanup &&
+      !blurFaces &&
+      !blurText &&
+      !blurPlates &&
+      !blurQr &&
+      !blurDocuments &&
+      manualMasks.length === 0 &&
+      !antiSearchEnabled &&
+      !mirrorEnabled &&
+      downscaleMax === 0 &&
+      !watermarkEnabled &&
+      qualityMode === 'original' &&
+      outputFormat === 'original',
+    [fileInfo, prnuCleanup, blurFaces, blurText, blurPlates, blurQr, blurDocuments, manualMasks.length, antiSearchEnabled, mirrorEnabled, downscaleMax, watermarkEnabled, qualityMode, outputFormat]
+  );
 
   const metadataFieldCount = useMemo(() => countMetadataFields(metadata), [metadata]);
 
@@ -372,13 +420,16 @@ const App: React.FC = () => {
   /** Regions that will actually be blurred — shown as the count in the cleanup summary. */
   const blurTargetCount = useMemo(() => selectBlurTargets(blurCandidates).length, [blurCandidates]);
 
-  useEffect(() => {
-    if (antiSearchEnabled) {
-      setAntiSearchParams(generateAntiSearchParams({ level: antiSearchLevel }));
-    } else {
-      setAntiSearchParams(null);
-    }
-  }, [antiSearchEnabled, antiSearchLevel]);
+  // A fresh random set whenever the toggle or the level changes; nothing to mirror through an effect.
+  const antiSearchParams = useMemo<AntiSearchParams | null>(
+    () => (antiSearchEnabled ? generateAntiSearchParams({ level: antiSearchLevel }) : null),
+    [antiSearchEnabled, antiSearchLevel]
+  );
+  /**
+   * The strength the measured preview settled on, keyed by the seed of the params it started
+   * from. The export applies it once instead of measuring again on the full-size canvas.
+   */
+  const measuredAntiSearchRef = useRef<{ seed: number; params: AntiSearchParams } | null>(null);
 
   /**
    * Swap the processed-preview blob URL, revoking whatever it replaces.
@@ -406,22 +457,6 @@ const App: React.FC = () => {
     []
   );
 
-  /**
-   * Decoded source for the current file, shared by every preview regeneration
-   * and the export. Stored as a promise so parallel callers await one decode.
-   */
-  const sourceImageRef = useRef<{ url: string; promise: Promise<HTMLImageElement> } | null>(null);
-  const getSourceImage = useCallback((info: BasicFileInfo) => {
-    const cached = sourceImageRef.current;
-    if (cached && cached.url === info.dataUrl) return cached.promise;
-    const promise = loadImageElement(info.dataUrl).catch((err) => {
-      if (sourceImageRef.current?.promise === promise) sourceImageRef.current = null;
-      throw err;
-    });
-    sourceImageRef.current = { url: info.dataUrl, promise };
-    return promise;
-  }, []);
-
   // New file (or none): drop the decoded source and every derived preview artefact.
   useEffect(() => {
     sourceImageRef.current = null;
@@ -440,12 +475,11 @@ const App: React.FC = () => {
     if (!fileInfo || fileInfo === previous) return;
     const heading = document.getElementById('sec-scene');
     if (!heading) return;
-    const reduceMotion =
-      typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const reduceMotion = reducedMotion;
     heading.tabIndex = -1;
     heading.scrollIntoView({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' });
     heading.focus({ preventScroll: true });
-  }, [fileInfo]);
+  }, [fileInfo, reducedMotion]);
 
   const handleFile = useCallback(
     async (file: File) => {
@@ -458,12 +492,13 @@ const App: React.FC = () => {
       setManualMasks([]);
       setManualMaskMode(false);
       setAntiSearchEnabled(false);
-      setAntiSearchParams(null);
       setAntiSearchLevel(2);
       setWatermarkEnabled(false);
       setWatermarkText('');
       setBlurText(false);
+      setBlurPlates(false);
       setBlurQr(false);
+      setBlurDocuments(false);
       setMirrorEnabled(false);
       setDownscaleMax(0);
       setOutputFormat('original');
@@ -530,13 +565,11 @@ const App: React.FC = () => {
 
       if (blurQr && qrCodes.length > 0) {
         // A QR box is blurred like a text region: the same padding, the same strength.
-        blurOcrRegions(
-          ctx,
-          baseCanvas,
-          qrCodes.map((code) => ({ text: '', confidence: 100, x: code.x, y: code.y, width: code.width, height: code.height })),
-          blurStrength,
-          scale
-        );
+        blurBoxes(ctx, baseCanvas, qrCodes, blurStrength, scale);
+      }
+
+      if (blurDocuments && documentBoxes.length > 0) {
+        blurBoxes(ctx, baseCanvas, documentBoxes, blurStrength, scale);
       }
 
       if (scaledMasks.length > 0) {
@@ -550,10 +583,18 @@ const App: React.FC = () => {
       }
 
       if (antiSearchEnabled && antiSearchParams) {
-        // Measured against the perceptual hash of the frame: the field and crop grow until the level's target is met.
-        const measured = applyAntiSearchMeasured(workingCanvas, antiSearchParams, antiSearchTargetBits(antiSearchLevel));
-        workingCanvas = measured.canvas;
-        setAntiSearchDistance(measured.distance);
+        const settled = measuredAntiSearchRef.current;
+        if (!options?.maxDimension && settled && settled.seed === antiSearchParams.noiseSeed) {
+          // Export: the preview already found the strength that meets the target; apply it once.
+          workingCanvas = applyAntiSearch(workingCanvas, settled.params);
+        } else {
+          // Preview: measured against the perceptual hash of the frame, the field and crop grow
+          // until the level's target is met; the result is kept for the export.
+          const measured = applyAntiSearchMeasured(workingCanvas, antiSearchParams, antiSearchTargetBits(antiSearchLevel));
+          workingCanvas = measured.canvas;
+          measuredAntiSearchRef.current = { seed: antiSearchParams.noiseSeed, params: measured.params };
+          setAntiSearchDistance(measured.distance);
+        }
       } else {
         setAntiSearchDistance(null);
       }
@@ -582,6 +623,8 @@ const App: React.FC = () => {
       plateCandidates,
       blurQr,
       qrCodes,
+      blurDocuments,
+      documentBoxes,
       ocrResult,
       blurCandidates,
       blurStrength,
@@ -605,25 +648,33 @@ const App: React.FC = () => {
       throw new Error('no-file');
     }
     if (import.meta.env.DEV) {
-      console.info('[pipeline] export:start', { mime: fileInfo.mimeType, qualityMode, outputFormat });
+      console.info('[pipeline] export:start', { mime: fileInfo.mimeType, qualityMode, outputFormat, losslessExport });
     }
-    const result = await createProcessedCanvas();
-    if (!result) {
-      throw new Error('no-canvas');
-    }
-    const { canvas } = result;
-    setPlatformCapped(result.platformCapped);
     const { requested, mime: exportMime } = resolveExportMime(outputFormat, fileInfo.mimeType);
-    const quality = exportMime === 'image/png' ? undefined : qualityForMode(qualityMode);
-    const encodedBlob: Blob = await new Promise((resolve, reject) => {
-      canvas.toBlob((encoded) => {
-        if (encoded) resolve(encoded);
-        else reject(new Error('export-failed'));
-      }, exportMime, quality);
-    });
-    // The browser's encoder adds container metadata of its own (Chrome: an sRGB ICC
-    // profile in APP2 / iCCP). Harmless, but "0 fields left" must be literally true.
-    const blob = await stripContainerMetadata(encodedBlob);
+    let blob: Blob;
+    if (losslessExport) {
+      // The original bytes, minus every metadata segment and whatever follows the end of the image.
+      const source = fileInfo.originalFile ?? fileInfo.file;
+      blob = await stripContainerMetadata(new Blob([await source.arrayBuffer()], { type: fileInfo.mimeType }));
+      setPlatformCapped(false);
+    } else {
+      const result = await createProcessedCanvas();
+      if (!result) {
+        throw new Error('no-canvas');
+      }
+      const { canvas } = result;
+      setPlatformCapped(result.platformCapped);
+      const quality = exportMime === 'image/png' ? undefined : qualityForMode(qualityMode);
+      const encodedBlob: Blob = await new Promise((resolve, reject) => {
+        canvas.toBlob((encoded) => {
+          if (encoded) resolve(encoded);
+          else reject(new Error('export-failed'));
+        }, exportMime, quality);
+      });
+      // The browser's encoder adds container metadata of its own (Chrome: an sRGB ICC
+      // profile in APP2 / iCCP). Harmless, but "0 fields left" must be literally true.
+      blob = await stripContainerMetadata(encodedBlob);
+    }
     // Safari answers a WebP request with PNG; trust the blob, not the request.
     const actualMime = blob.type || exportMime;
     const extension = extensionForMime(actualMime);
@@ -649,6 +700,7 @@ const App: React.FC = () => {
   }, [
     fileInfo,
     createProcessedCanvas,
+    losslessExport,
     qualityMode,
     renameFile,
     outputFormat,
@@ -806,15 +858,14 @@ const App: React.FC = () => {
     setManualMasks((current) => current.filter((mask) => mask.id !== id));
   }, []);
 
-  // Verdict CTA: bring the cleanup section into view and hand focus to its heading.
+  // «Make a safe copy»: bring the cleanup section into view and hand focus to its heading.
   const handleMakeSafeCopy = useCallback(() => {
     const heading = document.getElementById('sec-cleanup');
     if (!heading) return;
-    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    heading.scrollIntoView({ block: 'start', behavior: reduced ? 'auto' : 'smooth' });
+    heading.scrollIntoView({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
     heading.setAttribute('tabindex', '-1');
     heading.focus({ preventScroll: true });
-  }, []);
+  }, [reducedMotion]);
 
   const sceneDescription = useMemo(() => {
     if (analysisLoading) return t('sceneDescriptionLoading');
@@ -920,6 +971,9 @@ const App: React.FC = () => {
                 qrCount={qrCodes.length}
                 blurQr={blurQr}
                 setBlurQr={setBlurQr}
+                documentCount={documentBoxes.length}
+                blurDocuments={blurDocuments}
+                setBlurDocuments={setBlurDocuments}
                 shareSupported={shareSupported}
                 shareReady={shareReady !== null}
                 onShare={handleShare}
@@ -930,6 +984,8 @@ const App: React.FC = () => {
                 estimatedSize={estimatedSize}
                 blurTargetCount={blurTargetCount}
                 ocrPending={ocrLoading}
+                qrPending={qrLoading}
+                losslessExport={losslessExport}
                 antiSearchDistance={antiSearchDistance}
                 originalPreviewUrl={fileInfo.thumbnailUrl ?? null}
                 platformCapped={platformCapped}

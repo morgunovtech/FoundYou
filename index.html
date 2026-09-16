@@ -138,7 +138,7 @@
           "name": "Безопасно ли загружать фото в Found You?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Да. Фотография обрабатывается локально в вашем браузере и никогда не отправляется на сервер: извлечение метаданных, OCR, детекция людей и объектов, размытие и очистка происходят на вашем устройстве. Единственное исключение — блок «Контекст места»: если вы сами нажмёте «Показать контекст места», на наш сервер уйдут только округлённые координаты (точность около 11 м) и дата и время съёмки, чтобы показать адрес, погоду и объекты поблизости. Само фото не отправляется и в этом случае."
+            "text": "Да. Фотография обрабатывается локально в вашем браузере и никогда не отправляется на сервер: извлечение метаданных, OCR, детекция людей и объектов, размытие и очистка происходят на вашем устройстве. Единственное исключение — контекст места: если в фото есть GPS-координаты, на наш сервер автоматически уходят только округлённые координаты (точность около 11 м), дата и время съёмки и код страны, чтобы показать адрес, погоду, праздники, рельеф и объекты поблизости. Под результатом написано, что именно отправлено, а переключатель «Не запрашивать контекст места» отключает это для всех следующих фото. Само фото не отправляется и в этом случае."
           }
         },
         {
@@ -154,7 +154,7 @@
           "name": "Is Found You free to use?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "Yes, Found You is completely free. It works in your browser with no registration and no uploads; files up to 20 MB and 40 megapixels are supported. All processing is done locally on your device, and place context is fetched only if you ask for it."
+            "text": "Yes, Found You is completely free. It works in your browser with no registration and no uploads; files up to 20 MB and 40 megapixels are supported. All processing is done locally on your device; when a photo carries GPS, place context is looked up from rounded coordinates only, disclosed next to the result, and can be switched off."
           }
         }
       ]

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SAMSUNG_TAIL_BYTES, mccCountry, parseSamsungTrailer } from '../samsungTrailer';
+import { BLOCK_HEAD_BYTES, SAMSUNG_TAIL_BYTES, blocksOutsideTail, mccCountry, parseSamsungTrailer, readSamsungTrailer } from '../samsungTrailer';
 
 const text = (s: string) => Array.from(s, (c) => c.charCodeAt(0));
 const u32 = (n: number) => [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >>> 24) & 0xff];
@@ -9,6 +9,10 @@ interface Block {
   name: string;
   data: number[];
 }
+
+/** A Blob over a byte array (typed as a plain ArrayBuffer for the DOM lib). */
+const asBlob = (bytes: Uint8Array) =>
+  new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer], { type: 'image/jpeg' });
 
 /** A JPEG stub followed by a Samsung trailer in the documented layout. */
 function samsungFile(blocks: Block[], jpegBytes = 64): Uint8Array {
@@ -67,6 +71,55 @@ describe('parseSamsungTrailer', () => {
     const trailer = parseSamsungTrailer(file);
     expect(trailer!.mcc).toBe('434');
     expect(trailer!.imageUtc).toBe('2024-06-14T14:30:12.000Z');
+  });
+});
+
+describe('parseSamsungTrailer: layouts the 256 KB tail does not hold', () => {
+  it('scans a full-size tail in the fallback without overflowing the call stack', () => {
+    // A valid SEFT/SEFH end with unusable entries; the names sit inside the last 256 KB of a larger file.
+    const filler = new Array(SAMSUNG_TAIL_BYTES + 200).fill(0x20);
+    const body = [...filler, ...text('....MCC_Data250....Image_UTC_Data1718375412000....')];
+    const dir = [...text('SEFH'), ...u32(0x106), ...u32(1), ...u32(0), ...u32(0), ...u32(0)];
+    const file = new Uint8Array([0xff, 0xd8, 0xff, 0xd9, ...body, ...dir, ...u32(dir.length), ...text('SEFT')]);
+    const tail = file.subarray(file.length - SAMSUNG_TAIL_BYTES);
+    const trailer = parseSamsungTrailer(tail, file.length);
+    expect(trailer!.mcc).toBe('250');
+    expect(trailer!.imageUtc).toBe('2024-06-14T14:30:12.000Z');
+  });
+
+  it('names small blocks written before the video from their own heads, read separately', async () => {
+    const video = new Array(SAMSUNG_TAIL_BYTES + 5000).fill(0x42);
+    const file = samsungFile([
+      { type: 0x0a01, name: 'Image_UTC_Data', data: text('1718375412000') },
+      { type: 0x0aa1, name: 'MCC_Data', data: text('434') },
+      { type: 0x0a30, name: 'MotionPhoto_Data', data: video }
+    ]);
+    const tail = file.subarray(file.length - SAMSUNG_TAIL_BYTES);
+    // Without the heads the parser only knows the sizes: the video by its size, the rest as unknown.
+    const blind = parseSamsungTrailer(tail, file.length);
+    expect(blind!.blocks.map((b) => b.name)).toEqual(['unknown', 'unknown', 'MotionPhoto_Data']);
+    expect(blind!.mcc).toBeNull();
+    const outside = blocksOutsideTail(tail, file.length);
+    expect(outside).toHaveLength(3);
+    // The reader fetches each head and the names come back.
+    const trailer = await readSamsungTrailer(asBlob(file));
+    expect(trailer!.blocks.map((b) => b.name)).toEqual(['Image_UTC_Data', 'MCC_Data', 'MotionPhoto_Data']);
+    expect(trailer!.mcc).toBe('434');
+    expect(trailer!.imageUtc).toBe('2024-06-14T14:30:12.000Z');
+    expect(trailer!.motionPhotoBytes).toBe(8 + 'MotionPhoto_Data'.length + video.length);
+    expect(BLOCK_HEAD_BYTES).toBeGreaterThan(8 + 'Image_UTC_Data'.length + 13);
+  });
+
+  it('does not call a large non-video block a Motion Photo once its head is read', async () => {
+    const depth = new Array(SAMSUNG_TAIL_BYTES + 100).fill(0x11);
+    const file = samsungFile([
+      { type: 0x0ab1, name: 'DualShot_1', data: depth },
+      { type: 0x0aa1, name: 'MCC_Data', data: text('262') }
+    ]);
+    const trailer = await readSamsungTrailer(asBlob(file));
+    expect(trailer!.blocks.map((b) => b.name)).toEqual(['DualShot_1', 'MCC_Data']);
+    expect(trailer!.motionPhotoBytes).toBeNull();
+    expect(trailer!.mcc).toBe('262');
   });
 });
 

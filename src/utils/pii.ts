@@ -18,8 +18,10 @@ export interface PiiFinding {
   regions: number[];
 }
 
+// `\b` in JavaScript is ASCII-only, so a Cyrillic word never sits on a "word boundary": the
+// edges are spelled out as "no letter or digit on either side" instead, with the `u` flag.
 const DOCUMENT_WORDS =
-  /\b(passport|паспорт|pasport|passeport|reisepass|boarding\s*pass|посадочн|driver'?s?\s*licen[cs]e|водительск|удостоверени|guvohnoma|id\s*card|identity\s*card|permis|residence\s*permit|виза|инн|stir|jshshir|пинфл|снилс|полис|receipt|чек|chek|invoice|счёт-фактура|kvitansiya|квитанция)\b/i;
+  /(?<![\p{L}\p{N}])(passport|паспорт|pasport|passeport|reisepass|boarding\s*pass|посадочн\p{L}*|driver'?s?\s*licen[cs]e|водительск\p{L}*|удостоверени\p{L}*|guvohnoma|id\s*card|identity\s*card|permis|residence\s*permit|виза|инн|stir|jshshir|пинфл|снилс|полис|receipt|чек|chek|invoice|счёт-фактура|kvitansiya|квитанция)(?![\p{L}\p{N}])/iu;
 
 /** Luhn check for a digit string. */
 export function luhn(digits: string): boolean {
@@ -53,7 +55,9 @@ export function ibanValid(value: string): boolean {
 
 const CARD_RE = /(?<!\d)(?:\d[ -]?){13,19}(?!\d)/g;
 const IBAN_RE = /\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,4})?\b/g;
-const PHONE_RE = /(?:\+|00)\d[\d\s().-]{7,17}\d|\b8[\s(-]?\d{3}[\s)-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}\b/g;
+// «00» only starts a number when no digit precedes it («1000 000 000» is a sum, not a phone),
+// and a number never continues past a line break (the next line is the next line).
+const PHONE_RE = /(?:\+|(?<!\d)00)\d[\d \t().-]{7,17}\d|\b8[ \t(-]?\d{3}[ \t)-]?\d{3}[ \t-]?\d{2}[ \t-]?\d{2}\b/g;
 const EMAIL_RE = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
 const HANDLE_RE = /(?<![\w@])@[A-Za-z0-9_]{4,32}\b/g;
 // TD1 lines are 30, TD3 lines 44 characters; OCR adds or drops a couple.

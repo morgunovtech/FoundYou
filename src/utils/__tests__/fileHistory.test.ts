@@ -105,8 +105,10 @@ describe('buildFileHistory', () => {
     expect(same.find((e) => e.kind === 'thumbnail')).toEqual({ kind: 'thumbnail', at: null, agent: null, same: true, distance: 2 });
     const cropped = buildFileHistory(input({ metadata: metadata({ thumbnail: { ...thumb, width: 160, height: 160 } }), phash: 'ffffffffffffffff' }));
     expect(cropped.find((e) => e.kind === 'thumbnail')).toMatchObject({ same: false, distance: 64 });
-    // No hashes: the ratio decides.
+    // No hashes: matching proportions are "not compared", a different aspect ratio is still a crop.
     const ratioOnly = buildFileHistory(input({ metadata: metadata({ thumbnail: { ...thumb, phash: null } }) }));
-    expect(ratioOnly.find((e) => e.kind === 'thumbnail')).toMatchObject({ same: true, distance: null });
+    expect(ratioOnly.find((e) => e.kind === 'thumbnail')).toMatchObject({ same: null, distance: null });
+    const ratioCrop = buildFileHistory(input({ metadata: metadata({ thumbnail: { ...thumb, width: 160, height: 160, phash: null } }) }));
+    expect(ratioCrop.find((e) => e.kind === 'thumbnail')).toMatchObject({ same: false, distance: null });
   });
 });

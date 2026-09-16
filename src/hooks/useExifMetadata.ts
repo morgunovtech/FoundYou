@@ -32,6 +32,9 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
     }
 
     const parse = async () => {
+      // A new file: the previous metadata (its coordinates, its thumbnail URL, which is revoked
+      // below) must not be shown or hashed against this one while it is being read.
+      setMetadata(null);
       setLoading(true);
       setError(null);
       try {
@@ -44,11 +47,27 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
         const xmpRecord = (xmpData ?? {}) as Record<string, unknown>;
         const pngRecord = pngData as Record<string, unknown> | undefined;
 
+        const orientationTag = pickFirst<number | string>(exifRecord, ['Orientation', 'orientation']);
+
         // Vendor blocks: the Apple MakerNote bytes (parsed, then dropped from the raw group so the
-        // table does not print a byte array) and the Samsung trailer after the JPEG EOI.
-        const apple = parseAppleMakerNote(takeMakerNote(exifRecord)) ?? undefined;
-        const samsung = (await readSamsungTrailer(sourceFile).catch(() => null)) ?? undefined;
-        const thumbnail = (await readEmbeddedThumbnail(sourceFile).catch(() => null)) ?? undefined;
+        // table does not print a byte array), the Samsung trailer after the JPEG EOI and the IFD1
+        // thumbnail. Each is optional: a quirk in one of them must not cost the EXIF itself.
+        let apple: ReturnType<typeof parseAppleMakerNote> = null;
+        try {
+          apple = parseAppleMakerNote(takeMakerNote(exifRecord));
+        } catch (err) {
+          console.warn('apple-makernote', err);
+        }
+        const [samsung, thumbnail] = await Promise.all([
+          readSamsungTrailer(sourceFile).catch((err) => {
+            console.warn('samsung-trailer', err);
+            return null;
+          }),
+          readEmbeddedThumbnail(sourceFile, orientationTag).catch((err) => {
+            console.warn('embedded-thumbnail', err);
+            return null;
+          })
+        ]);
         if (!active) {
           if (thumbnail) URL.revokeObjectURL(thumbnail.url);
           return;
@@ -76,7 +95,6 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
         const focalLength = pickFirst<number>(exifRecord, ['FocalLength', 'focalLength']);
         const focalLength35mm = pickFirst<number>(exifRecord, ['FocalLengthIn35mmFormat', 'focalLengthIn35MmFormat']);
         const gps = normalizeGps(exifRecord, gpsRaw as Record<string, unknown> | undefined);
-        const orientationTag = pickFirst<number | string>(exifRecord, ['Orientation', 'orientation']);
 
         const groups: MetadataGroups = {
           exif: exifRecord,
@@ -115,9 +133,9 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
             gps
           }),
           orientation: inferOrientation(fileInfo.width, fileInfo.height, orientationTag),
-          apple,
-          samsung,
-          thumbnail: thumbnail as EmbeddedThumbnail | undefined
+          apple: apple ?? undefined,
+          samsung: samsung ?? undefined,
+          thumbnail: (thumbnail as EmbeddedThumbnail | null) ?? undefined
         };
 
         setMetadata(structured);

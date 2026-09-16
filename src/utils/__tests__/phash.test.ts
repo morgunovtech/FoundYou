@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PHASH_BITS, hammingDistance, luminance, phashFromPixels } from '../phash';
+import { hammingDistance, luminance, phashFromPixels } from '../phash';
 
 const SIZE = 32;
 
@@ -41,7 +41,6 @@ describe('phashFromPixels', () => {
     );
     expect(hash).toMatch(/^[0-9a-f]{16}$/);
     expect(hash).toBe('0000000000000000');
-    expect(PHASH_BITS).toBe(64);
   });
 
   it('survives noise and a brightness shift, separates different pictures', () => {

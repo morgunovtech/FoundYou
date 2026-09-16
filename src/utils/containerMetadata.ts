@@ -9,7 +9,10 @@
  * "0 fields left" becomes untrue. These helpers remove every optional segment the
  * decoder does not need, so the exported file really contains pixels only.
  *
- * Both functions are pure byte-level rewrites: no re-encoding, no quality loss.
+ * Both functions are pure byte-level rewrites: no re-encoding, no quality loss. They also
+ * serve the «metadata only» export, which keeps the original picture bytes: there the
+ * walk must reach the real end of the image and drop whatever follows it (a Samsung
+ * trailer with the SIM country and a Motion Photo video, a PNG with bytes after IEND).
  */
 
 const JPEG_SOI = 0xd8;
@@ -32,7 +35,7 @@ export function stripJpegMetadata(input: ArrayBuffer): ArrayBuffer {
 
   const keep: Uint8Array[] = [bytes.subarray(0, 2)];
   let offset = 2;
-  while (offset + 4 <= bytes.length) {
+  while (offset + 2 <= bytes.length) {
     if (bytes[offset] !== 0xff) {
       // Not a marker where one is expected: bail out and keep the file untouched.
       return input;
@@ -49,23 +52,40 @@ export function stripJpegMetadata(input: ArrayBuffer): ArrayBuffer {
       if (marker === JPEG_EOI) break;
       continue;
     }
+    if (offset + 4 > bytes.length) return input;
     const length = (bytes[offset + 2] << 8) | bytes[offset + 3];
     if (length < 2 || offset + 2 + length > bytes.length) return input;
     const end = offset + 2 + length;
     if (marker === JPEG_SOS) {
-      // Entropy-coded data follows the SOS header up to EOI; APPn cannot appear
-      // inside it, so the remainder of the file is copied as is.
-      keep.push(bytes.subarray(offset));
-      offset = bytes.length;
-      break;
+      // Entropy-coded data follows the SOS header. Inside it 0xFF is always stuffed (0xFF00)
+      // or a restart marker, so the next real marker is the first 0xFF followed by anything
+      // else; the walk then resumes (a progressive JPEG has several scans and tables between
+      // them) and stops at EOI, so a vendor trailer after the image is never copied.
+      const scanEnd = findScanEnd(bytes, end);
+      keep.push(bytes.subarray(offset, scanEnd));
+      offset = scanEnd;
+      continue;
     }
     if (!isJpegMetadataMarker(marker)) {
       keep.push(bytes.subarray(offset, end));
     }
     offset = end;
   }
-  if (offset < bytes.length) keep.push(bytes.subarray(offset));
   return concat(keep);
+}
+
+/** Index of the first marker after entropy-coded data starting at `from` (or the end of the buffer). */
+function findScanEnd(bytes: Uint8Array, from: number): number {
+  let i = from;
+  while (i + 1 < bytes.length) {
+    if (bytes[i] === 0xff) {
+      const next = bytes[i + 1];
+      const stuffed = next === 0x00 || next === 0xff || (next >= 0xd0 && next <= 0xd7);
+      if (!stuffed) return i;
+    }
+    i++;
+  }
+  return bytes.length;
 }
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -82,6 +102,7 @@ export function stripPngMetadata(input: ArrayBuffer): ArrayBuffer {
 
   const keep: Uint8Array[] = [bytes.subarray(0, 8)];
   let offset = 8;
+  let sawEnd = false;
   while (offset + 12 <= bytes.length) {
     const length = (bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
     if (length < 0 || offset + 12 + length > bytes.length) return input;
@@ -91,9 +112,13 @@ export function stripPngMetadata(input: ArrayBuffer): ArrayBuffer {
       keep.push(bytes.subarray(offset, end));
     }
     offset = end;
-    if (type === 'IEND') break;
+    if (type === 'IEND') {
+      sawEnd = true;
+      break;
+    }
   }
-  if (offset < bytes.length) keep.push(bytes.subarray(offset));
+  // Bytes after IEND are not part of the picture; a file cut short before IEND is kept whole.
+  if (!sawEnd && offset < bytes.length) keep.push(bytes.subarray(offset));
   return concat(keep);
 }
 

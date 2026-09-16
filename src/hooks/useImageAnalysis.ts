@@ -233,6 +233,8 @@ export function useImageAnalysis(fileInfo: BasicFileInfo | null) {
     };
 
     const detect = async () => {
+      // The previous file's boxes must not be drawn over (or blurred on) this one while it is analysed.
+      reset();
       setLoading(true);
       setError(null);
       setStage('prep', 0);
@@ -412,8 +414,12 @@ type DecodedSource = {
 async function decodeForAnalysis(fileInfo: BasicFileInfo): Promise<DecodedSource | null> {
   const workingWidth = fileInfo.width;
   const workingHeight = fileInfo.height;
-  const baseWidth = fileInfo.originalWidth ?? workingWidth;
-  const baseHeight = fileInfo.originalHeight ?? workingHeight;
+  // Boxes are reported in the working picture's pixels (`fileInfo.width` × `fileInfo.height`):
+  // that is the space the preview overlays, the blur and the OCR/QR boxes all use. For a HEIC
+  // converted to a smaller JPEG the original size differs, and mapping to it put the faces
+  // off their spots.
+  const baseWidth = workingWidth;
+  const baseHeight = workingHeight;
 
   const longestSide = Math.max(workingWidth, workingHeight) || 1;
   const pixelScale = Math.sqrt(MAX_ANALYSIS_PIXELS / Math.max(1, workingWidth * workingHeight));

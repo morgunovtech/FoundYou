@@ -45,6 +45,20 @@ describe('stripJpegMetadata', () => {
     expect(Array.from(bytes.subarray(bytes.length - scan.length))).toEqual(scan);
   });
 
+  it('drops a vendor trailer after EOI and keeps tables between the scans of a progressive file', () => {
+    const trailer = [0x53, 0x45, 0x46, 0x48, 1, 2, 3, 0x53, 0x45, 0x46, 0x54];
+    const withTrailer = jpeg(app0, dqt, sof, sos, scan, trailer);
+    const bytes = new Uint8Array(stripJpegMetadata(withTrailer));
+    expect(Array.from(bytes.subarray(bytes.length - scan.length))).toEqual(scan);
+    expect(bytes.length).toBe(new Uint8Array(jpeg(app0, dqt, sof, sos, scan)).length);
+    // Progressive: scan, a DHT between scans (0xFF 0xC4 is a real marker, not stuffing), a second scan, EOI.
+    const dht = segment(0xc4, [0, 1, 2, 3]);
+    const firstScan = [0x12, 0xff, 0x00, 0xff, 0xd0, 0x34];
+    const progressive = jpeg(app0, dqt, sof, sos, firstScan, dht, sos, [0x56, 0xff, 0xd9], trailer);
+    const out = new Uint8Array(stripJpegMetadata(progressive));
+    expect(Array.from(out)).toEqual(Array.from(new Uint8Array(jpeg(app0, dqt, sof, sos, firstScan, dht, sos, [0x56, 0xff, 0xd9]))));
+  });
+
   it('is idempotent and leaves a clean file byte-identical', () => {
     const clean = jpeg(app0, dqt, sof, sos, scan);
     const once = stripJpegMetadata(clean);
@@ -59,16 +73,16 @@ describe('stripJpegMetadata', () => {
     expect(stripJpegMetadata(truncated)).toBe(truncated);
   });
 
-  it('progressive JPEG: everything after the first SOS is copied verbatim, later SOS and APPn included', () => {
+  it('progressive JPEG: scans stay verbatim, a metadata segment between two scans is dropped', () => {
     const scan1 = [0x11, 0x22, 0xff, 0x00, 0x33];
     const sos2 = segment(0xda, [1, 1, 0, 1, 5, 0]);
     const scan2 = [0x44, 0x55, 0xff, 0xd9];
-    // An APP1-shaped byte run inside the entropy-coded data must not be touched.
-    const tail = [...sos, ...scan1, ...app1Exif, ...sos2, ...scan2];
-    const input = jpeg(app0, app1Exif, dqt, sof, tail);
+    // Inside entropy-coded data 0xFF is always stuffed, so an 0xFF 0xE1 pair after a scan is a
+    // real APP1 segment between scans (where an editor may leave one) and is stripped like any other.
+    const input = jpeg(app0, app1Exif, dqt, sof, [...sos, ...scan1, ...app1Exif, ...sos2, ...scan2]);
 
     const output = new Uint8Array(stripJpegMetadata(input));
-    expect(output).toEqual(new Uint8Array([0xff, 0xd8, ...app0, ...dqt, ...sof, ...tail]));
+    expect(output).toEqual(new Uint8Array([0xff, 0xd8, ...app0, ...dqt, ...sof, ...sos, ...scan1, ...sos2, ...scan2]));
     expect(markers(output.buffer)).toEqual([0xe0, 0xdb, 0xc0, 0xda]);
   });
 
@@ -160,12 +174,14 @@ describe('stripPngMetadata', () => {
     expect(stripPngMetadata(input)).toBe(input);
   });
 
-  it('stops scanning at IEND and copies trailing bytes verbatim', () => {
+  it('stops at IEND and drops whatever follows it', () => {
     const trailer = [0xde, 0xad, 0xbe, 0xef];
-    const input = new Uint8Array([...signature, ...chunk('IHDR', new Array(13).fill(0)), ...chunk('IEND', []), ...trailer]).buffer;
-    const output = new Uint8Array(stripPngMetadata(input));
-    expect(output).toEqual(new Uint8Array(input));
-    expect(Array.from(output.subarray(output.length - trailer.length))).toEqual(trailer);
+    const clean = [...signature, ...chunk('IHDR', new Array(13).fill(0)), ...chunk('IEND', [])];
+    const input = new Uint8Array([...clean, ...trailer]).buffer;
+    expect(new Uint8Array(stripPngMetadata(input))).toEqual(new Uint8Array(clean));
+    // A file cut short before IEND is kept whole rather than truncated further.
+    const cut = new Uint8Array([...signature, ...chunk('IHDR', new Array(13).fill(0)), 1, 2, 3]).buffer;
+    expect(new Uint8Array(stripPngMetadata(cut))).toEqual(new Uint8Array(cut));
   });
 });
 

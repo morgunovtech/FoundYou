@@ -253,56 +253,6 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
-  const rn = r / 255;
-  const gn = g / 255;
-  const bn = b / 255;
-  const max = Math.max(rn, gn, bn);
-  const min = Math.min(rn, gn, bn);
-  let h = 0;
-  let s = 0;
-  const l = (max + min) / 2;
-  if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    switch (max) {
-      case rn:
-        h = (gn - bn) / d + (gn < bn ? 6 : 0);
-        break;
-      case gn:
-        h = (bn - rn) / d + 2;
-        break;
-      default:
-        h = (rn - gn) / d + 4;
-    }
-    h /= 6;
-  }
-  return { h, s, l };
-}
-
-function hslToRgb(h: number, s: number, l: number): [number, number, number] {
-  if (s === 0) {
-    const gray = Math.round(l * 255);
-    return [gray, gray, gray];
-  }
-
-  const hue2rgb = (p: number, q: number, t: number) => {
-    let tn = t;
-    if (tn < 0) tn += 1;
-    if (tn > 1) tn -= 1;
-    if (tn < 1 / 6) return p + (q - p) * 6 * tn;
-    if (tn < 1 / 2) return q;
-    if (tn < 2 / 3) return p + (q - p) * (2 / 3 - tn) * 6;
-    return p;
-  };
-
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-  const p = 2 * l - q;
-  const r = hue2rgb(p, q, h + 1 / 3);
-  const g = hue2rgb(p, q, h);
-  const b = hue2rgb(p, q, h - 1 / 3);
-  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
-}
 
 export function generateAntiSearchParams({ level }: { level: number }): AntiSearchParams {
   const safeLevel = Math.max(1, Math.min(level, 3));
@@ -343,6 +293,24 @@ export function generateAntiSearchParams({ level }: { level: number }): AntiSear
  * to pass for uneven lighting, is what moves its bits. Deterministic for a seed; values in [−1, 1].
  */
 export function smoothField(width: number, height: number, seed: number): Float32Array {
+  const grid = smoothFieldGrid(seed);
+  const field = new Float32Array(width * height);
+  for (let y = 0; y < height; y++) {
+    const ny = (y + 0.5) / height;
+    for (let x = 0; x < width; x++) field[y * width + x] = sampleField(grid, (x + 0.5) / width, ny);
+  }
+  return field;
+}
+
+/** Cells per side of the coarse field; the blobs are far wider than a cell, so bilinear sampling loses nothing. */
+export const FIELD_GRID = 48;
+
+/**
+ * The field on a coarse grid, normalised to [−1, 1]. Evaluating the Gaussians on every pixel
+ * of a 40-megapixel export cost seconds and a 160 MB buffer; the grid is 2 304 values and the
+ * pixel loop samples it bilinearly.
+ */
+export function smoothFieldGrid(seed: number): Float32Array {
   const rand = seededRandom(seed + 31);
   const blobs = Array.from({ length: 3 }, () => ({
     cx: 0.15 + rand() * 0.7,
@@ -350,24 +318,75 @@ export function smoothField(width: number, height: number, seed: number): Float3
     sigma: 0.2 + rand() * 0.25,
     sign: rand() < 0.5 ? -1 : 1
   }));
-  const field = new Float32Array(width * height);
+  const grid = new Float32Array(FIELD_GRID * FIELD_GRID);
   let peak = 1e-6;
-  for (let y = 0; y < height; y++) {
-    const ny = (y + 0.5) / height;
-    for (let x = 0; x < width; x++) {
-      const nx = (x + 0.5) / width;
+  for (let y = 0; y < FIELD_GRID; y++) {
+    const ny = (y + 0.5) / FIELD_GRID;
+    for (let x = 0; x < FIELD_GRID; x++) {
+      const nx = (x + 0.5) / FIELD_GRID;
       let v = 0;
       for (const b of blobs) {
         const dx = nx - b.cx;
         const dy = ny - b.cy;
         v += b.sign * Math.exp(-(dx * dx + dy * dy) / (2 * b.sigma * b.sigma));
       }
-      field[y * width + x] = v;
+      grid[y * FIELD_GRID + x] = v;
       if (Math.abs(v) > peak) peak = Math.abs(v);
     }
   }
-  for (let i = 0; i < field.length; i++) field[i] /= peak;
-  return field;
+  for (let i = 0; i < grid.length; i++) grid[i] /= peak;
+  return grid;
+}
+
+/** Bilinear sample of the coarse field at normalised picture coordinates (0–1). */
+export function sampleField(grid: Float32Array, nx: number, ny: number): number {
+  const gx = Math.min(FIELD_GRID - 1, Math.max(0, nx * FIELD_GRID - 0.5));
+  const gy = Math.min(FIELD_GRID - 1, Math.max(0, ny * FIELD_GRID - 0.5));
+  const x0 = Math.floor(gx);
+  const y0 = Math.floor(gy);
+  const x1 = Math.min(FIELD_GRID - 1, x0 + 1);
+  const y1 = Math.min(FIELD_GRID - 1, y0 + 1);
+  const fx = gx - x0;
+  const fy = gy - y0;
+  const top = grid[y0 * FIELD_GRID + x0] * (1 - fx) + grid[y0 * FIELD_GRID + x1] * fx;
+  const bottom = grid[y1 * FIELD_GRID + x0] * (1 - fx) + grid[y1 * FIELD_GRID + x1] * fx;
+  return top * (1 - fy) + bottom * fy;
+}
+
+/**
+ * Hue rotation and saturation change as one 3×3 matrix (YIQ hue rotation composed with a pull
+ * towards luminance): pure arithmetic per pixel instead of an HSL round trip that allocated an
+ * object and an array for every pixel of the picture.
+ */
+export function colourMatrix(hueDegrees: number, saturationShift: number): Float64Array {
+  const a = (hueDegrees * Math.PI) / 180;
+  const cos = Math.cos(a);
+  const sin = Math.sin(a);
+  // Hue rotation in RGB (Haeberli): luminance-preserving rotation about the grey axis.
+  const lr = 0.299;
+  const lg = 0.587;
+  const lb = 0.114;
+  const hue = [
+    lr + cos * (1 - lr) + sin * -lr,
+    lg + cos * -lg + sin * -lg,
+    lb + cos * -lb + sin * (1 - lb),
+    lr + cos * -lr + sin * 0.143,
+    lg + cos * (1 - lg) + sin * 0.14,
+    lb + cos * -lb + sin * -0.283,
+    lr + cos * -lr + sin * -(1 - lr),
+    lg + cos * -lg + sin * lg,
+    lb + cos * (1 - lb) + sin * lb
+  ];
+  // Saturation: move each channel away from (or towards) the luminance by the shift.
+  const s = 1 + saturationShift;
+  const sat = [lr + s * (1 - lr), lg - s * lg, lb - s * lb, lr - s * lr, lg + s * (1 - lg), lb - s * lb, lr - s * lr, lg - s * lg, lb + s * (1 - lb)];
+  const out = new Float64Array(9);
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      out[r * 3 + c] = sat[r * 3] * hue[c] + sat[r * 3 + 1] * hue[3 + c] + sat[r * 3 + 2] * hue[6 + c];
+    }
+  }
+  return out;
 }
 
 /** Minimum Hamming distance (of 64 bits) the export must reach for each level; ≥ 10 stops reverse image search. */
@@ -394,20 +413,42 @@ export function applyAntiSearchMeasured(base: HTMLCanvasElement, params: AntiSea
   const reference = phashFromImage(base);
   let current = params;
   let best: MeasuredAntiSearch | null = null;
-  for (let attempt = 0; attempt < 5; attempt++) {
+  for (let attempt = 0; attempt < ANTI_SEARCH_MAX_ATTEMPTS; attempt++) {
     const canvas = applyAntiSearch(base, current);
     const hash = reference ? phashFromImage(canvas) : null;
     const distance = reference && hash ? hammingDistance(reference, hash) : null;
     if (!best || (distance ?? -1) > (best.distance ?? -1)) best = { canvas, distance, params: current };
-    if (distance == null || distance >= targetBits || current.fieldAmplitude >= 0.16) break;
-    current = {
-      ...current,
-      fieldAmplitude: Math.min(0.16, current.fieldAmplitude + 0.03),
-      cropPercent: Math.min(0.06, current.cropPercent + 0.006),
-      noiseSeed: current.noiseSeed + 1
-    };
+    if (!shouldStrengthenAntiSearch(distance, targetBits, current)) break;
+    current = strengthenAntiSearch(current);
   }
   return best as MeasuredAntiSearch;
+}
+
+/* ── the measuring loop's decisions, kept pure so they are unit-tested without a canvas ── */
+
+/** Attempts per preview; each one is a full pass over the frame. */
+export const ANTI_SEARCH_MAX_ATTEMPTS = 5;
+/** The visual budget: past this amplitude the lighting patches stop passing for uneven light. */
+export const ANTI_SEARCH_MAX_AMPLITUDE = 0.16;
+/** The crop never eats more than this per side, whatever the hash says. */
+export const ANTI_SEARCH_MAX_CROP = 0.06;
+
+/**
+ * Another attempt is worth making only when the distance could be measured, is still short of
+ * the target and the field has room to grow.
+ */
+export function shouldStrengthenAntiSearch(distance: number | null, targetBits: number, params: AntiSearchParams): boolean {
+  return distance != null && distance < targetBits && params.fieldAmplitude < ANTI_SEARCH_MAX_AMPLITUDE;
+}
+
+/** The next, stronger set: a wider field, a slightly larger crop, a fresh noise seed. */
+export function strengthenAntiSearch(params: AntiSearchParams): AntiSearchParams {
+  return {
+    ...params,
+    fieldAmplitude: Math.min(ANTI_SEARCH_MAX_AMPLITUDE, params.fieldAmplitude + 0.03),
+    cropPercent: Math.min(ANTI_SEARCH_MAX_CROP, params.cropPercent + 0.006),
+    noiseSeed: params.noiseSeed + 1
+  };
 }
 
 function cropCanvas(
@@ -461,31 +502,30 @@ export function applyAntiSearch(
   const brightness = params.brightnessShift;
   const contrast = params.contrastShift;
   const factor = (259 * (contrast * 255 + 255)) / (255 * (259 - contrast * 255));
-  // The smooth luminance field is what actually moves the perceptual hash (see smoothField).
+  // The smooth luminance field is what actually moves the perceptual hash (see smoothFieldGrid).
   const amplitude = (params.fieldAmplitude ?? 0) * 255;
-  const field = amplitude > 0 ? smoothField(rotatedCanvas.width, rotatedCanvas.height, params.noiseSeed) : null;
-  // One closure for the whole pass: allocating it per pixel froze the slider
-  // for hundreds of milliseconds on multi-megapixel previews.
-  let noise = 0;
-  let lift = 0;
-  const adjust = (value: number) => {
-    let v = value + noise + lift + brightness * 255;
-    v = factor * (v - 128) + 128;
-    return clamp(v, 0, 255);
-  };
-  for (let i = 0; i < data.length; i += 4) {
-    noise = (rand() - 0.5) * params.noiseAmplitude;
-    if (field) lift = field[i >> 2] * amplitude;
-    const r = adjust(data[i]);
-    const g = adjust(data[i + 1]);
-    const b = adjust(data[i + 2]);
-    const { h, s, l } = rgbToHsl(r, g, b);
-    const shiftedH = ((h + params.hueShift / 360) % 1 + 1) % 1;
-    const shiftedS = clamp(s + params.saturationShift, 0, 1);
-    const [nr, ng, nb] = hslToRgb(shiftedH, shiftedS, clamp(l, 0, 1));
-    data[i] = nr;
-    data[i + 1] = ng;
-    data[i + 2] = nb;
+  const grid = amplitude > 0 ? smoothFieldGrid(params.noiseSeed) : null;
+  const matrix = colourMatrix(params.hueShift, params.saturationShift);
+  const [m00, m01, m02, m10, m11, m12, m20, m21, m22] = matrix;
+  const offset = brightness * 255;
+  const width = rotatedCanvas.width;
+  const height = rotatedCanvas.height;
+  // No per-pixel allocation anywhere in this loop: on a multi-megapixel canvas even one short-lived
+  // object per pixel used to freeze the slider for hundreds of milliseconds.
+  let i = 0;
+  for (let y = 0; y < height; y++) {
+    const ny = (y + 0.5) / height;
+    for (let x = 0; x < width; x++, i += 4) {
+      const noise = (rand() - 0.5) * params.noiseAmplitude;
+      const lift = grid ? sampleField(grid, (x + 0.5) / width, ny) * amplitude : 0;
+      const shift = noise + lift + offset;
+      const r = factor * (data[i] + shift - 128) + 128;
+      const g = factor * (data[i + 1] + shift - 128) + 128;
+      const b = factor * (data[i + 2] + shift - 128) + 128;
+      data[i] = clamp(m00 * r + m01 * g + m02 * b, 0, 255);
+      data[i + 1] = clamp(m10 * r + m11 * g + m12 * b, 0, 255);
+      data[i + 2] = clamp(m20 * r + m21 * g + m22 * b, 0, 255);
+    }
   }
   rctx.putImageData(imageData, 0, 0);
 
@@ -601,6 +641,29 @@ export function applyWatermark(
 
 /* ── blur OCR text regions ──────────────────────────────── */
 
+/**
+ * Blurs boxes given in original-image pixels (OCR words, QR codes, anything rectangular) on a
+ * canvas rendered at `scale`, each grown by a small margin so the edges do not show.
+ */
+export function blurBoxes(
+  ctx: CanvasRenderingContext2D,
+  source: CanvasImageSource,
+  boxes: BlurRegion[],
+  strength: number,
+  scale: number,
+  pad = 4
+) {
+  for (const box of boxes) {
+    const rect: BlurRegion = {
+      x: box.x * scale - pad,
+      y: box.y * scale - pad,
+      width: box.width * scale + pad * 2,
+      height: box.height * scale + pad * 2
+    };
+    blurRegion(ctx, source, rect, strength);
+  }
+}
+
 export function blurOcrRegions(
   ctx: CanvasRenderingContext2D,
   source: CanvasImageSource,
@@ -608,16 +671,7 @@ export function blurOcrRegions(
   strength: number,
   scale: number
 ) {
-  for (const region of regions) {
-    const pad = 4;
-    const rect: BlurRegion = {
-      x: region.x * scale - pad,
-      y: region.y * scale - pad,
-      width: region.width * scale + pad * 2,
-      height: region.height * scale + pad * 2,
-    };
-    blurRegion(ctx, source, rect, strength);
-  }
+  blurBoxes(ctx, source, regions, strength, scale);
 }
 
 /* ── licence plates ─────────────────────────────────────── */

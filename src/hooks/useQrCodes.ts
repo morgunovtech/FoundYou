@@ -14,9 +14,13 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 
 /**
  * QR codes in the loaded picture, decoded on the device (native BarcodeDetector or the
- * bundled jsQR). Runs once per file, independently of the MediaPipe and OCR passes.
+ * bundled jsQR). Runs once per file, independently of the MediaPipe and OCR passes; `getImage`
+ * lets the app hand over its already decoded picture instead of decoding it again.
  */
-export function useQrCodes(fileInfo: BasicFileInfo | null): { codes: QrCode[]; loading: boolean } {
+export function useQrCodes(
+  fileInfo: BasicFileInfo | null,
+  getImage?: (info: BasicFileInfo) => Promise<HTMLImageElement>
+): { codes: QrCode[]; loading: boolean } {
   const [codes, setCodes] = useState<QrCode[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -27,10 +31,12 @@ export function useQrCodes(fileInfo: BasicFileInfo | null): { codes: QrCode[]; l
       setLoading(false);
       return undefined;
     }
+    // A new file: the previous codes (and their boxes) must not reach its profile or its blur.
+    setCodes([]);
     setLoading(true);
     (async () => {
       try {
-        const image = await loadImage(fileInfo.dataUrl);
+        const image = await (getImage ? getImage(fileInfo) : loadImage(fileInfo.dataUrl));
         const found = await findQrCodes(image, fileInfo.width, fileInfo.height);
         if (active) setCodes(found);
       } catch {
@@ -42,7 +48,7 @@ export function useQrCodes(fileInfo: BasicFileInfo | null): { codes: QrCode[]; l
     return () => {
       active = false;
     };
-  }, [fileInfo]);
+  }, [fileInfo, getImage]);
 
   return { codes, loading };
 }

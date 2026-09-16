@@ -32,10 +32,6 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error }
   const [localError, setLocalError] = useState<string | null>(null);
   const [localHint, setLocalHint] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (error) setLocalError(null);
-  }, [error]);
-
   const openPicker = useCallback(() => {
     if (loading) return;
     inputRef.current?.click();

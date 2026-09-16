@@ -19,7 +19,7 @@ export interface PlateCandidate {
   source: 'pattern' | 'vehicle' | 'both';
 }
 
-export const VEHICLE_LABELS = new Set(['car', 'truck', 'bus', 'motorcycle']);
+const VEHICLE_LABELS = new Set(['car', 'truck', 'bus', 'motorcycle']);
 const MIN_VEHICLE_SCORE = 0.4;
 
 /** Cyrillic letters that plates share with the Latin alphabet, mapped to their Latin twins. */
