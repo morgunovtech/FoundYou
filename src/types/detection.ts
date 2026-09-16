@@ -1,6 +1,6 @@
 /** Label of a box produced by the MediaPipe FaceDetector (BlazeFace short-range); already padded for blurring. */
 export const FACE_LABEL = 'face';
-/** COCO class name of a whole person, from the MediaPipe ObjectDetector (EfficientDet-Lite0). */
+/** COCO class name of a whole person, from the MediaPipe ObjectDetector (EfficientDet-Lite2). */
 export const PERSON_LABEL = 'person';
 
 export interface BoundingBox {

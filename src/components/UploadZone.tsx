@@ -103,10 +103,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error }
   const bannerMessage = error ?? localError;
 
   return (
-    <section className="fy-card" aria-labelledby="upload-title">
-      <h2 className="v4-h3" id="upload-title">
-        {t('uploadTitle')}
-      </h2>
+    <section className="fy-card" aria-label={t('uploadButton')}>
       <div
         className={clsx('fy-drop', { 'is-drag-over': dragOver })}
         onDragEnter={(event) => {
