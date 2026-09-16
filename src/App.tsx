@@ -9,6 +9,7 @@ import { InfoBlock } from './components/InfoBlock';
 import { SiteHeader } from './components/SiteHeader';
 import { SiteFooter } from './components/SiteFooter';
 import { UploadZone } from './components/UploadZone';
+import { StickyActions } from './components/StickyActions';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useImageFile } from './hooks/useImageFile';
 import { useExifMetadata } from './hooks/useExifMetadata';
@@ -240,6 +241,8 @@ const App: React.FC = () => {
     }
   }, [lang]);
   const reducedMotion = usePrefersReducedMotion();
+  /** «Open the picker» of the drop zone, for the sticky «new photo» button. */
+  const pickerRef = useRef<(() => void) | null>(null);
   const { fileInfo, error, loading, processFile } = useImageFile();
   const { metadata } = useExifMetadata(fileInfo);
   const credentials = useContentCredentials(fileInfo);
@@ -858,15 +861,6 @@ const App: React.FC = () => {
     setManualMasks((current) => current.filter((mask) => mask.id !== id));
   }, []);
 
-  // «Make a safe copy»: bring the cleanup section into view and hand focus to its heading.
-  const handleMakeSafeCopy = useCallback(() => {
-    const heading = document.getElementById('sec-cleanup');
-    if (!heading) return;
-    heading.scrollIntoView({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
-    heading.setAttribute('tabindex', '-1');
-    heading.focus({ preventScroll: true });
-  }, [reducedMotion]);
-
   const sceneDescription = useMemo(() => {
     if (analysisLoading) return t('sceneDescriptionLoading');
     // An unavailable model must never read as "nothing found".
@@ -890,7 +884,7 @@ const App: React.FC = () => {
         <main id="main" className="fy-main">
           <section className="fy-hero" aria-labelledby="hero-title">
             <InfoBlock scenariosActive={!fileInfo} />
-            <UploadZone loading={loading} onFile={handleFile} error={error ?? undefined} />
+            <UploadZone loading={loading} onFile={handleFile} error={error ?? undefined} pickerRef={pickerRef} />
           </section>
 
           {fileInfo ? (
@@ -920,7 +914,6 @@ const App: React.FC = () => {
                 ocrLoading={ocrLoading}
                 ocrError={ocrError ? t(OCR_ERROR_KEYS[ocrError]) : null}
                 ocrProgressLabel={ocrProgress ? t(OCR_STAGE_KEYS[ocrProgress.stage]) : null}
-                onMakeSafeCopy={handleMakeSafeCopy}
                 credentials={credentials}
                 qrCodes={qrCodes}
                 pii={piiFindings}
@@ -1001,6 +994,7 @@ const App: React.FC = () => {
             </p>
           ) : null}
         </main>
+        <StickyActions photoLoaded={Boolean(fileInfo)} onNewPhoto={() => pickerRef.current?.()} />
         <SiteFooter />
       </div>
     </>

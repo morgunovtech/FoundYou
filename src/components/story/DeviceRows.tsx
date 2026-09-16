@@ -11,10 +11,17 @@ interface DeviceRowsProps {
   metadata: StructuredMetadata | null;
 }
 
+/** «f/1.78»: at most two decimals, a dot as in photographic notation. */
+function formatAperture(aperture: number): string {
+  return `f/${Number(aperture.toFixed(2))}`;
+}
+
 /**
- * «Устройство» rows inside the «Откуда файл» card: maker, model, system or firmware, launch
- * and age of the model, camera module, shot counter, then what the Apple MakerNote and the
- * Samsung trailer add (uptime, Live Photo, burst, capture mode; SIM country, Motion Photo).
+ * Device rows of the «На что сделан снимок» card, under the headline that already names the
+ * device and its system: maker, model, firmware build (Samsung), launch date and age of the
+ * model, camera module, shot counter, then what the Apple MakerNote and the Samsung trailer
+ * add (uptime, Live Photo, burst, capture mode; SIM country, Motion Photo). The source row
+ * appears only when the device is a guess from the file name or the resolution.
  */
 export const DeviceRows: React.FC<DeviceRowsProps> = ({ device: d, metadata }) => {
   const t = useT();
@@ -28,22 +35,7 @@ export const DeviceRows: React.FC<DeviceRowsProps> = ({ device: d, metadata }) =
       {d.modelCode ? <span className="fy-muted fy-mono">{t('deviceModelCode', { code: d.modelCode })}</span> : null}
     </>
   ]);
-  if (d.os) {
-    const note = d.os.newerAtShot
-      ? t('deviceOsBehind', { latest: `${d.os.newerAtShot.name} ${d.os.newerAtShot.major}` })
-      : d.os.familyReleased
-      ? `${t('deviceOsFamily', { name: d.os.name, major: d.os.major, when: formatMonthYear(d.os.familyReleased, lang) })}${
-          d.os.newerAtShot === null && metadata?.shotDateLocal ? `; ${t('deviceOsCurrent')}` : ''
-        }`
-      : null;
-    rows.push([
-      t('deviceOs'),
-      <>
-        <span>{`${d.os.name} ${d.os.version}`}</span>
-        {note ? <span className="fy-muted">{note}</span> : null}
-      </>
-    ]);
-  } else if (d.firmware) {
+  if (d.firmware) {
     rows.push([
       t('deviceFirmware'),
       <>
@@ -70,7 +62,7 @@ export const DeviceRows: React.FC<DeviceRowsProps> = ({ device: d, metadata }) =
     else if (d.camera.module) parts.push(`${t('cameraModuleRear')}, ${t(CAMERA_MODULE_KEYS[d.camera.module])}`);
     else if (d.camera.side === 'rear') parts.push(t('cameraModuleRear'));
     if (d.camera.focalLength35mm) parts.push(t('cameraFocal', { mm: d.camera.focalLength35mm }));
-    if (d.camera.aperture) parts.push(`f/${d.camera.aperture}`);
+    if (d.camera.aperture) parts.push(t('cameraAperture', { f: formatAperture(d.camera.aperture) }));
     if (parts.length > 0) rows.push([t('deviceCamera'), parts.join(' · ')]);
   }
   if (d.shotIndex != null) {
@@ -122,7 +114,7 @@ export const DeviceRows: React.FC<DeviceRowsProps> = ({ device: d, metadata }) =
       t('deviceTrailerValue', { size: formatBytes(samsung.bytes, lang), blocks: samsung.blocks.map((b) => b.name).join(', ') })
     ]);
   }
-  rows.push([t('deviceSource'), t(DEVICE_SOURCE_KEYS[d.source])]);
+  if (d.source !== 'exif') rows.push([t('deviceSource'), t(DEVICE_SOURCE_KEYS[d.source])]);
   return (
     <dl className="fy-spec fy-spec--tight">
       {rows.map(([label, value]) => (

@@ -14,7 +14,6 @@ import { formatDistance } from '../utils/insightsCompact';
 import { buildStance } from '../utils/stance';
 import { buildTimeProfile } from '../utils/timeProfile';
 import { buildDeviceProfile } from '../utils/deviceProfile';
-import { formatDetailedDate } from '../utils/format';
 import { SectionHead } from './SectionHead';
 import { FactRow } from './story/FactRow';
 import { ProTable } from './story/ProTable';
@@ -24,6 +23,7 @@ import { TimeDetails } from './story/TimeDetails';
 import { TextDetails } from './story/TextDetails';
 import { OriginCard } from './story/OriginCard';
 import { PII_KIND_KEYS, QR_KIND_KEYS } from './story/storyKeys';
+import { timeHeadline } from './story/timeHeadline';
 
 interface StoryBlockProps {
   fileInfo: BasicFileInfo;
@@ -35,22 +35,21 @@ interface StoryBlockProps {
   ocrLoading: boolean;
   ocrError: string | null;
   ocrProgressLabel: string | null;
-  onMakeSafeCopy: () => void;
   credentials: ContentCredentialsState;
   qrCodes: QrCode[];
   pii: PiiFinding[];
 }
 
-/** The facts in the order they are shown; the origin card follows them. */
-const FACT_ORDER: ProfileSectionKind[] = ['location', 'time', 'people', 'text', 'plates', 'qr', 'documents'];
+/** The facts in the order they are shown; people are counted in section 01, the origin card follows these. */
+const FACT_ORDER: ProfileSectionKind[] = ['location', 'time', 'text', 'plates', 'qr', 'documents'];
 
 /**
- * Section 02 — what the photo says about you: one card per fact (location, when it was
- * taken, how it was taken, people, text, plates, QR codes, documents, where the file comes
- * from), each with its data and how an attacker uses it, the «make a safe copy» button and
+ * Section 02 — what the photo says about you: one card per fact (where it was taken, when,
+ * how, text, plates, QR codes, documents, what it was taken on), each with its data only, and
  * the raw data table behind a plainly named button at the end. Place context is fetched from
- * our own Functions with rounded coordinates only; the user can switch it off here. The
- * picture itself is section 01 (SceneBlock). The cards live in `./story/`.
+ * our own Functions with rounded coordinates only, automatically, with a disclosure under the
+ * card. People are shown in section 01 (SceneBlock) together with the picture. The cards live
+ * in `./story/`.
  */
 const StoryBlockInner: React.FC<StoryBlockProps> = ({
   fileInfo,
@@ -62,7 +61,6 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   ocrLoading,
   ocrError,
   ocrProgressLabel,
-  onMakeSafeCopy,
   credentials,
   qrCodes,
   pii
@@ -72,7 +70,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   const geo = useGeoContext(metadata);
   const [rawData, setRawData] = useState(false);
 
-  const remote = geo.enabled && Boolean(geo.coords);
+  const remote = Boolean(geo.coords);
   const accuracyLabel = geo.accuracyMeters != null ? formatDistance(geo.accuracyMeters, lang) : null;
 
   // «How the photo was taken»: derived from GPS, time and camera tags; the place zone and the
@@ -172,7 +170,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       // Text is worth a row even before the profile knows about it (OCR is still running).
       if (kind === 'text' && (ocrLoading || ocrError)) {
         return (
-          <FactRow key={kind} title={t('ocrTitle')} severity="low" value={null} sub={null} soWhat={null}>
+          <FactRow key={kind} title={t('ocrTitle')} severity="low" value={null} sub={null}>
             {textDetails}
           </FactRow>
         );
@@ -192,12 +190,12 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
         : kind === 'text'
         ? textDetails
         : null;
-    // Time: the camera wall-clock is the headline, the rows below read it with the place.
-    const shotDate = kind === 'time' && timeProfile ? formatDetailedDate(timeProfile.wallClock, lang) ?? null : null;
+    // Time: age, date, weekday, day kind, time of day and the clock make the headline; the rows place it.
+    const shotDate = kind === 'time' && timeProfile ? timeHeadline(timeProfile, lang, t) : null;
     const value = kind === 'location' ? null : shotDate ?? section.text;
     const sub = kind === 'location' || shotDate ? null : section.subtext;
     return (
-      <FactRow key={kind} title={section.title} severity={section.severity} value={value} sub={sub} soWhat={section.threatScenario}>
+      <FactRow key={kind} title={section.title} severity={section.severity} value={value} sub={sub}>
         {details}
       </FactRow>
     );
@@ -226,14 +224,6 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
           />
         ) : null}
       </div>
-
-      {profile ? (
-        <div className="fy-actions fy-facts-cta">
-          <button type="button" className="v4-btn v4-btn-primary" onClick={onMakeSafeCopy}>
-            {t('safeCopyCta')}
-          </button>
-        </div>
-      ) : null}
 
       {profile ? (
         <div className="fy-raw">
