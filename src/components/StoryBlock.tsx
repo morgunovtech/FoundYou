@@ -22,6 +22,7 @@ import { StanceFact } from './story/StanceFact';
 import { TimeDetails } from './story/TimeDetails';
 import { TextDetails } from './story/TextDetails';
 import { OriginCard } from './story/OriginCard';
+import { FrameChecksCard } from './story/FrameChecksCard';
 import { PII_KIND_KEYS, QR_KIND_KEYS } from './story/storyKeys';
 import { timeHeadline } from './story/timeHeadline';
 import { useContainerSignals } from '../hooks/useContainerSignals';
@@ -232,6 +233,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
             timeProfile={timeProfile}
           />
         ) : null}
+        {profile ? <FrameChecksCard fileInfo={fileInfo} jpeg={jpeg} /> : null}
       </div>
 
       {profile ? (

@@ -1126,6 +1126,69 @@
   flex: 0 0 auto;
 }
 
+/* «Проверка кадра»: three results, each a heading, how / what, the verdict, the map or chart, a caveat. */
+.fy-frame {
+  display: grid;
+  gap: 16px;
+}
+
+.fy-frame-check {
+  display: grid;
+  gap: 8px;
+}
+
+.fy-frame-how {
+  margin: 0;
+  max-width: 72ch;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--v4-muted);
+}
+
+.fy-frame-result {
+  margin: 0;
+  max-width: 72ch;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.fy-frame-map {
+  display: block;
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+  border: 1px solid var(--v4-line);
+}
+
+.fy-frame-chart {
+  display: block;
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+}
+
+.fy-frame-chart-line {
+  fill: none;
+  stroke: var(--v4-fg);
+  stroke-width: 1.5;
+}
+
+.fy-frame-chart-axis {
+  stroke: var(--v4-line);
+  stroke-width: 1;
+}
+
+.fy-frame-chart-dip {
+  fill: var(--v4-orange);
+}
+
+.fy-frame-chart text {
+  font-family: var(--v4-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  fill: var(--v4-muted);
+}
+
 .fy-fact-details .fy-insights {
   gap: 14px;
 }
