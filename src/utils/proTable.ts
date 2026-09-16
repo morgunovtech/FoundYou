@@ -3,6 +3,20 @@ import type { StructuredMetadata, BasicFileInfo } from '../types/metadata';
 import type { BoundingBox } from '../types/detection';
 import type { OCRResult } from '../hooks/useOCR';
 import type { ProData } from '../App';
+import type { MessageKey } from '../i18n';
+import type { QrCode } from './qr';
+import type { PiiFinding } from './pii';
+import type { Stance } from './stance';
+import { formatOffset } from './stance';
+
+export type Translate = (key: MessageKey, params?: Record<string, string | number>) => string;
+
+/** Recognition results and the stance, when the page has them; each adds its own group. */
+export interface ProExtras {
+  qrCodes?: QrCode[];
+  pii?: PiiFinding[];
+  stance?: Stance | null;
+}
 
 /**
  * Pro mode: every raw value the analysis produced, grouped for a mono table.
@@ -50,7 +64,8 @@ export function buildProGroups(
   fileInfo: BasicFileInfo | null,
   detections: BoundingBox[],
   ocrResult: OCRResult | null,
-  lang: string
+  t: Translate,
+  extras: ProExtras = {}
 ): Array<{ group: string; rows: ProRow[] }> {
   const groups: Array<{ group: string; rows: ProRow[] }> = [];
 
@@ -65,7 +80,7 @@ export function buildProGroups(
         ] as ProRow
     )
   ];
-  groups.push({ group: lang === 'ru' ? 'Профиль' : 'Profile', rows: profileRows });
+  groups.push({ group: t('proGroupProfile'), rows: profileRows });
 
   // 2. File info
   if (fileInfo) {
@@ -81,7 +96,7 @@ export function buildProGroups(
       fileRows.push(['originalMimeType', fileInfo.originalMimeType ?? '']);
       if (fileInfo.originalSizeBytes) fileRows.push(['originalSize', `${(fileInfo.originalSizeBytes / 1024).toFixed(1)} KB`]);
     }
-    groups.push({ group: lang === 'ru' ? 'Файл' : 'File', rows: fileRows });
+    groups.push({ group: t('proGroupFile'), rows: fileRows });
   }
 
   // 3. Filename heuristics
@@ -94,7 +109,7 @@ export function buildProGroups(
     ];
     if (fn.photoIndex != null) rows.push(['photoIndex', String(fn.photoIndex)]);
     if (fn.estimatedMonths != null) rows.push(['estimatedMonthsOfUse', String(fn.estimatedMonths)]);
-    groups.push({ group: lang === 'ru' ? 'Эвристика: имя файла' : 'Heuristic: filename', rows });
+    groups.push({ group: t('proGroupFilename'), rows });
   }
 
   // 4. Resolution heuristics
@@ -106,7 +121,7 @@ export function buildProGroups(
       ['contentHint', res.contentHint || '—'],
       ['isScreenshot', String(res.isScreenshot)]
     ];
-    groups.push({ group: lang === 'ru' ? 'Эвристика: разрешение' : 'Heuristic: resolution', rows });
+    groups.push({ group: t('proGroupResolution'), rows });
   }
 
   // 5. Stripped detection
@@ -120,7 +135,7 @@ export function buildProGroups(
     for (let i = 0; i < st.evidence.length; i++) {
       rows.push([`evidence[${i}]`, st.evidence[i]]);
     }
-    groups.push({ group: lang === 'ru' ? 'Эвристика: стрипнутые метаданные' : 'Heuristic: stripped metadata', rows });
+    groups.push({ group: t('proGroupStripped'), rows });
   }
 
   // 6. Editing history
@@ -136,23 +151,23 @@ export function buildProGroups(
     for (let i = 0; i < ed.hints.length; i++) {
       rows.push([`hint[${i}]`, ed.hints[i]]);
     }
-    groups.push({ group: lang === 'ru' ? 'Эвристика: редактирование' : 'Heuristic: editing', rows });
+    groups.push({ group: t('proGroupEditing'), rows });
   }
 
   // 7. Temporal analysis
   if (proData?.temporal && proData.temporal.length > 0) {
-    const rows: ProRow[] = proData.temporal.map((t, i) => [
-      `[${i}] ${t.severity}`,
-      `${t.fact}${t.inference ? ` — ${t.inference}` : ''}`
+    const rows: ProRow[] = proData.temporal.map((insight, i) => [
+      `[${i}] ${insight.severity}`,
+      `${insight.fact}${insight.inference ? ` — ${insight.inference}` : ''}`
     ]);
-    groups.push({ group: lang === 'ru' ? 'Эвристика: время' : 'Heuristic: temporal', rows });
+    groups.push({ group: t('proGroupTemporal'), rows });
   }
 
   // 8. Fingerprints: the byte hash (exact copies) and the perceptual hash (what image search matches on)
   if (proData?.hash) {
     const rows: ProRow[] = [['sha256', proData.hash.sha256]];
     if (proData.hash.phash) rows.push(['phash', proData.hash.phash]);
-    groups.push({ group: lang === 'ru' ? 'Отпечатки' : 'Fingerprints', rows });
+    groups.push({ group: t('proGroupFingerprints'), rows });
   }
 
   // 8a. Vendor blocks
@@ -178,13 +193,13 @@ export function buildProGroups(
       ['motionPhotoBytes', sm.motionPhotoBytes != null ? String(sm.motionPhotoBytes) : '—'],
       ['blocks', sm.blocks.map((b) => `${b.name} (${b.size})`).join(', ')]
     ];
-    groups.push({ group: lang === 'ru' ? 'Трейлер Samsung' : 'Samsung trailer', rows });
+    groups.push({ group: t('proGroupSamsung'), rows });
   }
 
   // 9. Serial numbers
   if (profile.serialNumbers.length > 0) {
     groups.push({
-      group: lang === 'ru' ? 'Серийные номера' : 'Serial Numbers',
+      group: t('proGroupSerials'),
       rows: profile.serialNumbers.map((s) => {
         const idx = s.indexOf(': ');
         return idx >= 0 ? [s.slice(0, idx), s.slice(idx + 2)] : [s, ''];
@@ -198,7 +213,39 @@ export function buildProGroups(
       `[${i}] ${d.label}`,
       `score=${d.score.toFixed(2)} x=${Math.round(d.x)} y=${Math.round(d.y)} w=${Math.round(d.width)} h=${Math.round(d.height)}`
     ]);
-    groups.push({ group: lang === 'ru' ? 'Детекции объектов' : 'Object detections', rows });
+    groups.push({ group: t('proGroupDetections'), rows });
+  }
+
+  // 10a. QR codes and documents: the raw payload and the masked finding, as recognised.
+  if (extras.qrCodes && extras.qrCodes.length > 0) {
+    const rows: ProRow[] = extras.qrCodes.map((code, i) => [
+      `[${i}] ${code.kind}`,
+      `${code.raw} @ x=${Math.round(code.x)} y=${Math.round(code.y)} w=${Math.round(code.width)} h=${Math.round(code.height)}`
+    ]);
+    groups.push({ group: t('proGroupQr'), rows });
+  }
+  if (extras.pii && extras.pii.length > 0) {
+    const rows: ProRow[] = extras.pii.map((finding, i) => [`[${i}] ${finding.kind}`, `${finding.sample} (regions ${finding.regions.join(', ') || '—'})`]);
+    groups.push({ group: t('proGroupDocuments'), rows });
+  }
+
+  // 10b. The shot: heading, speed, GPS time, the clock offsets, the sun and the terrain.
+  const stance = extras.stance;
+  if (stance) {
+    const rows: ProRow[] = [];
+    if (stance.heading) rows.push(['heading', `${stance.heading.degrees}° (${stance.heading.point})`]);
+    if (stance.speedKmh != null) rows.push(['speedKmh', `${stance.speedKmh} (${stance.movement ?? '—'})`]);
+    rows.push(['orientation', stance.orientation ?? '—']);
+    rows.push(['cameraSide', stance.cameraSide]);
+    rows.push(['fovDegrees', String(stance.fovDegrees)]);
+    if (stance.instant) {
+      rows.push(['instantUtc', stance.instant.utc.toISOString()]);
+      rows.push(['instantSource', stance.instant.source]);
+      if (stance.instant.cameraOffsetMinutes != null) rows.push(['cameraOffset', `UTC${formatOffset(stance.instant.cameraOffsetMinutes)}`]);
+    }
+    if (stance.sun) rows.push(['sun', `altitude=${stance.sun.altitude}° azimuth=${stance.sun.azimuth}° ${stance.sun.phase}${stance.sun.relative ? ` relative=${stance.sun.relative}` : ''}`]);
+    if (stance.elevation) rows.push(['terrain', `gps=${stance.elevation.gps}m terrain=${stance.elevation.terrain}m diff=${stance.elevation.difference}m (${stance.elevation.verdict})`]);
+    groups.push({ group: t('proGroupShot'), rows });
   }
 
   // 11. OCR
@@ -229,12 +276,14 @@ export function buildProGroups(
       if (metadata.gps.altitude != null) structured.push(['gps.altitude', `${metadata.gps.altitude}m`]);
       if (metadata.gps.accuracy != null) structured.push(['gps.accuracy', `±${metadata.gps.accuracy}m`]);
       if (metadata.gps.heading != null) structured.push(['gps.heading', `${metadata.gps.heading}°`]);
+      if (metadata.gps.speed != null) structured.push(['gps.speed', `${metadata.gps.speed} km/h`]);
+      if (metadata.gps.timestampUtc) structured.push(['gps.timestampUtc', metadata.gps.timestampUtc]);
     }
     // completeness is a 0..1 ratio (metadataScore.ts) — show it as a percentage.
     structured.push(['completeness', `${Math.round(metadata.completeness * 100)}/100`]);
     if (metadata.orientation) structured.push(['orientation', metadata.orientation]);
     if (structured.length > 0) {
-      groups.push({ group: lang === 'ru' ? 'Структурированные поля' : 'Structured Fields', rows: structured });
+      groups.push({ group: t('proGroupStructured'), rows: structured });
     }
   }
 

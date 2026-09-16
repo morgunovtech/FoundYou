@@ -20,9 +20,10 @@ function pluralRu(n: number, one: string, few: string, many: string): string {
 }
 
 /**
- * Temporal heuristics from the camera wall-clock, as ready sentences for the story and the
- * report. The classification itself (time of day, weekend, age) lives in `timeProfile.ts`,
- * which the «Time and habits» card renders in full; this keeps the two in step.
+ * Temporal facts from the camera wall-clock, as ready sentences for the raw data table. The
+ * classification itself (time of day, weekend, age) lives in `timeProfile.ts`, which the «When
+ * the photo was taken» card renders in full; this keeps the two in step. Only facts: what the
+ * owner did at that hour (slept, worked, rested) is not inferred from a single photo.
  *
  * @param shotDateLocal `StructuredMetadata.shotDateLocal` — the wall-clock exactly as written
  *   by the camera (`YYYY-MM-DDTHH:mm:ss`; the EXIF `YYYY:MM:DD HH:MM:SS` form is accepted too).
@@ -46,19 +47,19 @@ export function analyzeDateTime(shotDateLocal: string | undefined, lang: Lang): 
   if (period === 'night') {
     insights.push({
       fact: lang === 'ru' ? `Ночное фото (${hour}:00)` : lang === 'uz' ? `Tungi foto (${hour}:00)` : `Night photo (${hour}:00)`,
-      inference: lang === 'ru' ? 'Вы бодрствовали глубокой ночью' : lang === 'uz' ? 'Siz tunda uyg\'oq edingiz' : 'You were awake late at night',
+      inference: '',
       severity: 'medium',
     });
   } else if (period === 'earlyMorning') {
     insights.push({
       fact: lang === 'ru' ? `Раннее утро (${hour}:00)` : lang === 'uz' ? `Erta tong (${hour}:00)` : `Early morning (${hour}:00)`,
-      inference: lang === 'ru' ? 'Ранний подъём — привычка, спорт, или перелёт' : lang === 'uz' ? 'Erta turish — odat, sport yoki parvoz' : 'Early rise — habit, sports, or travel',
+      inference: '',
       severity: 'low',
     });
   } else if (period === 'lunch') {
     insights.push({
       fact: lang === 'ru' ? 'Обеденное время' : lang === 'uz' ? 'Tushlik vaqti' : 'Lunchtime',
-      inference: lang === 'ru' ? 'Вероятно, обеденный перерыв' : lang === 'uz' ? 'Ehtimol tushlik tanaffusi' : 'Probably a lunch break',
+      inference: '',
       severity: 'low',
     });
   }
@@ -67,13 +68,13 @@ export function analyzeDateTime(shotDateLocal: string | undefined, lang: Lang): 
   if (isWeekend(dayOfWeek)) {
     insights.push({
       fact: lang === 'ru' ? 'Выходной день' : lang === 'uz' ? 'Dam olish kuni' : 'Weekend',
-      inference: lang === 'ru' ? 'Личное время — отдых, семья, хобби' : lang === 'uz' ? 'Shaxsiy vaqt — dam olish, oila' : 'Personal time — rest, family, hobbies',
+      inference: '',
       severity: 'low',
     });
   } else if (isWorkingHour(hour)) {
     insights.push({
       fact: lang === 'ru' ? 'Будний день, рабочие часы' : lang === 'uz' ? 'Ish kuni, ish soatlari' : 'Weekday, working hours',
-      inference: lang === 'ru' ? 'Вы фотографировали в рабочее время' : lang === 'uz' ? 'Siz ish vaqtida suratga oldingiz' : 'You took a photo during working hours',
+      inference: '',
       severity: 'medium',
     });
   }

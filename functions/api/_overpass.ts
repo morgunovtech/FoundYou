@@ -34,15 +34,15 @@ export type OverpassResult =
 export function buildQuery(lat: string, lon: string): string {
   const at = (radius: number) => `(around:${radius},${lat},${lon})`;
   return `
-[out:json][timeout:8];
+[out:json][timeout:6];
 (
   node["amenity"]${at(250)};
   node["shop"]${at(250)};
   way["amenity"]${at(250)};
   way["shop"]${at(250)};
   relation["amenity"]${at(250)};
-  nwr["tourism"]${at(1000)};
-  nwr["historic"]${at(1000)};
+  nwr["tourism"]["tourism"!="yes"]${at(1000)};
+  nwr["historic"]["historic"!="yes"]${at(1000)};
   nwr["leisure"~"^(park|garden|nature_reserve|playground|stadium|sports_centre|swimming_pool|beach_resort|marina|golf_course|water_park|track|pitch)$"]${at(500)};
   nwr["natural"~"^(peak|spring|hot_spring|waterfall|cave_entrance|glacier|volcano|saddle|arch|cliff|beach|bay|geyser|dune)$"]${at(1500)};
   node["place"~"^(city|town|village|hamlet|suburb|neighbourhood|quarter|locality|isolated_dwelling)$"]${at(1500)};
@@ -72,7 +72,8 @@ const inflight = new Map<string, Promise<Shared>>();
 
 export async function loadOverpassSets(context: CacheContext, lat: number, lon: number): Promise<OverpassResult> {
   const [lat4, lon4] = coordKey(lat, lon);
-  const key = cacheKey('overpass', lat4, lon4);
+  // The version suffix changes whenever the query does, so cells cached under the old query are not served.
+  const key = cacheKey('overpass-v2', lat4, lon4);
 
   let pending = inflight.get(key);
   if (!pending) {
@@ -117,7 +118,7 @@ async function produce(lat4: string, lon4: string): Promise<Response> {
     return json({ ok: false, error: 'upstream-invalid' }, 502);
   }
 
-  // Overpass reports its own `[timeout:8]` / memory limit as HTTP 200 + `remark`
+  // Overpass reports its own `[timeout:6]` / memory limit as HTTP 200 + `remark`
   // with an empty element list; that must not be cached as a real answer.
   const remark = typeof parsed?.remark === 'string' ? parsed.remark : '';
   if (/timed out|runtime error/i.test(remark)) {

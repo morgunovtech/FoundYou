@@ -1,12 +1,13 @@
 import type { StructuredMetadata } from '../types/metadata';
 import { sunPosition, type SunPosition } from './sun';
+import { parseWallClock, wallClockAsUtcDate } from './format';
 
 /*
  * «How the photo was taken»: everything that can be derived from GPS, time and
  * camera tags without the network, plus two lookups (zone of the place for the
  * sun, terrain height). Pure functions; the component only maps the result to
  * text and to the diagram. The camera-clock-versus-place comparison lives in
- * `timeProfile.ts` and is shown in the «Time and habits» card.
+ * `timeProfile.ts` and is shown in the «When the photo was taken» card.
  */
 
 export type CompassPoint = 'N' | 'NE' | 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW';
@@ -121,12 +122,9 @@ export function formatOffset(minutes: number): string {
 }
 
 /** Wall clock `YYYY-MM-DDTHH:mm:ss` read as if it were UTC (a stable reference for offset arithmetic). */
-export function wallClockAsUtc(shotDateLocal: string): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(shotDateLocal);
-  if (!match) return null;
-  const [y, mo, d, h, mi, s] = match.slice(1).map((v) => Number(v ?? 0));
-  const date = new Date(Date.UTC(y, mo - 1, d, h, mi, s || 0));
-  return Number.isNaN(date.getTime()) ? null : date;
+function wallClockAsUtc(shotDateLocal: string): Date | null {
+  const parts = parseWallClock(shotDateLocal);
+  return parts ? wallClockAsUtcDate(parts) : null;
 }
 
 export type InstantSource = 'exif-offset' | 'gps-time' | 'place-zone' | 'longitude';

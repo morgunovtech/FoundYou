@@ -78,10 +78,12 @@ export function matchSceneText(input: SceneTextInput): SceneMatch[] {
   const roadMatched = tryName('road', input.road);
   tryName('place', input.placeName);
   for (const poi of input.poiNames ?? []) tryName('poi', poi);
-  // A house number only counts next to a matching street: bare digits are everywhere.
+  // A house number only counts next to a matching street: bare digits are everywhere. The text
+  // is split on spaces and sentence punctuation but not on «:» or «-», so «12:30» stays one
+  // token (a time, not a house) while «12-А» normalises to the same «12а» as the address.
   if (roadMatched && input.houseNumber) {
     const number = normaliseToken(input.houseNumber);
-    const raw = input.text.split(/[\s,.;:()«»"'/\\|]+/).map(normaliseToken);
+    const raw = input.text.split(/[\s,.;()«»"'/\\|]+/).map(normaliseToken);
     if (number && raw.includes(number)) matches.push({ kind: 'house', name: input.houseNumber, token: input.houseNumber });
   }
   return matches;

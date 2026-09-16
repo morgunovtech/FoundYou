@@ -59,15 +59,30 @@ const TYPE_SIZES: Record<number, number> = {
   12: 8
 };
 
-const ascii = (bytes: Uint8Array, start: number, length: number) =>
-  String.fromCharCode(...bytes.subarray(start, Math.min(bytes.length, start + length)));
+const ascii = (bytes: Uint8Array, start: number, length: number): string => {
+  const end = Math.min(bytes.length, start + length);
+  let text = '';
+  for (let i = Math.max(0, start); i < end; i++) text += String.fromCharCode(bytes[i]);
+  return text;
+};
 
 export function isAppleMakerNote(bytes: Uint8Array): boolean {
   return bytes.length >= 16 && ascii(bytes, 0, HEADER.length) === HEADER;
 }
 
-/** Parse the Apple MakerNote block; null when the bytes are not one. */
+/**
+ * Parse the Apple MakerNote block; null when the bytes are not one. Never throws: a MakerNote
+ * that does not fit its own offsets is a vendor quirk, not a reason to drop the whole EXIF.
+ */
 export function parseAppleMakerNote(bytes: Uint8Array): AppleMakerNote | null {
+  try {
+    return parseAppleMakerNoteStrict(bytes);
+  } catch {
+    return null;
+  }
+}
+
+function parseAppleMakerNoteStrict(bytes: Uint8Array): AppleMakerNote | null {
   if (!isAppleMakerNote(bytes)) return null;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const littleEndian = ascii(bytes, 12, 2) === 'II';
@@ -103,7 +118,11 @@ export function parseAppleMakerNote(bytes: Uint8Array): AppleMakerNote | null {
         result.uptimeSeconds = runtimeSeconds(value);
         break;
       case TAG_HDR_IMAGE_TYPE:
-        if (type === 9 || type === 4) result.hdr = view.getInt32(start, littleEndian) === 3;
+        if (type === 9 || type === 4) {
+          // 3 is an HDR render, 4 the original frame; other codes (older devices) say nothing.
+          const code = view.getInt32(start, littleEndian);
+          result.hdr = code === 3 ? true : code === 4 ? false : null;
+        }
         break;
       case TAG_BURST_UUID:
         result.burst = ascii(value, 0, value.length).replace(/\0+$/, '').length > 0;
@@ -128,7 +147,12 @@ export function parseAppleMakerNote(bytes: Uint8Array): AppleMakerNote | null {
 
 /** `{ value, timescale }` → seconds; null when the plist does not hold a usable CMTime. */
 export function runtimeSeconds(plist: Uint8Array): number | null {
-  const root = parseBinaryPlist(plist);
+  let root: PlistValue;
+  try {
+    root = parseBinaryPlist(plist);
+  } catch {
+    return null;
+  }
   if (!root || typeof root !== 'object' || Array.isArray(root)) return null;
   const dict = root as Record<string, unknown>;
   const value = dict.value;
@@ -170,29 +194,47 @@ export function parseBinaryPlist(bytes: Uint8Array): PlistValue {
   const offsets: number[] = [];
   for (let i = 0; i < objectCount; i++) offsets.push(readUint(tableOffset + i * offsetSize, offsetSize));
 
+  // Every read is checked against the buffer: a plist whose offsets point past its own end is
+  // reported as "no value", never as an exception that escapes the parser.
+  const outOfRange = () => new RangeError('bplist: read past the end');
   const readInt = (at: number, size: number): number => {
+    if (at < 0 || at + size > bytes.length) throw outOfRange();
     if (size === 8) return Number(view.getBigInt64(at));
     if (size === 4) return view.getUint32(at);
     if (size === 2) return view.getUint16(at);
     return bytes[at];
   };
 
+  // `seen` guards against reference cycles on the current path only: CoreFoundation shares equal
+  // objects (a dict whose `value` and `timescale` are the same integer), so an index may be read
+  // again once its subtree is done.
   const seen = new Set<number>();
   const readObject = (index: number): PlistValue => {
-    if (index >= offsets.length || seen.has(index)) return null;
+    if (!Number.isInteger(index) || index < 0 || index >= offsets.length || seen.has(index)) return null;
     seen.add(index);
-    const at = offsets[index];
-    if (at >= bytes.length) return null;
+    try {
+      return readObjectAt(offsets[index]);
+    } finally {
+      seen.delete(index);
+    }
+  };
+  const readObjectAt = (at: number): PlistValue => {
+    if (!(at >= 0 && at < bytes.length)) return null;
     const marker = bytes[at];
     const kind = marker >> 4;
     const info = marker & 0x0f;
     let cursor = at + 1;
-    const readLength = () => {
-      if (info !== 0x0f) return info;
-      const intMarker = bytes[cursor];
-      const intSize = 1 << (intMarker & 0x0f);
-      const length = readInt(cursor + 1, intSize);
-      cursor += 1 + intSize;
+    /** Element count (or byte length) of the object; never more than the buffer could hold. */
+    const readLength = (unit: number) => {
+      let length = info;
+      if (info === 0x0f) {
+        if (cursor >= bytes.length) throw outOfRange();
+        const intMarker = bytes[cursor];
+        const intSize = 1 << (intMarker & 0x0f);
+        length = readInt(cursor + 1, intSize);
+        cursor += 1 + intSize;
+      }
+      if (!Number.isFinite(length) || length < 0 || cursor + length * unit > bytes.length) throw outOfRange();
       return length;
     };
     switch (kind) {
@@ -200,30 +242,34 @@ export function parseBinaryPlist(bytes: Uint8Array): PlistValue {
         return info === 0x08 ? false : info === 0x09 ? true : null;
       case 0x1:
         return readInt(cursor, 1 << info);
-      case 0x2:
-        return info === 3 ? view.getFloat64(cursor) : info === 2 ? view.getFloat32(cursor) : null;
+      case 0x2: {
+        const size = info === 3 ? 8 : info === 2 ? 4 : 0;
+        if (size === 0) return null;
+        if (cursor + size > bytes.length) throw outOfRange();
+        return size === 8 ? view.getFloat64(cursor) : view.getFloat32(cursor);
+      }
       case 0x4: {
-        const length = readLength();
+        const length = readLength(1);
         return bytes.subarray(cursor, cursor + length);
       }
       case 0x5: {
-        const length = readLength();
+        const length = readLength(1);
         return ascii(bytes, cursor, length);
       }
       case 0x6: {
-        const length = readLength();
+        const length = readLength(2);
         let text = '';
         for (let i = 0; i < length; i++) text += String.fromCharCode(view.getUint16(cursor + i * 2));
         return text;
       }
       case 0xa: {
-        const length = readLength();
+        const length = readLength(refSize);
         const items: PlistValue[] = [];
         for (let i = 0; i < length; i++) items.push(readObject(readUint(cursor + i * refSize, refSize)));
         return items;
       }
       case 0xd: {
-        const length = readLength();
+        const length = readLength(2 * refSize);
         const dict: { [key: string]: PlistValue } = {};
         for (let i = 0; i < length; i++) {
           const key = readObject(readUint(cursor + i * refSize, refSize));
@@ -236,8 +282,11 @@ export function parseBinaryPlist(bytes: Uint8Array): PlistValue {
         return null;
     }
   };
-  seen.clear();
-  return readObject(topObject);
+  try {
+    return readObject(topObject);
+  } catch {
+    return null;
+  }
 }
 
 /** Wraps a small binary plist around a CMTime dictionary; used by tests and fixtures. */

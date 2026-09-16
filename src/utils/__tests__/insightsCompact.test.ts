@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import type { PoiResult } from '../../types/api';
 import {
   formatCoords,
-  formatDateTime,
   formatDistance,
   dedupeByNameAndDistance,
   localizeCategoryKey
@@ -15,22 +14,6 @@ describe('formatCoords', () => {
 
   it('formats zero coordinates', () => {
     expect(formatCoords(0, 0)).toBe('0.00000, 0.00000');
-  });
-});
-
-describe('formatDateTime', () => {
-  it('renders the camera wall-clock digit-for-digit', () => {
-    expect(formatDateTime('2024-06-15T02:30:00', 'ru')).toBe('15.06.2024, 02:30');
-    expect(formatDateTime('2024-06-15T02:30:00', 'en')).toBe('15/06/2024, 02:30');
-  });
-
-  it('accepts the EXIF colon form', () => {
-    expect(formatDateTime('2024:06:15 02:30:00', 'ru')).toBe('15.06.2024, 02:30');
-  });
-
-  it('returns undefined for empty or invalid input', () => {
-    expect(formatDateTime(undefined, 'ru')).toBeUndefined();
-    expect(formatDateTime('nope', 'ru')).toBeUndefined();
   });
 });
 

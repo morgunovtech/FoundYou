@@ -95,7 +95,7 @@ declare global {
 }
 
 /** The longest side the decoder works on: QR modules stay legible, the pass stays fast. */
-export const QR_MAX_DIMENSION = 1600;
+const QR_MAX_DIMENSION = 1600;
 
 async function decodeWithJsQr(imageData: ImageData): Promise<DetectedCode[]> {
   const { default: jsQR } = await import('jsqr');

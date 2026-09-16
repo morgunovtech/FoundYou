@@ -10,7 +10,6 @@
  * Everything runs on the canvas, nothing leaves the device.
  */
 
-export const PHASH_BITS = 64;
 /** Below this Hamming distance reverse-image search still treats the copy as the same picture. */
 export const PHASH_SAME_PICTURE = 10;
 
@@ -93,17 +92,47 @@ export function hammingDistance(a: string, b: string): number | null {
   return distance;
 }
 
+function sourceSize(source: CanvasImageSource): { width: number; height: number } {
+  if (source instanceof HTMLImageElement) return { width: source.naturalWidth || source.width, height: source.naturalHeight || source.height };
+  if (typeof VideoFrame !== 'undefined' && source instanceof VideoFrame) return { width: source.displayWidth, height: source.displayHeight };
+  const any = source as { width?: number | SVGAnimatedLength; height?: number | SVGAnimatedLength };
+  const width = typeof any.width === 'number' ? any.width : any.width?.baseVal.value ?? 0;
+  const height = typeof any.height === 'number' ? any.height : any.height?.baseVal.value ?? 0;
+  return { width, height };
+}
+
 /**
  * pHash of anything the canvas can draw (an `<img>`, an `ImageBitmap`, another canvas).
- * The source is downscaled to 32×32 with the browser's own resampling.
+ * A single `drawImage` from thousands of pixels down to 32 samples only a few of them (the
+ * browser's bilinear filter reads 2×2 texels per output pixel), which made the hash noisy and
+ * shift-sensitive. The source is halved step by step with high-quality smoothing instead, so
+ * every input pixel weighs in, the way a box-filter pHash does.
  */
 export function phashFromImage(source: CanvasImageSource): string | null {
+  let current: CanvasImageSource = source;
+  let { width, height } = sourceSize(source);
+  if (!(width > 0 && height > 0)) return null;
+  while (width > SIZE * 2 && height > SIZE * 2) {
+    width = Math.max(SIZE, Math.floor(width / 2));
+    height = Math.max(SIZE, Math.floor(height / 2));
+    const step = document.createElement('canvas');
+    step.width = width;
+    step.height = height;
+    const stepCtx = step.getContext('2d');
+    if (!stepCtx) return null;
+    stepCtx.imageSmoothingEnabled = true;
+    stepCtx.imageSmoothingQuality = 'high';
+    stepCtx.drawImage(current, 0, 0, width, height);
+    current = step;
+  }
   const canvas = document.createElement('canvas');
   canvas.width = SIZE;
   canvas.height = SIZE;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return null;
-  ctx.drawImage(source, 0, 0, SIZE, SIZE);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(current, 0, 0, SIZE, SIZE);
   const { data } = ctx.getImageData(0, 0, SIZE, SIZE);
   return phashFromPixels(data, SIZE, SIZE);
 }

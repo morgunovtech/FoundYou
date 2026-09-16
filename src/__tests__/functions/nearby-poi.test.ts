@@ -307,8 +307,10 @@ describe('nearby-poi: landmarks and settlements', () => {
     });
     await callJson(onRequest, urlOf(PATH, TASHKENT));
     const query = decodeQuery(init);
-    expect(query).toContain('nwr["tourism"](around:1000,41.3112,69.2797)');
-    expect(query).toContain('nwr["historic"](around:1000,41.3112,69.2797)');
+    // `tourism=yes` / `historic=yes` mark a building, not a sight: they are excluded in the query.
+    expect(query).toContain('nwr["tourism"]["tourism"!="yes"](around:1000,41.3112,69.2797)');
+    expect(query).toContain('nwr["historic"]["historic"!="yes"](around:1000,41.3112,69.2797)');
+    expect(query).toContain('[timeout:6]');
     expect(query).toContain('nwr["leisure"~"^(park|');
     expect(query).toContain('(around:500,41.3112,69.2797)');
     expect(query).toContain('nwr["natural"~"^(peak|spring|');

@@ -290,8 +290,12 @@ async function isPngFile(file: File): Promise<boolean> {
  * The IFD1 thumbnail the camera embedded (JPEG bytes), decoded for its size and perceptual
  * hash. HEIC keeps it inside the Exif item, so the TIFF is cut out first. Null when there is
  * none or the browser cannot decode it. The caller owns the blob URL.
+ *
+ * The thumbnail JPEG carries no EXIF of its own, so the browser shows it as stored, while the
+ * main picture is shown with the `Orientation` tag applied. Both are compared (and shown) the
+ * same way up: the thumbnail is turned by the main picture's tag before it is hashed.
  */
-export async function readEmbeddedThumbnail(file: File): Promise<EmbeddedThumbnail | null> {
+export async function readEmbeddedThumbnail(file: File, orientation?: number | string | null): Promise<EmbeddedThumbnail | null> {
   let source: File | Uint8Array = file;
   if (isHeicFile(file)) {
     const exifTiff = await extractExifFromHeic(file);
@@ -300,20 +304,87 @@ export async function readEmbeddedThumbnail(file: File): Promise<EmbeddedThumbna
   }
   const bytes = (await exifr.thumbnail(source as Parameters<typeof exifr.thumbnail>[0])) as Uint8Array | undefined;
   if (!bytes || bytes.length < 100) return null;
-  const blob = new Blob([Uint8Array.from(bytes)], { type: 'image/jpeg' });
+  const rawBlob = new Blob([Uint8Array.from(bytes)], { type: 'image/jpeg' });
   let bitmap: ImageBitmap;
   try {
-    bitmap = await createImageBitmap(blob);
+    bitmap = await createImageBitmap(rawBlob);
   } catch {
     return null;
   }
   try {
-    const { width, height } = bitmap;
-    const phash = phashFromImage(bitmap);
-    return { url: URL.createObjectURL(blob), width, height, bytes: bytes.length, phash };
+    const oriented = orientThumbnail(bitmap, exifOrientationCode(orientation));
+    if (!oriented) {
+      const { width, height } = bitmap;
+      return { url: URL.createObjectURL(rawBlob), width, height, bytes: bytes.length, phash: phashFromImage(bitmap) };
+    }
+    const orientedBlob = await new Promise<Blob | null>((resolve) => oriented.toBlob((blob) => resolve(blob), 'image/jpeg', 0.9));
+    return {
+      url: URL.createObjectURL(orientedBlob ?? rawBlob),
+      width: oriented.width,
+      height: oriented.height,
+      bytes: bytes.length,
+      phash: phashFromImage(oriented)
+    };
   } finally {
     bitmap.close();
   }
+}
+
+/** The EXIF `Orientation` tag as a number 1–8; anything else (missing, a translated string) is 1. */
+export function exifOrientationCode(value: unknown): number {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 8) return value;
+  if (typeof value === 'string') {
+    const numeric = Number(value);
+    if (Number.isInteger(numeric) && numeric >= 1 && numeric <= 8) return numeric;
+    const text = value.toLowerCase();
+    if (/rotate 180/.test(text)) return 3;
+    if (/rotate 90 cw/.test(text)) return 6;
+    if (/rotate 270 cw/.test(text)) return 8;
+  }
+  return 1;
+}
+
+/**
+ * Draws a bitmap the way the EXIF orientation says it should be viewed (the same transforms a
+ * browser applies to the main picture). Null when nothing needs to change.
+ */
+function orientThumbnail(bitmap: ImageBitmap, code: number): HTMLCanvasElement | null {
+  if (code <= 1 || code > 8) return null;
+  const swap = code >= 5;
+  const canvas = document.createElement('canvas');
+  canvas.width = swap ? bitmap.height : bitmap.width;
+  canvas.height = swap ? bitmap.width : bitmap.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  const w = bitmap.width;
+  const h = bitmap.height;
+  switch (code) {
+    case 2:
+      ctx.transform(-1, 0, 0, 1, w, 0);
+      break;
+    case 3:
+      ctx.transform(-1, 0, 0, -1, w, h);
+      break;
+    case 4:
+      ctx.transform(1, 0, 0, -1, 0, h);
+      break;
+    case 5:
+      ctx.transform(0, 1, 1, 0, 0, 0);
+      break;
+    case 6:
+      ctx.transform(0, 1, -1, 0, h, 0);
+      break;
+    case 7:
+      ctx.transform(0, -1, -1, 0, h, w);
+      break;
+    case 8:
+      ctx.transform(0, -1, 1, 0, 0, w);
+      break;
+    default:
+      break;
+  }
+  ctx.drawImage(bitmap, 0, 0);
+  return canvas;
 }
 
 export async function extractMetadataFromOriginal(file: File): Promise<RawMetadata> {

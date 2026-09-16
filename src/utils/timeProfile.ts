@@ -3,8 +3,8 @@ import { formatWallClock, parseWallClock, wallClockAsUtcDate, type WallClockPart
 import { resolveShotInstant, zoneOffsetMinutes } from './stance';
 
 /*
- * «Time and habits»: everything the capture time says once it is read together
- * with the place. Pure functions; the component maps the result to text.
+ * «When the photo was taken»: everything the capture time says once it is read
+ * together with the place. Pure functions; the component maps the result to text.
  *
  * Two clocks matter. The camera wall-clock (`shotDateLocal`) is what the owner
  * saw on the screen; its zone is known only when EXIF wrote an offset or the
@@ -31,7 +31,7 @@ export function isWeekend(dayOfWeek: number): boolean {
   return dayOfWeek === 0 || dayOfWeek === 6;
 }
 
-/** 09:00–18:59 — the office window used by the habits heuristics. */
+/** 09:00–18:59 — the office window; a fact about the hour, not about the owner's job. */
 export function isWorkingHour(hour: number): boolean {
   return hour >= 9 && hour <= 18;
 }

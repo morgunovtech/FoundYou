@@ -21,6 +21,12 @@ describe('classifyQrPayload', () => {
     expect(classifyQrPayload('mailto:s@morgunov.tech')).toMatchObject({ kind: 'email' });
     expect(classifyQrPayload('geo:41.31,69.28')).toMatchObject({ kind: 'geo', sensitive: true });
   });
+  it('survives empty and malformed payloads', () => {
+    expect(classifyQrPayload('')).toMatchObject({ kind: 'text', sensitive: false });
+    expect(classifyQrPayload('http://')).toMatchObject({ kind: 'url', sensitive: false });
+    expect(classifyQrPayload('WIFI:T:nopass;S:Cafe;;')).toMatchObject({ kind: 'wifi', summary: 'Cafe', sensitive: true });
+    expect(classifyQrPayload('WIFI:;;')).toMatchObject({ kind: 'wifi', summary: '?' });
+  });
   it('treats a plain site as a link and a chat invite as an asset', () => {
     expect(classifyQrPayload('https://foundyou.morgunov.tech/?ref=qr')).toEqual({ kind: 'url', summary: 'foundyou.morgunov.tech', sensitive: false });
     expect(classifyQrPayload('https://t.me/+AbCdEf123')).toMatchObject({ kind: 'url', sensitive: true });
@@ -57,6 +63,18 @@ describe('findPii', () => {
     expect(findings.find((f) => f.kind === 'handle')?.sample).toBe('@fo•••');
     expect(findings.find((f) => f.kind === 'mrz')?.sample).toBe('P<UZB•••');
   });
+  it('finds Cyrillic document words: JavaScript «\\b» is ASCII-only and used to miss them', () => {
+    expect(findPii(ocr('РОССИЙСКАЯ ФЕДЕРАЦИЯ ПАСПОРТ')).map((f) => f.kind)).toEqual(['document']);
+    expect(findPii(ocr('кассовый чек 12')).map((f) => f.kind)).toEqual(['document']);
+    expect(findPii(ocr('посадочный талон')).map((f) => f.kind)).toEqual(['document']);
+    // Inside another word it is not a marker.
+    expect(findPii(ocr('перечекать'))).toEqual([]);
+  });
+  it('does not read sums or line breaks as a phone number', () => {
+    expect(findPii(ocr('Итого 1000 000 000 сум'))).toEqual([]);
+    const phones = findPii(ocr('Call +998 90 123 45 67\n2026 09 14')).filter((f) => f.kind === 'phone');
+    expect(phones.map((f) => f.sample)).toEqual(['+998 •••••••••']);
+  });
   it('does not report a card number twice as a phone, and stays quiet on short text', () => {
     const findings = findPii(ocr('4111111111111111'));
     expect(findings.map((f) => f.kind)).toEqual(['card']);
@@ -84,6 +102,10 @@ describe('matchSceneText', () => {
       { kind: 'poi', name: 'Amir Temur square', token: 'Amir' },
       { kind: 'house', name: '12', token: '12' }
     ]);
+  });
+  it('does not read a time or a price as the house number', () => {
+    expect(matchSceneText({ text: 'Amir Temur 12:30', road: 'Amir Temur shoh ko‘chasi', houseNumber: '12' }).map((m) => m.kind)).toEqual(['road']);
+    expect(matchSceneText({ text: 'Amir Temur, 12-А', road: 'Amir Temur shoh ko‘chasi', houseNumber: '12А' }).map((m) => m.kind)).toEqual(['road', 'house']);
   });
   it('needs a matching street before a house number counts, and ignores stop words', () => {
     expect(matchSceneText({ text: 'дом 12', road: 'улица Пушкина', houseNumber: '12' })).toEqual([]);

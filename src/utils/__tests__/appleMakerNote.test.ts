@@ -100,3 +100,49 @@ describe('parseAppleMakerNote', () => {
     });
   });
 });
+
+describe('binary plist: malformed input never escapes the parser', () => {
+  it('returns null for an offset table entry that points past the end', () => {
+    const plist = encodeRuntimePlist(7_000_000_000, 1_000_000_000);
+    const tableOffset = Number(new DataView(plist.buffer, plist.byteOffset).getBigUint64(plist.length - 8));
+    // Object 6 is the `value` integer: send its offset past the buffer.
+    plist[tableOffset + 6 * 2] = 0xff;
+    plist[tableOffset + 6 * 2 + 1] = 0xff;
+    expect(() => parseBinaryPlist(plist)).not.toThrow();
+    expect(runtimeSeconds(plist)).toBeNull();
+  });
+
+  it('rejects an array whose declared length no buffer could hold, without allocating it', () => {
+    // 'bplist00', an array marker with a 4-byte length of 16 million, the offset table, the trailer.
+    const body = [0xaf, 0x12, 0x01, 0x00, 0x00, 0x00];
+    const trailer = new Uint8Array(32);
+    trailer[6] = 1; // offset size
+    trailer[7] = 1; // ref size
+    const view = new DataView(trailer.buffer);
+    view.setBigUint64(8, 1n); // one object
+    view.setBigUint64(16, 0n); // the top object
+    view.setBigUint64(24, BigInt(8 + body.length)); // the table right after the body
+    const plist = new Uint8Array([...Array.from('bplist00', (c) => c.charCodeAt(0)), ...body, 8, ...trailer]);
+    const started = Date.now();
+    expect(parseBinaryPlist(plist)).toBeNull();
+    expect(Date.now() - started).toBeLessThan(200);
+  });
+
+  it('reads an object shared between two keys (CoreFoundation deduplicates equal values)', () => {
+    const plist = encodeRuntimePlist(1_000_000_000, 1_000_000_000);
+    // The dict at offset 8 is [0xd4, k1..k4, v1..v4]; point `value` (v2, index 14) at the timescale object.
+    expect(plist[14]).toBe(6);
+    plist[14] = 7;
+    expect(parseBinaryPlist(plist)).toMatchObject({ value: 1_000_000_000, timescale: 1_000_000_000 });
+    expect(runtimeSeconds(plist)).toBe(1);
+  });
+
+  it('a MakerNote whose entries point past the end still yields the readable tags', () => {
+    const note = makerNote([
+      { tag: 0x0011, type: 2, data: text('C3D2E1F0-1234-4A5B-8C9D-0E1F2A3B4C5D\0') },
+      { tag: 0x0003, type: 7, data: new Array(60).fill(0), count: 0x7fffffff }
+    ]);
+    expect(() => parseAppleMakerNote(note)).not.toThrow();
+    expect(parseAppleMakerNote(note)).toMatchObject({ livePhoto: true, uptimeSeconds: null });
+  });
+});
