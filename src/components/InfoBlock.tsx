@@ -10,8 +10,8 @@ interface InfoBlockProps {
 }
 
 /**
- * Hero copy: the title with a rotating sharing scenario, one lead sentence, three short
- * points and the action line — no wall of text on a phone.
+ * Hero copy: the title with a rotating sharing scenario, one lead sentence, four short
+ * points and the closing privacy line — no wall of text on a phone.
  *
  * Every scenario is in the DOM, stacked in one inline-grid cell, so the slot
  * is as wide as the longest phrase and the heading never re-wraps when the
@@ -60,6 +60,7 @@ export const InfoBlock: React.FC<InfoBlockProps> = ({ scenariosActive }) => {
         <li>{t('introPoint1')}</li>
         <li>{t('introPoint2')}</li>
         <li>{t('introPoint3')}</li>
+        <li>{t('introPoint4')}</li>
       </ul>
       <p className="fy-tagline fy-intro-action">{t('introAction')}</p>
     </div>
