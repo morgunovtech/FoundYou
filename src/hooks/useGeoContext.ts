@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { StructuredMetadata } from '../types/metadata';
-import type { HistoricalWeatherResult, HolidaysResult, PoiResult, ReverseGeocodeResult } from '../types/api';
+import type { ElevationResult, HistoricalWeatherResult, HolidaysResult, PoiResult, ReverseGeocodeResult } from '../types/api';
 import { useAPIFetch } from './useAPIFetch';
 import { dedupeByNameAndDistance } from '../utils/insightsCompact';
 
@@ -27,6 +27,8 @@ export interface GeoContext {
   holidays: { data: HolidaysResult | null; status: RemoteStatus };
   poi: { items: PoiResult[]; status: RemoteStatus };
   surveillance: { items: PoiResult[]; status: RemoteStatus };
+  /** Terrain height at the rounded point, to compare with the GPS altitude. */
+  elevation: { data: ElevationResult | null; status: RemoteStatus };
 }
 
 const PREFERENCE_KEY = 'geo-context';
@@ -81,12 +83,14 @@ export function useGeoContext(metadata: StructuredMetadata | null): GeoContext {
   const holidaysFetch = useAPIFetch<HolidaysResult>();
   const poiFetch = useAPIFetch<PoiResult[]>();
   const surveillanceFetch = useAPIFetch<PoiResult[]>();
+  const elevationFetch = useAPIFetch<ElevationResult>();
 
   const { request: reverseRequest, reset: reverseReset } = reverseFetch;
   const { request: weatherRequest, reset: weatherReset } = weatherFetch;
   const { request: holidaysRequest, reset: holidaysReset } = holidaysFetch;
   const { request: poiRequest, reset: poiReset } = poiFetch;
   const { request: surveillanceRequest, reset: surveillanceReset } = surveillanceFetch;
+  const { request: elevationRequest, reset: elevationReset } = elevationFetch;
 
   // The request key: the data that would be sent. A different photo → forget the previous
   // answers and abort whatever is in flight.
@@ -97,7 +101,8 @@ export function useGeoContext(metadata: StructuredMetadata | null): GeoContext {
     holidaysReset();
     poiReset();
     surveillanceReset();
-  }, [requestKey, reverseReset, weatherReset, holidaysReset, poiReset, surveillanceReset]);
+    elevationReset();
+  }, [requestKey, reverseReset, weatherReset, holidaysReset, poiReset, surveillanceReset, elevationReset]);
 
   useEffect(() => {
     if (!enabled || !requestCoords) return;
@@ -105,7 +110,8 @@ export function useGeoContext(metadata: StructuredMetadata | null): GeoContext {
     void reverseRequest(`/api/reverse-geocode?${params}`);
     void poiRequest(`/api/nearby-poi?${params}`);
     void surveillanceRequest(`/api/surveillance-candidates?${params}`);
-  }, [enabled, requestCoords, reverseRequest, poiRequest, surveillanceRequest]);
+    void elevationRequest(`/api/elevation?${params}`);
+  }, [enabled, requestCoords, reverseRequest, poiRequest, surveillanceRequest, elevationRequest]);
 
   useEffect(() => {
     if (!enabled || !requestCoords || !shotDate) return;
@@ -151,6 +157,7 @@ export function useGeoContext(metadata: StructuredMetadata | null): GeoContext {
     weather: { data: weatherFetch.data ?? null, status: statusOf(weatherFetch) },
     holidays: { data: holidaysFetch.data ?? null, status: statusOf(holidaysFetch) },
     poi: { items: poiItems, status: statusOf(poiFetch) },
-    surveillance: { items: surveillanceItems, status: statusOf(surveillanceFetch) }
+    surveillance: { items: surveillanceItems, status: statusOf(surveillanceFetch) },
+    elevation: { data: elevationFetch.data ?? null, status: statusOf(elevationFetch) }
   };
 }

@@ -251,6 +251,73 @@
   max-width: 62ch;
 }
 
+/* --- «How the photo was taken»: top-down sketch + list ------------------- */
+
+.fy-shot {
+  display: grid;
+  gap: 14px;
+}
+
+@media (min-width: 720px) {
+  .fy-shot {
+    grid-template-columns: 200px minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.fy-shot-diagram {
+  display: block;
+  width: 200px;
+  height: 200px;
+  max-width: 100%;
+}
+
+.fy-shot-diagram text {
+  font-family: var(--v4-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  fill: var(--v4-muted);
+}
+
+.fy-shot-rim {
+  fill: none;
+  stroke: var(--v4-line);
+  stroke-width: 1;
+}
+
+.fy-shot-tick,
+.fy-shot-nose {
+  stroke: var(--v4-fg);
+  stroke-width: 1;
+}
+
+.fy-shot-cone {
+  fill: var(--v4-orange);
+  fill-opacity: 0.16;
+  stroke: var(--v4-orange);
+  stroke-width: 1;
+}
+
+.fy-shot-phone {
+  fill: var(--v4-fg);
+}
+
+.fy-shot-ray {
+  stroke: var(--v4-line);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.fy-shot-sun {
+  fill: var(--v4-orange-text);
+  stroke: var(--v4-orange-text);
+  stroke-width: 1;
+}
+
+.fy-shot-sun--set {
+  fill: none;
+}
+
 /* Raw data table at the end of section 02: plain button, table appears under it. */
 .fy-raw {
   margin-top: 16px;

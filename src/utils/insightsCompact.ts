@@ -74,6 +74,11 @@ export function localizePlaceParts(
   return { place, accuracy };
 }
 
+/** Dictionary key for an OSM venue type, or null when there is no dedicated label. */
+export function categoryKey(category: string): MessageKey | null {
+  return (CATEGORY_KEYS[category.toLowerCase()] as MessageKey | undefined) ?? null;
+}
+
 export function localizeCategoryKey(
   category: string,
   t: (key: MessageKey, params?: Record<string, string | number>) => string

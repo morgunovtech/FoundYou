@@ -217,3 +217,26 @@ describe('reverse-geocode: upstream failures', () => {
     expect(text).not.toContain('SECRET');
   });
 });
+
+describe('reverse-geocode: place type', () => {
+  it('forwards what the point resolved to (category, type, addresstype, name) and drops blanks', async () => {
+    mockFetch(async () =>
+      jsonResponse({
+        display_name: 'Lotus Hotel, 83-3, Rakatboshi Street, Yakkasaray, Tashkent, Uzbekistan',
+        category: 'tourism',
+        type: 'hotel',
+        addresstype: 'tourism',
+        name: 'Lotus Hotel',
+        address: { road: 'Rakatboshi Street', house_number: '83-3', city: 'Tashkent', country: 'Uzbekistan', country_code: 'uz' }
+      })
+    );
+    const { body } = await callJson<ApiResponse<ReverseGeocodeResult>>(onRequest, urlOf(PATH, TASHKENT));
+    expect(body.data).toMatchObject({ category: 'tourism', type: 'hotel', addressType: 'tourism', name: 'Lotus Hotel', houseNumber: '83-3' });
+
+    mockFetch(async () => jsonResponse({ display_name: 'Road', category: '', type: 42, address: {} }));
+    const blank = await callJson<ApiResponse<ReverseGeocodeResult>>(onRequest, urlOf(PATH, { lat: '10', lon: '10' }));
+    expect(blank.body.data?.category).toBeUndefined();
+    expect(blank.body.data?.type).toBeUndefined();
+    expect(blank.body.data?.name).toBeUndefined();
+  });
+});

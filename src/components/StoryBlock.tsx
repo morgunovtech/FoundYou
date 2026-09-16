@@ -13,6 +13,9 @@ import type { PlateCandidate } from '../utils/plates';
 import type { ContentCredentialsState } from '../hooks/useContentCredentials';
 import { formatCoords, formatDistance, localizeCategoryKey, localizePlaceParts } from '../utils/insightsCompact';
 import { capitalize, describeWeather } from '../utils/weather';
+import { buildStance, formatOffset, type CompassPoint, type ElevationVerdict, type RelativeDirection, type SunPhase, type InstantSource } from '../utils/stance';
+import { placeTypeLabel } from '../utils/placeType';
+import { ShotDiagram } from './ShotDiagram';
 import { formatBytes, formatDetailedDate, formatDimensions, formatMegapixels, describeFileType } from '../utils/format';
 import { googleMapsLink, streetViewLink } from '../utils/mapLinks';
 import type { PoiResult } from '../types/api';
@@ -35,6 +38,36 @@ interface StoryBlockProps {
 }
 
 const PRO_ROW_CAP = 200;
+
+const COMPASS_KEYS: Record<CompassPoint, MessageKey> = {
+  N: 'compassN',
+  NE: 'compassNE',
+  E: 'compassE',
+  SE: 'compassSE',
+  S: 'compassS',
+  SW: 'compassSW',
+  W: 'compassW',
+  NW: 'compassNW'
+};
+const SUN_RELATIVE_KEYS: Record<RelativeDirection, MessageKey> = {
+  front: 'stanceSunFront',
+  right: 'stanceSunRight',
+  behind: 'stanceSunBehind',
+  left: 'stanceSunLeft'
+};
+const SUN_PHASE_KEYS: Record<Exclude<SunPhase, 'night'>, MessageKey> = { twilight: 'stancePhaseTwilight', low: 'stancePhaseLow', day: 'stancePhaseDay' };
+const TIME_SOURCE_KEYS: Record<InstantSource, MessageKey> = {
+  'exif-offset': 'stanceTimeExif',
+  'gps-time': 'stanceTimeGps',
+  'place-zone': 'stanceTimePlace',
+  longitude: 'stanceTimeLongitude'
+};
+const TERRAIN_KEYS: Record<ElevationVerdict, MessageKey> = {
+  ground: 'stanceTerrainGround',
+  above: 'stanceTerrainAbove',
+  high: 'stanceTerrainHigh',
+  below: 'stanceTerrainBelow'
+};
 
 /**
  * Section 02 — what the photo says about you: the verdict (share / clean first / do not
@@ -79,6 +112,21 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     const names = Array.from(new Set(geo.holidays.data.holidays.map((h) => h.localName || h.name).filter(Boolean)));
     return names.length > 0 ? names.join(', ') : null;
   }, [remote, geo.holidays.data]);
+
+  // «How the photo was taken»: derived from GPS, time and camera tags; the place zone and the
+  // terrain height come from the lookups when they are allowed and have answered.
+  const stance = useMemo(
+    () =>
+      metadata?.gps
+        ? buildStance({
+            metadata,
+            placeTimezone: remote ? geo.weather.data?.timezone ?? null : null,
+            terrainElevation: remote ? geo.elevation.data?.elevation ?? null : null
+          })
+        : null,
+    [metadata, remote, geo.weather.data?.timezone, geo.elevation.data?.elevation]
+  );
+  const placeType = useMemo(() => (remote ? placeTypeLabel(geo.reverse.data) : null), [remote, geo.reverse.data]);
 
   const verdict = useMemo(() => (profile ? buildVerdict(profile, t) : null), [profile, t]);
   const story = useMemo(
@@ -193,6 +241,19 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
               </dd>
             </>
           ) : null}
+          {placeType ? (
+            <>
+              <dt>{t('insightCompactPlaceType')}</dt>
+              <dd>
+                <span>
+                  {geo.reverse.data?.name
+                    ? t('placeTypeNamed', { type: t(placeType.key, placeType.params), name: geo.reverse.data.name })
+                    : t(placeType.key, placeType.params)}
+                  {geo.reverse.data?.houseNumber ? `, ${t('placeTypeHouseNumber', { number: geo.reverse.data.houseNumber })}` : ''}
+                </span>
+              </dd>
+            </>
+          ) : null}
           <dt>{t('insightCompactCoordinates')}</dt>
           <dd>
             <span className="fy-mono">{formatCoords(geo.coords.lat, geo.coords.lon)}</span>
@@ -277,6 +338,88 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       </p>
     </div>
   ) : null;
+
+  const stanceRow = (() => {
+    if (!stance || !geo.coords) return null;
+    const held =
+      stance.orientation === 'landscape'
+        ? t('stanceHeldLandscape')
+        : stance.orientation === 'square'
+        ? t('stanceHeldSquare')
+        : stance.orientation === 'portrait'
+        ? t('stanceHeldPortrait')
+        : t('stanceHeldUnknown');
+    const camera = stance.cameraSide === 'front' ? t('stanceCameraFront') : stance.cameraSide === 'rear' ? t('stanceCameraRear') : t('stanceCameraUnknown');
+    const sunText = (() => {
+      if (!stance.sun || !stance.instant) return t('stanceSunUnknown');
+      const source = t(TIME_SOURCE_KEYS[stance.instant.source]);
+      if (stance.sun.phase === 'night') return `${t('stancePhaseNight', { altitude: stance.sun.altitude })} (${source})`;
+      const relative = stance.sun.relative ? `${t(SUN_RELATIVE_KEYS[stance.sun.relative])}, ` : '';
+      return `${relative}${t('stanceSunAltitude', { altitude: stance.sun.altitude })}, ${t(SUN_PHASE_KEYS[stance.sun.phase])} (${source})`;
+    })();
+    const speedText =
+      stance.speedKmh == null || stance.movement == null
+        ? t('stanceSpeedUnknown')
+        : stance.movement === 'still'
+        ? t('stanceStill')
+        : stance.movement === 'walking'
+        ? t('stanceWalking', { speed: stance.speedKmh })
+        : t('stanceVehicle', { speed: stance.speedKmh });
+    const clockText = stance.clock
+      ? stance.clock.mismatch
+        ? t('stanceClockMismatch', { camera: formatOffset(stance.clock.cameraOffsetMinutes), place: formatOffset(stance.clock.placeOffsetMinutes) })
+        : t('stanceClockMatch', { offset: formatOffset(stance.clock.placeOffsetMinutes) })
+      : stance.instant?.cameraOffsetMinutes != null
+      ? `UTC${formatOffset(stance.instant.cameraOffsetMinutes)}`
+      : t('stanceClockUnknown');
+    const terrainText = (() => {
+      if (stance.elevation) {
+        return t(TERRAIN_KEYS[stance.elevation.verdict], {
+          gps: stance.elevation.gps,
+          terrain: stance.elevation.terrain,
+          diff: Math.abs(stance.elevation.difference)
+        });
+      }
+      if (metadata?.gps?.altitude == null) return t('stanceTerrainNoGps');
+      if (!remote) return t('stanceTerrainPending');
+      if (geo.elevation.status.loading) return t('insightCompactLoading');
+      if (geo.elevation.status.error) return t('stanceTerrainUnavailable');
+      return t('stanceTerrainPending');
+    })();
+    return (
+      <FactRow key="stance" title={t('stanceTitle')} severity="low" points={0} value={null} sub={null} soWhat={t('stanceSoWhat')}>
+        <div className="fy-fact-details fy-shot">
+          <ShotDiagram
+            stance={stance}
+            label={t('stanceDiagramLabel')}
+            points={{ n: t('compassShortN'), e: t('compassShortE'), s: t('compassShortS'), w: t('compassShortW') }}
+          />
+          <dl className="fy-spec fy-spec--tight">
+            <dt>{t('stanceStood')}</dt>
+            <dd>
+              <span className="fy-mono">{formatCoords(geo.coords.lat, geo.coords.lon)}</span>
+              {accuracyLabel ? <span className="fy-muted">{accuracyLabel}</span> : null}
+            </dd>
+            <dt>{t('stanceLooked')}</dt>
+            <dd>{stance.heading ? t('stanceHeading', { point: t(COMPASS_KEYS[stance.heading.point]), degrees: stance.heading.degrees }) : t('stanceHeadingUnknown')}</dd>
+            <dt>{t('stanceHeld')}</dt>
+            <dd>{`${held}, ${camera}, ${t('stanceFov', { fov: stance.fovDegrees })}`}</dd>
+            <dt>{t('stanceSun')}</dt>
+            <dd>{sunText}</dd>
+            <dt>{t('stanceSpeed')}</dt>
+            <dd>{speedText}</dd>
+            <dt>{t('stanceClock')}</dt>
+            <dd>{clockText}</dd>
+            <dt>{t('stanceTerrain')}</dt>
+            <dd>
+              <span>{terrainText}</span>
+              {!stance.elevation && remote ? retryButton(geo.elevation.status) : null}
+            </dd>
+          </dl>
+        </div>
+      </FactRow>
+    );
+  })();
 
   const textDetails = (() => {
     if (ocrLoading) {
@@ -429,7 +572,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       </div>
 
       <div className="fy-facts">
-        {factOrder.map(renderFact)}
+        {factOrder.map((kind) => (kind === 'location' ? [renderFact(kind), stanceRow] : renderFact(kind)))}
         <FactRow title={t('factFile')} severity="low" points={0} value={null} sub={fileFactSub} soWhat={t('factFileSoWhat')}>
           <dl className="fy-spec fy-spec--tight">
             {fileRows.map(([label, value]) => (
