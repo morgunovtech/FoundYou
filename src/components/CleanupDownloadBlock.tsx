@@ -461,6 +461,9 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     if (verifyResult.trailingBytesBefore) {
       extra.push(t('verifyTrailer', { size: formatBytes(verifyResult.trailingBytesBefore, lang) }));
     }
+    if (verifyResult.thumbnailBytesBefore) {
+      extra.push(t('verifyThumbnail', { size: formatBytes(verifyResult.thumbnailBytesBefore, lang) }));
+    }
     if (verifyResult.after == null) {
       return { tone: 'neutral' as const, text: t('verifyUnavailable', { before: verifyResult.before }), extra };
     }

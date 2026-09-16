@@ -1,5 +1,6 @@
 import type { AppleMakerNote } from '../utils/appleMakerNote';
 import type { SamsungTrailer } from '../utils/samsungTrailer';
+import type { EmbeddedThumbnail } from '../utils/fileHistory';
 
 export interface BasicFileInfo {
   file: File;
@@ -70,6 +71,8 @@ export interface StructuredMetadata {
   apple?: AppleMakerNote;
   /** Samsung trailer after the JPEG EOI: SIM country, UTC stamp, Motion Photo video. */
   samsung?: SamsungTrailer;
+  /** The IFD1 thumbnail the camera embedded: the frame before any crop or retouch. */
+  thumbnail?: EmbeddedThumbnail;
 }
 
 export type ManualCoordinates = {

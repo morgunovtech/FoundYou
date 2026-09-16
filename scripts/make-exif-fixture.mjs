@@ -15,6 +15,10 @@
  * --apple-uptime 1051200 (an Apple MakerNote with RunTime, a Live Photo id, a burst id and
  * the portrait capture mode), --samsung-mcc 434 (a Samsung SEF trailer after the EOI with
  * MCC_Data, Image_UTC_Data and a small MotionPhoto_Data payload).
+ *
+ * File history: --modify-date "2026:09:20 11:00:00" (IFD0 ModifyDate later than the shot),
+ * --exif-size 4032x3024 (the pixel size the camera "wrote", to make the file look downscaled),
+ * --thumbnail other.jpg (an IFD1 thumbnail; pass a different picture to make it mismatch).
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -53,6 +57,9 @@ const focal35 = opt('focal35') != null ? Number(opt('focal35')) : null;
 const software = opt('software', null);
 const appleUptime = opt('apple-uptime') != null ? Number(opt('apple-uptime')) : null;
 const samsungMcc = opt('samsung-mcc', null);
+const modifyDate = opt('modify-date', null);
+const exifSize = opt('exif-size', null);
+const thumbnailPath = opt('thumbnail', null);
 
 const ascii = (s) => Buffer.from(`${s}\0`, 'latin1');
 const short = (v) => {
@@ -206,6 +213,11 @@ if (appleUptime != null) {
   const note = appleMakerNote(appleUptime);
   exifEntries.push({ tag: 0x927c, type: UNDEFINED, count: note.length, data: note });
 }
+if (exifSize) {
+  const [w, h] = exifSize.split('x').map(Number);
+  exifEntries.push({ tag: 0xa002, type: LONG, count: 1, data: long(w) });
+  exifEntries.push({ tag: 0xa003, type: LONG, count: 1, data: long(h) });
+}
 if (offset) exifEntries.push({ tag: 0x9011, type: ASCII, count: offset.length + 1, data: ascii(offset) });
 if (focal35 != null) exifEntries.push({ tag: 0xa405, type: SHORT, count: 1, data: short(focal35) });
 if (lens) exifEntries.push({ tag: 0xa434, type: ASCII, count: lens.length + 1, data: ascii(lens) });
@@ -247,6 +259,7 @@ const ifd0Entries = [
   { tag: 0x010f, type: ASCII, count: make.length + 1, data: ascii(make) },
   { tag: 0x0110, type: ASCII, count: model.length + 1, data: ascii(model) },
   ...(software ? [{ tag: 0x0131, type: ASCII, count: software.length + 1, data: ascii(software) }] : []),
+  ...(modifyDate ? [{ tag: 0x0132, type: ASCII, count: modifyDate.length + 1, data: ascii(modifyDate) }] : []),
   { tag: 0x8769, type: LONG, count: 1, data: long(0) },
   { tag: 0x8825, type: LONG, count: 1, data: long(0) }
 ];
@@ -256,11 +269,25 @@ const gpsOffset = exifOffset + ifdLength(exifEntries);
 ifd0Entries.find((e) => e.tag === 0x8769).data = long(exifOffset);
 ifd0Entries.find((e) => e.tag === 0x8825).data = long(gpsOffset);
 
+// IFD1 (the thumbnail directory) follows the GPS IFD; IFD0's "next IFD" pointer leads to it.
+const thumbnail = thumbnailPath ? readFileSync(thumbnailPath) : null;
+const ifd1Offset = gpsOffset + ifdLength(gpsEntries);
+const ifd1Entries = thumbnail
+  ? [
+      { tag: 0x0103, type: SHORT, count: 1, data: short(6) },
+      { tag: 0x0201, type: LONG, count: 1, data: long(0) },
+      { tag: 0x0202, type: LONG, count: 1, data: long(thumbnail.length) }
+    ]
+  : [];
+if (thumbnail) ifd1Entries[1].data = long(ifd1Offset + ifdLength(ifd1Entries));
+const ifd0Buf = ifd(ifd0Entries, ifd0Offset);
+if (thumbnail) ifd0Buf.writeUInt32LE(ifd1Offset, 2 + ifd0Entries.length * 12); // IFD0's «next IFD» pointer → IFD1
 const tiff = Buffer.concat([
   Buffer.from([0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00]),
-  ifd(ifd0Entries, ifd0Offset),
+  ifd0Buf,
   ifd(exifEntries, exifOffset),
-  ifd(gpsEntries, gpsOffset)
+  ifd(gpsEntries, gpsOffset),
+  ...(thumbnail ? [ifd(ifd1Entries, ifd1Offset), thumbnail] : [])
 ]);
 const payload = Buffer.concat([Buffer.from('Exif\0\0', 'latin1'), tiff]);
 const marker = Buffer.alloc(4);

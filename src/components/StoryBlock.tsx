@@ -6,7 +6,9 @@ import type { OCRResult } from '../hooks/useOCR';
 import type { ProData } from '../App';
 import { useI18n, useT, type MessageKey } from '../i18n';
 import { useGeoContext, type RemoteStatus } from '../hooks/useGeoContext';
-import { buildStory } from '../utils/story';
+import { buildStory, ORIGIN_KINDS } from '../utils/story';
+import { buildFileHistory, type FileEvent } from '../utils/fileHistory';
+import { DRIFT_EXACT_SECONDS } from '../utils/timeProfile';
 import { buildProGroups } from '../utils/proTable';
 import { geotagTipKey } from '../utils/geotagTips';
 import type { PlateCandidate } from '../utils/plates';
@@ -20,7 +22,7 @@ import type { AppleCaptureType } from '../utils/appleMakerNote';
 import { mccCountry } from '../utils/samsungTrailer';
 import { placeTypeLabel } from '../utils/placeType';
 import { ShotDiagram } from './ShotDiagram';
-import { formatBytes, formatDetailedDate, formatDimensions, formatMegapixels, describeFileType } from '../utils/format';
+import { formatBytes, formatCompactDate, formatDetailedDate, formatDimensions, formatMegapixels, describeFileType } from '../utils/format';
 import { googleMapsLink, streetViewLink } from '../utils/mapLinks';
 import type { PoiResult } from '../types/api';
 import { SectionHead } from './SectionHead';
@@ -508,6 +510,15 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     if (days === 0) parts.push(t('durationMinutesShort', { count: minutes }));
     return parts.join(' ');
   };
+  /** «2 мин 40 с» / «12 с» for a clock drift. */
+  const formatSeconds = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const rest = seconds % 60;
+    const parts: string[] = [];
+    if (minutes > 0) parts.push(t('durationMinutesShort', { count: minutes }));
+    if (rest > 0 || minutes === 0) parts.push(t('durationSecondsShort', { count: rest }));
+    return parts.join(' ');
+  };
   /** «2 г. 11 мес.» for an age in months. */
   const formatMonthsAge = (months: number) => {
     const years = Math.floor(months / 12);
@@ -576,6 +587,21 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
             <>
               <dt>{t('timeDiff')}</dt>
               <dd>{diffText}</dd>
+            </>
+          ) : null}
+          {tp.driftSeconds != null ? (
+            <>
+              <dt>{t('timeDrift')}</dt>
+              <dd>
+                <span>
+                  {Math.abs(tp.driftSeconds) <= DRIFT_EXACT_SECONDS
+                    ? t('driftExact', { seconds: DRIFT_EXACT_SECONDS })
+                    : tp.driftSeconds > 0
+                    ? t('driftAhead', { delta: formatSeconds(tp.driftSeconds) })
+                    : t('driftBehind', { delta: formatSeconds(-tp.driftSeconds) })}
+                </span>
+                <span className="fy-muted">{t('driftHint')}</span>
+              </dd>
             </>
           ) : null}
           <dt>{t('timeAge')}</dt>
@@ -763,7 +789,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   })();
 
   const displayMime = fileInfo.originalMimeType ?? fileInfo.mimeType;
-  const { typeKey, format } = describeFileType(displayMime, fileInfo.originalName ?? fileInfo.file.name);
+  const { format } = describeFileType(displayMime, fileInfo.originalName ?? fileInfo.file.name);
   const metadataFieldCount = useMemo(() => {
     if (!metadata) return 0;
     return (['exif', 'xmp', 'iptc', 'icc', 'png'] as const).reduce(
@@ -771,23 +797,162 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       0
     );
   }, [metadata]);
-  const fileRows: Array<[string, string]> = [
-    [t('nameLabelSource'), fileInfo.originalName ?? fileInfo.file.name],
-    [t('typeLabel'), t(typeKey as MessageKey)],
-    [t('formatLabelSource'), format],
-    [t('sizeLabelSource'), formatBytes(fileInfo.originalSizeBytes ?? fileInfo.sizeBytes, lang)],
-    [t('resolutionLabel'), `${formatDimensions(fileInfo.width, fileInfo.height)} · ${formatMegapixels(fileInfo.width, fileInfo.height, lang)} Mp`],
-    [t('metadataFieldsLabel'), metadataFieldCount ? new Intl.NumberFormat(lang).format(metadataFieldCount) : t('emptyValue')]
-  ];
-  // The filename pattern names a platform; its device guess only matters when EXIF has no model.
-  const fileFactSub = proData?.filename.platform
-    ? `${proData.filename.platform}${!metadata?.cameraModel && proData.filename.device ? ` · ${proData.filename.device}` : ''}`
-    : null;
+  // «История файла»: the events derived from tags and bytes, in the order they happened.
+  const history = useMemo(
+    () =>
+      buildFileHistory({
+        metadata,
+        editing: proData?.editing ?? null,
+        stripped: proData?.stripped ?? null,
+        credentials: credentials.data ?? null,
+        lastModified: (fileInfo.originalFile ?? fileInfo.file).lastModified || null,
+        width: fileInfo.originalWidth ?? fileInfo.width,
+        height: fileInfo.originalHeight ?? fileInfo.height,
+        phash: proData?.hash?.phash ?? null
+      }),
+    [metadata, proData, credentials.data, fileInfo]
+  );
+
+  const eventText = (event: FileEvent): { text: string; why?: string } => {
+    switch (event.kind) {
+      case 'shot':
+        return { text: event.agent ? t('historyShot', { device: event.agent }) : t('historyShotUnknownDevice') };
+      case 'modified':
+        return { text: event.agent ? t('historyModifiedWith', { software: event.agent }) : t('historyModified') };
+      case 'resized':
+        return {
+          text: t('historyResized', {
+            from: formatDimensions(event.from?.width ?? 0, event.from?.height ?? 0),
+            to: formatDimensions(event.to?.width ?? 0, event.to?.height ?? 0)
+          })
+        };
+      case 'messenger':
+        return { text: t('historyMessenger', { platform: event.agent ?? '' }), why: event.evidence ?? undefined };
+      case 'stripped':
+        return { text: t('historyStripped'), why: event.evidence ?? undefined };
+      case 'signed':
+        return { text: t('historySigned', { signer: event.agent ?? 'C2PA' }) };
+      case 'ai':
+        return { text: t('historyAi', { tool: event.agent ?? 'AI' }) };
+      case 'disk':
+        return { text: t('historyDisk') };
+      case 'thumbnail':
+        return {
+          text: event.same ? t('historyThumbSame') : t('historyThumbDiffers'),
+          why: metadata?.thumbnail ? t('historyThumbWhy', { w: metadata.thumbnail.width, h: metadata.thumbnail.height }) : undefined
+        };
+      default:
+        return { text: '' };
+    }
+  };
+
+  /** «Откуда файл»: device, file history and authenticity in one card. */
+  const originCard = (() => {
+    const parts = Array.from(ORIGIN_KINDS)
+      .map((kind) => sectionsByKind.get(kind))
+      .filter((section): section is ProfileSection => Boolean(section));
+    if (!profile || parts.length === 0) return null;
+    const points = parts.reduce((sum, section) => sum + section.leakPoints, 0);
+    const severity = parts.some((p) => p.severity === 'high') ? 'high' : parts.some((p) => p.severity === 'medium') ? 'medium' : 'low';
+    const ai = sectionsByKind.get('ai');
+    const serial = sectionsByKind.get('serial');
+    const headline = deviceProfile ? [deviceProfile.make, deviceProfile.model].filter(Boolean).join(' ') : sectionsByKind.get('origin')?.text ?? null;
+    const fileLine = t('historyFile', {
+      name: fileInfo.originalName ?? fileInfo.file.name,
+      format,
+      size: formatBytes(fileInfo.originalSizeBytes ?? fileInfo.sizeBytes, lang),
+      mp: formatMegapixels(fileInfo.width, fileInfo.height, lang)
+    });
+    return (
+      <FactRow
+        key="origin"
+        title={t('factOriginTitle')}
+        severity={severity}
+        points={points}
+        value={headline}
+        sub={null}
+        soWhat={t('originSoWhat')}
+        todo={{ text: t('todoOriginMerged'), buttons: [{ label: t('verdictCta'), onClick: onMakeSafeCopy }] }}
+      >
+        <div className="fy-fact-details fy-origin">
+          {deviceDetails ? (
+            <>
+              <h4 className="v4-h3">{t('deviceSubTitle')}</h4>
+              {deviceDetails}
+            </>
+          ) : null}
+          <h4 className="v4-h3">{t('historyTitle')}</h4>
+          <ol className="fy-timeline">
+            <li>
+              <span className="fy-timeline-when">{t('factFile')}</span>
+              <span className="fy-timeline-body">
+                <span>{fileLine}</span>
+                <span className="fy-muted">
+                  {metadataFieldCount ? t('historyFields', { count: new Intl.NumberFormat(lang).format(metadataFieldCount) }) : t('metadataFieldsLabel') + ': 0'}
+                </span>
+              </span>
+            </li>
+            {history.map((event, index) => {
+              const { text, why } = eventText(event);
+              const when = event.at ? formatCompactDate(event.at, lang) ?? event.at : t('historyWhenUnknown');
+              const thumb = event.kind === 'thumbnail' ? metadata?.thumbnail : null;
+              return (
+                <li key={`${event.kind}-${index}`}>
+                  <span className="fy-timeline-when">{when}</span>
+                  <span className="fy-timeline-body">
+                    {thumb ? (
+                      <span className="fy-timeline-thumb">
+                        <img src={thumb.url} alt="" width={96} />
+                        <span>{text}</span>
+                      </span>
+                    ) : (
+                      <span>{text}</span>
+                    )}
+                    {why ? <span className="fy-muted">{why}</span> : null}
+                  </span>
+                </li>
+              );
+            })}
+            {history.length <= 1 ? (
+              <li>
+                <span className="fy-timeline-when">{t('historyWhenUnknown')}</span>
+                <span className="fy-timeline-body">{t('historyNone')}</span>
+              </li>
+            ) : null}
+          </ol>
+          {ai || serial ? (
+            <>
+              <h4 className="v4-h3">{t('authenticityTitle')}</h4>
+              <dl className="fy-spec fy-spec--tight">
+                {ai ? (
+                  <>
+                    <dt>{ai.title}</dt>
+                    <dd>
+                      <span>{ai.text}</span>
+                      {ai.subtext ? <span className="fy-muted">{ai.subtext}</span> : null}
+                    </dd>
+                  </>
+                ) : null}
+                {serial ? (
+                  <>
+                    <dt>{serial.title}</dt>
+                    <dd className="fy-mono">{serial.text}</dd>
+                  </>
+                ) : null}
+              </dl>
+              {credentialsDetails}
+            </>
+          ) : null}
+        </div>
+      </FactRow>
+    );
+  })();
 
   /* ── fact order and extras ────────────────────────────── */
 
-  // The SHA-256 fingerprint stays in the raw data table (it still counts in the score).
-  const factOrder: ProfileSectionKind[] = ['location', 'time', 'device', 'people', 'text', 'plates', 'serial', 'origin', 'editing', 'ai', 'content'];
+  // The SHA-256 fingerprint stays in the raw data table (it still counts in the score); device,
+  // serial, origin, editing, AI and content type render together as the «Откуда файл» card.
+  const factOrder: ProfileSectionKind[] = ['location', 'time', 'people', 'text', 'plates'];
 
   /** The «what to do» part of a fact: the sentence and the buttons that act on it. */
   const todoFor = (kind: ProfileSectionKind, section: ProfileSection | null): FactTodo | null => {
@@ -797,18 +962,12 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
         return { text: t('todoLocation'), buttons: [copy, { label: t('todoLocationTip'), onClick: openGeotagTip }] };
       case 'time':
         return section && section.leakPoints > 0 ? { text: t('todoTime'), buttons: [copy] } : null;
-      case 'device':
-        return { text: t('todoDevice'), buttons: [copy] };
       case 'people':
         return { text: t('todoPeople'), buttons: [{ label: t('todoPeopleButton'), onClick: actions.blurFaces }, copy] };
       case 'text':
         return { text: t('todoText'), buttons: [{ label: t('todoTextButton'), onClick: actions.blurText }] };
       case 'plates':
         return { text: t('todoPlates'), buttons: [{ label: t('todoPlatesButton'), onClick: actions.blurPlates }] };
-      case 'serial':
-        return { text: t('todoSerial'), buttons: [copy] };
-      case 'origin':
-        return { text: t('todoOrigin'), buttons: [copy] };
       default:
         return null;
     }
@@ -878,24 +1037,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
 
       <div className="fy-facts">
         {factOrder.map((kind) => (kind === 'location' ? [renderFact(kind), stanceRow] : renderFact(kind)))}
-        <FactRow
-          title={t('factFile')}
-          severity="low"
-          points={0}
-          value={null}
-          sub={fileFactSub}
-          soWhat={t('factFileSoWhat')}
-          todo={{ text: t('todoFile'), buttons: [{ label: t('verdictCta'), onClick: onMakeSafeCopy }] }}
-        >
-          <dl className="fy-spec fy-spec--tight">
-            {fileRows.map(([label, value]) => (
-              <React.Fragment key={label}>
-                <dt>{label}</dt>
-                <dd>{value}</dd>
-              </React.Fragment>
-            ))}
-          </dl>
-        </FactRow>
+        {originCard}
       </div>
 
       {profile ? (

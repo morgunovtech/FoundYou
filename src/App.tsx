@@ -613,13 +613,24 @@ const App: React.FC = () => {
       before: metadataFieldCount,
       after: remaining,
       phashDistance,
-      trailingBytesBefore: metadata?.samsung?.bytes ?? 0
+      trailingBytesBefore: metadata?.samsung?.bytes ?? 0,
+      thumbnailBytesBefore: metadata?.thumbnail?.bytes ?? 0
     });
     if (import.meta.env.DEV) {
       console.info('[pipeline] export:done', { mime: actualMime, remaining, phashDistance });
     }
     return { file: new File([blob], fileName, { type: actualMime }), requested, actualMime };
-  }, [fileInfo, createProcessedCanvas, qualityMode, renameFile, outputFormat, metadataFieldCount, proData?.hash?.phash, metadata?.samsung?.bytes]);
+  }, [
+    fileInfo,
+    createProcessedCanvas,
+    qualityMode,
+    renameFile,
+    outputFormat,
+    metadataFieldCount,
+    proData?.hash?.phash,
+    metadata?.samsung?.bytes,
+    metadata?.thumbnail?.bytes
+  ]);
 
   const triggerDownload = useCallback((file: File) => {
     const link = document.createElement('a');

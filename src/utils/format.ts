@@ -138,6 +138,31 @@ export function formatDetailedDate(value: string | Date | undefined, locale?: st
   }
 }
 
+const COMPACT_DATE_OPTIONS: Intl.DateTimeFormatOptions = {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false
+};
+
+/**
+ * Short date for narrow columns («14.06.2026, 18:30»). Same input rules as `formatDetailedDate`:
+ * a wall-clock string renders digit-for-digit, a zoned value renders in the viewer's zone.
+ */
+export function formatCompactDate(value: string | Date | undefined, locale?: string): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === 'string' && !hasZoneDesignator(value)) {
+    const parts = parseWallClock(value);
+    if (!parts) return undefined;
+    return new Intl.DateTimeFormat(locale, { ...COMPACT_DATE_OPTIONS, timeZone: 'UTC' }).format(wallClockAsUtcDate(parts));
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return new Intl.DateTimeFormat(locale, COMPACT_DATE_OPTIONS).format(date);
+}
+
 function capitalizeFirstLetter(value: string): string {
   if (!value) return value;
   return value.charAt(0).toUpperCase() + value.slice(1);

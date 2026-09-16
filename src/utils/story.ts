@@ -150,6 +150,9 @@ export interface Verdict {
   ctaKey: 'verdictCta' | 'verdictCtaSoft';
 }
 
+/** Sections rendered together in the «Откуда файл» card. */
+export const ORIGIN_KINDS = new Set<ProfileSectionKind>(['device', 'serial', 'origin', 'editing', 'ai', 'content']);
+
 const VERDICT_KEYS: Record<Verdict['level'], MessageKey> = {
   low: 'verdictLow',
   medium: 'verdictMedium',
@@ -159,12 +162,14 @@ const VERDICT_KEYS: Record<Verdict['level'], MessageKey> = {
 
 export function buildVerdict(profile: DigitalProfile, t: Translate): Verdict {
   const level = profile.leakLevel.level;
-  // The fingerprint has no card of its own (it lives in the raw data), so it is never a reason.
-  const reasons = [...profile.sections]
-    .filter((s) => s.leakPoints > 0 && s.kind !== 'hash')
-    .sort((a, b) => b.leakPoints - a.leakPoints)
-    .slice(0, 3)
-    .map((s) => s.title);
+  // The fingerprint has no card of its own (it lives in the raw data), so it is never a reason;
+  // device, serial, origin, editing and AI share the «Откуда файл» card and count once.
+  const reasons: string[] = [];
+  for (const s of [...profile.sections].filter((s) => s.leakPoints > 0 && s.kind !== 'hash').sort((a, b) => b.leakPoints - a.leakPoints)) {
+    const title = ORIGIN_KINDS.has(s.kind) ? t('factOriginTitle') : s.title;
+    if (!reasons.includes(title)) reasons.push(title);
+    if (reasons.length === 3) break;
+  }
   return {
     level,
     title: t(VERDICT_KEYS[level]),

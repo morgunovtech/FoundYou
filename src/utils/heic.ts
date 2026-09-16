@@ -1,4 +1,6 @@
 import exifr from 'exifr';
+import { phashFromImage } from './phash';
+import type { EmbeddedThumbnail } from './fileHistory';
 
 type RawMetadata = {
   exifData: Record<string, unknown> | undefined;
@@ -281,6 +283,36 @@ async function isPngFile(file: File): Promise<boolean> {
     return PNG_SIGNATURE.every((byte, index) => head[index] === byte);
   } catch {
     return false;
+  }
+}
+
+/**
+ * The IFD1 thumbnail the camera embedded (JPEG bytes), decoded for its size and perceptual
+ * hash. HEIC keeps it inside the Exif item, so the TIFF is cut out first. Null when there is
+ * none or the browser cannot decode it. The caller owns the blob URL.
+ */
+export async function readEmbeddedThumbnail(file: File): Promise<EmbeddedThumbnail | null> {
+  let source: File | Uint8Array = file;
+  if (isHeicFile(file)) {
+    const exifTiff = await extractExifFromHeic(file);
+    if (!exifTiff) return null;
+    source = exifTiff;
+  }
+  const bytes = (await exifr.thumbnail(source as Parameters<typeof exifr.thumbnail>[0])) as Uint8Array | undefined;
+  if (!bytes || bytes.length < 100) return null;
+  const blob = new Blob([Uint8Array.from(bytes)], { type: 'image/jpeg' });
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(blob);
+  } catch {
+    return null;
+  }
+  try {
+    const { width, height } = bitmap;
+    const phash = phashFromImage(bitmap);
+    return { url: URL.createObjectURL(blob), width, height, bytes: bytes.length, phash };
+  } finally {
+    bitmap.close();
   }
 }
 

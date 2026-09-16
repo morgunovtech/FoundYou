@@ -48,4 +48,6 @@ export interface VerifyResult {
   phashDistance?: number | null;
   /** Bytes after the end of the image in the original (Samsung trailer, Motion Photo); the export has none. */
   trailingBytesBefore?: number;
+  /** Size of the embedded thumbnail in the original; the canvas export carries none. */
+  thumbnailBytesBefore?: number;
 }

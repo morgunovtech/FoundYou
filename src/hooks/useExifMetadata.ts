@@ -7,6 +7,8 @@ import { extractMetadataFromOriginal } from '../utils/heic';
 import { formatWallClock, parseWallClock, type WallClockParts } from '../utils/format';
 import { parseAppleMakerNote } from '../utils/appleMakerNote';
 import { readSamsungTrailer } from '../utils/samsungTrailer';
+import { readEmbeddedThumbnail } from '../utils/heic';
+import type { EmbeddedThumbnail } from '../utils/fileHistory';
 
 interface UseExifMetadataResult {
   metadata: StructuredMetadata | null;
@@ -22,6 +24,7 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
 
   useEffect(() => {
     let active = true;
+    let thumbnailUrl: string | null = null;
     if (!fileInfo) {
       setMetadata(null);
       setError(null);
@@ -45,6 +48,12 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
         // table does not print a byte array) and the Samsung trailer after the JPEG EOI.
         const apple = parseAppleMakerNote(takeMakerNote(exifRecord)) ?? undefined;
         const samsung = (await readSamsungTrailer(sourceFile).catch(() => null)) ?? undefined;
+        const thumbnail = (await readEmbeddedThumbnail(sourceFile).catch(() => null)) ?? undefined;
+        if (!active) {
+          if (thumbnail) URL.revokeObjectURL(thumbnail.url);
+          return;
+        }
+        thumbnailUrl = thumbnail?.url ?? null;
 
         const shot = resolveShotDate(
           pickFirstFromSources(
@@ -107,7 +116,8 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
           }),
           orientation: inferOrientation(fileInfo.width, fileInfo.height, orientationTag),
           apple,
-          samsung
+          samsung,
+          thumbnail: thumbnail as EmbeddedThumbnail | undefined
         };
 
         setMetadata(structured);
@@ -128,6 +138,8 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
 
     return () => {
       active = false;
+      // The thumbnail's blob URL belongs to this file; drop it when the file is replaced.
+      if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl);
     };
   }, [fileInfo, t]);
 
