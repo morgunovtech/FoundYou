@@ -1226,6 +1226,12 @@
   max-width: 70ch;
 }
 
+/* A hide row with nothing to hide: the same slot as a toggle, muted, no checkbox. */
+.fy-check--none {
+  margin: 0;
+  color: var(--v4-muted);
+}
+
 /* Presets on the right of the cleanup toolbar. */
 .fy-toolbar-actions {
   display: flex;

@@ -18,6 +18,9 @@ interface CleanupSummaryInput {
   platformCapMegapixels?: number;
   antiSearchEnabled: boolean;
   antiSearchLevel: number;
+  /** Hash-distance target of the level and the distance the last preview reached. */
+  antiSearchTargetBits?: number;
+  antiSearchDistance?: number | null;
   renameSummary: string;
   watermarkEnabled: boolean;
   qualityMode: QualityMode;
@@ -35,6 +38,8 @@ export function buildCleanupSummary({
   platformCapMegapixels,
   antiSearchEnabled,
   antiSearchLevel,
+  antiSearchTargetBits,
+  antiSearchDistance = null,
   renameSummary,
   watermarkEnabled,
   qualityMode,
@@ -57,7 +62,8 @@ export function buildCleanupSummary({
     items.push(t('privacyDiffBlurPixelate'));
   }
   if (antiSearchEnabled) {
-    items.push(t('privacyDiffAntiSearchOn', { level: antiSearchLevel }));
+    items.push(t('privacyDiffAntiSearchOn', { level: antiSearchLevel, bits: antiSearchTargetBits ?? 10 }));
+    if (antiSearchDistance != null) items.push(t('privacyDiffAntiSearchMeasured', { distance: antiSearchDistance }));
   } else {
     items.push(t('privacyDiffAntiSearchNeutral'));
   }

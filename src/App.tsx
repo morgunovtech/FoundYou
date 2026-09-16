@@ -19,7 +19,7 @@ import { useContentCredentials } from './hooks/useContentCredentials';
 import { findPlateCandidates } from './utils/plates';
 import { canShareFiles, shareFile } from './utils/share';
 import { useI18n, useT, type MessageKey } from './i18n';
-import { FACE_LABEL, PERSON_LABEL, type DetectionErrorCode, type DetectionStage } from './types/detection';
+import { FACE_LABEL, type DetectionErrorCode, type DetectionStage } from './types/detection';
 import type { OCRErrorCode, OCRStage } from './hooks/useOCR';
 import type {
   AntiSearchParams,
@@ -54,7 +54,8 @@ export interface ProData {
   temporal: TemporalInsight[];
 }
 import {
-  applyAntiSearch,
+  applyAntiSearchMeasured,
+  antiSearchTargetBits,
   applyColorReduction,
   applyMirror,
   applyPrnuCleanup,
@@ -358,11 +359,10 @@ const App: React.FC = () => {
 
   const metadataFieldCount = useMemo(() => countMetadataFields(metadata), [metadata]);
 
-  /** Boxes the "hide faces" option works from: detected faces plus person boxes (fallback for people without a face). */
-  const blurCandidates = useMemo(
-    () => detections.filter((det) => det.label === FACE_LABEL || det.label === PERSON_LABEL),
-    [detections]
-  );
+  /** Boxes the «hide faces» option works from: detected faces only; people without a face are covered with the brush. */
+  const blurCandidates = useMemo(() => detections.filter((det) => det.label === FACE_LABEL), [detections]);
+  /** Perceptual-hash distance the anti-search transform reached on the last preview; shown in the summary. */
+  const [antiSearchDistance, setAntiSearchDistance] = useState<number | null>(null);
   /** Regions that will actually be blurred — shown as the count in the cleanup summary. */
   const blurTargetCount = useMemo(() => selectBlurTargets(blurCandidates).length, [blurCandidates]);
 
@@ -532,7 +532,12 @@ const App: React.FC = () => {
       }
 
       if (antiSearchEnabled && antiSearchParams) {
-        workingCanvas = applyAntiSearch(workingCanvas, antiSearchParams);
+        // Measured against the perceptual hash of the frame: the field and crop grow until the level's target is met.
+        const measured = applyAntiSearchMeasured(workingCanvas, antiSearchParams, antiSearchTargetBits(antiSearchLevel));
+        workingCanvas = measured.canvas;
+        setAntiSearchDistance(measured.distance);
+      } else {
+        setAntiSearchDistance(null);
       }
 
       if (reduceColor) {
@@ -563,6 +568,7 @@ const App: React.FC = () => {
       manualMasks,
       antiSearchEnabled,
       antiSearchParams,
+      antiSearchLevel,
       reduceColor,
       mirrorEnabled,
       downscaleMax,
@@ -925,6 +931,8 @@ const App: React.FC = () => {
                 previewLoading={previewLoading}
                 estimatedSize={estimatedSize}
                 blurTargetCount={blurTargetCount}
+                ocrPending={ocrLoading}
+                antiSearchDistance={antiSearchDistance}
                 originalPreviewUrl={fileInfo.thumbnailUrl ?? null}
                 platformCapped={platformCapped}
                 platformCapMegapixels={MAX_EXPORT_MEGAPIXELS}

@@ -24,6 +24,10 @@ export interface AntiSearchParams {
   saturationShift: number;
   hueShift: number;
   warpStrength: number;
+  /** Crop per side as a fraction of the picture (on top of the pixel `crop`): shifts the content on the hash grid. */
+  cropPercent: number;
+  /** Amplitude of the smooth luminance field (fraction of 255): moves the low-frequency bits the perceptual hash reads. */
+  fieldAmplitude: number;
 }
 
 export type QualityMode = 'low' | 'medium' | 'original';

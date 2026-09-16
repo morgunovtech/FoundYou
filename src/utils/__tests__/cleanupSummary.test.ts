@@ -55,7 +55,10 @@ describe('buildCleanupSummary', () => {
 
   it('keeps the anti-search, watermark and quality lines', () => {
     const items = buildCleanupSummary({ ...base, antiSearchEnabled: true, antiSearchLevel: 3, watermarkEnabled: true });
-    expect(items).toContain('privacyDiffAntiSearchOn[level=3]');
+    expect(items).toContain('privacyDiffAntiSearchOn[level=3,bits=10]');
+    const measured = buildCleanupSummary({ ...base, antiSearchEnabled: true, antiSearchLevel: 2, antiSearchTargetBits: 14, antiSearchDistance: 16 });
+    expect(measured).toContain('privacyDiffAntiSearchOn[level=2,bits=14]');
+    expect(measured).toContain('privacyDiffAntiSearchMeasured[distance=16]');
     expect(items).toContain('privacyDiffWatermarkOn');
     expect(items).toContain('privacyDiffQualityMode[mode=qualityMode_medium,percent=90]');
   });
