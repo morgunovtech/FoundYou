@@ -37,6 +37,11 @@ export const onRequest = defineHandler(async ({ url, context }) => {
       district: address.suburb ?? address.county ?? address.state_district,
       road: address.road ?? address.pedestrian ?? address.footway,
       houseNumber: address.house_number,
+      // What the point resolved to (hotel, house, road…): the sensitivity of an address depends on it.
+      category: asString(result?.category),
+      type: asString(result?.type),
+      addressType: asString(result?.addresstype),
+      name: asString(result?.name),
       precisionMeters: estimatePrecision(boundingBox),
       // The answer is shared by every request that rounds to the same cell,
       // so it must describe the rounded point, not the caller's exact one.
@@ -47,6 +52,10 @@ export const onRequest = defineHandler(async ({ url, context }) => {
     return json({ ok: true, data }, 200, undefined, TTL);
   });
 });
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+}
 
 function estimatePrecision(boundingBox: number[]): number | undefined {
   if (boundingBox.length !== 4) return undefined;

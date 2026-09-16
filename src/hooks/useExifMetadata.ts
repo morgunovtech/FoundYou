@@ -276,13 +276,60 @@ function normalizeGps(
     toNumber(
       pickFirstFromSources(sources, ['heading', 'gpsImgDirection', 'GPSImgDirection', 'imgDirection'])
     ) ?? undefined;
+  const speed = gpsSpeedKmh(
+    toNumber(pickFirstFromSources(sources, ['speed', 'gpsSpeed', 'GPSSpeed'])),
+    pickFirstFromSources<string>(sources, ['speedRef', 'gpsSpeedRef', 'GPSSpeedRef'])
+  );
+  const timestampUtc = gpsInstant(
+    pickFirstFromSources(sources, ['GPSDateStamp', 'gpsDateStamp', 'dateStamp']),
+    pickFirstFromSources(sources, ['GPSTimeStamp', 'gpsTimeStamp', 'timeStamp'])
+  );
   return {
     lat,
     lon,
     altitude,
     accuracy,
-    heading
+    heading,
+    speed,
+    timestampUtc
   };
+}
+
+/** GPSSpeed with its GPSSpeedRef unit (K km/h, M mph, N knots) → km/h, one decimal. */
+export function gpsSpeedKmh(value: number | undefined, ref: unknown): number | undefined {
+  if (value == null || !Number.isFinite(value) || value < 0) return undefined;
+  const unit = typeof ref === 'string' ? ref.trim().toUpperCase() : 'K';
+  const kmh = unit === 'M' ? value * 1.609344 : unit === 'N' ? value * 1.852 : value;
+  return Math.round(kmh * 10) / 10;
+}
+
+/**
+ * GPSDateStamp («2026:09:14») + GPSTimeStamp ([13, 20, 0], «13:20:00» or a Date) →
+ * ISO instant. The receiver writes UTC, so this is the true moment of the fix.
+ */
+export function gpsInstant(dateStamp: unknown, timeStamp: unknown): string | undefined {
+  let date: string | undefined;
+  if (dateStamp instanceof Date && !Number.isNaN(dateStamp.getTime())) {
+    date = dateStamp.toISOString().slice(0, 10);
+  } else if (typeof dateStamp === 'string') {
+    const match = /^(\d{4})[:-](\d{2})[:-](\d{2})/.exec(dateStamp.trim());
+    if (match) date = `${match[1]}-${match[2]}-${match[3]}`;
+  }
+  if (!date) return undefined;
+
+  let parts: number[] | undefined;
+  if (Array.isArray(timeStamp)) {
+    parts = timeStamp.map((part) => toNumber(part) ?? NaN);
+  } else if (typeof timeStamp === 'string') {
+    parts = timeStamp.trim().split(':').map((part) => Number(part));
+  } else if (timeStamp instanceof Date && !Number.isNaN(timeStamp.getTime())) {
+    parts = [timeStamp.getUTCHours(), timeStamp.getUTCMinutes(), timeStamp.getUTCSeconds()];
+  }
+  if (!parts || parts.length < 2 || parts.slice(0, 3).some((part) => !Number.isFinite(part))) return undefined;
+  const [h, m, s = 0] = parts;
+  if (h < 0 || h > 23 || m < 0 || m > 59 || s < 0 || s >= 60) return undefined;
+  const iso = `${date}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(Math.floor(s)).padStart(2, '0')}Z`;
+  return Number.isNaN(new Date(iso).getTime()) ? undefined : iso;
 }
 
 function normalizeOffset(offset: unknown): string | undefined {

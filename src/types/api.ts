@@ -13,6 +13,11 @@ export interface ReverseGeocodeResult {
   district?: string;
   road?: string;
   houseNumber?: string;
+  /** Nominatim `category` / `type` / `addresstype` / `name` of the matched object (e.g. tourism / hotel / tourism / «Lotus Hotel»). */
+  category?: string;
+  type?: string;
+  addressType?: string;
+  name?: string;
   precisionMeters?: number;
   lat: number;
   lon: number;
@@ -24,8 +29,16 @@ export interface HistoricalWeatherResult {
   cloudCover: number;
   windSpeed: number;
   pressure: number;
+  /** WMO 4677 weather code (Open-Meteo `weather_code`); absent in answers cached before it was requested. */
+  weatherCode?: number | null;
   /** IANA zone the hour was resolved in (Open-Meteo `timezone=auto`); absent for legacy UTC lookups. */
   timezone?: string;
+}
+
+export interface ElevationResult {
+  /** Terrain height in metres above sea level at the rounded point (Copernicus DEM, 90 m). */
+  elevation: number;
+  resolutionMeters: number;
 }
 
 export interface HolidayEntry {

@@ -56,6 +56,10 @@ export interface StructuredMetadata {
     altitude?: number;
     accuracy?: number;
     heading?: number;
+    /** Ground speed in km/h (GPSSpeed converted from its unit). */
+    speed?: number;
+    /** UTC instant from GPSDateStamp + GPSTimeStamp, ISO 8601. */
+    timestampUtc?: string;
   };
   completeness: number;
   orientation?: 'portrait' | 'landscape' | 'square' | 'unknown';

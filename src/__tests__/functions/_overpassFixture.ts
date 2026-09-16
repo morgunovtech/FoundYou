@@ -25,7 +25,9 @@ export const POI_ELEMENTS: FakeElement[] = [
   { type: 'relation', id: 4, tags: { amenity: 'parking', name: 'Underground parking' } }, // no position → skipped
   { type: 'node', id: 5, lat: 41.313, lon: 69.281, tags: { shop: 'clothes', brand: 'Zara' } }, // farthest → cut by top-5
   { type: 'node', id: 6, lat: 41.3125, lon: 69.2805, tags: { leisure: 'park', name: 'Central Park' } },
-  { type: 'node', id: 7, lat: 41.3116, lon: 69.2799, tags: { amenity: 'pharmacy', name: 'Dorixona 24' } }
+  { type: 'node', id: 7, lat: 41.3116, lon: 69.2799, tags: { amenity: 'pharmacy', name: 'Dorixona 24' } },
+  { type: 'node', id: 8, lat: 41.32, lon: 69.2797, tags: { natural: 'peak', name: 'Kichik Chimyon', ele: '1300' } }, // ~980 m → cut by top-5
+  { type: 'node', id: 9, lat: 41.3112, lon: 69.29, tags: { place: 'hamlet', name: 'Teshiktosh' } } // ~860 m → cut by top-5
 ];
 
 export const COUNT_SEPARATOR: FakeElement = {

@@ -3,7 +3,7 @@ import { DAY, cacheKey, coordKey, defineHandler, fetchUpstream, json, parseCoord
 const TTL = DAY;
 const ARCHIVE_START_UTC = Date.UTC(1940, 0, 1);
 const LOCAL_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/;
-const HOURLY = 'temperature_2m,precipitation,cloudcover,wind_speed_10m,pressure_msl';
+const HOURLY = 'temperature_2m,precipitation,cloudcover,wind_speed_10m,pressure_msl,weather_code';
 
 interface Target {
   date: string; // YYYY-MM-DD
@@ -65,6 +65,7 @@ export const onRequest = defineHandler(async ({ url, context }) => {
           cloudCover: pick(hourly.cloudcover),
           windSpeed: pick(hourly.wind_speed_10m),
           pressure: pick(hourly.pressure_msl),
+          weatherCode: pick(hourly.weather_code),
           timezone: typeof payload.timezone === 'string' ? payload.timezone : undefined
         }
       },

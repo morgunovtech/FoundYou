@@ -22,10 +22,14 @@ export type OverpassResult =
   | { ok: false; error: Response };
 
 /**
- * One query for both endpoints. The two original queries are kept verbatim
- * (same tags, same radii) as named sets; `.poi out count;` emits a single
- * `{type:"count"}` element that we use as the separator between the sets in
- * the output stream, so each endpoint sees exactly what it saw before.
+ * One query for both endpoints, as two named sets; `.poi out count;` emits a
+ * single `{type:"count"}` element that we use as the separator between the
+ * sets in the output stream.
+ *
+ * `.poi`: venues (amenity, shop) within 250 m, where density is high; sights,
+ * history and parks within 0.5–1 km; named natural features (peaks, springs,
+ * waterfalls, caves) and settlements within 1.5 km, so a photo in the hills
+ * still gets a landmark. Ways and relations come with `out center`.
  */
 export function buildQuery(lat: string, lon: string): string {
   const at = (radius: number) => `(around:${radius},${lat},${lon})`;
@@ -34,11 +38,14 @@ export function buildQuery(lat: string, lon: string): string {
 (
   node["amenity"]${at(250)};
   node["shop"]${at(250)};
-  node["tourism"]${at(250)};
-  node["leisure"]${at(250)};
   way["amenity"]${at(250)};
   way["shop"]${at(250)};
   relation["amenity"]${at(250)};
+  nwr["tourism"]${at(1000)};
+  nwr["historic"]${at(1000)};
+  nwr["leisure"~"^(park|garden|nature_reserve|playground|stadium|sports_centre|swimming_pool|beach_resort|marina|golf_course|water_park|track|pitch)$"]${at(500)};
+  nwr["natural"~"^(peak|spring|hot_spring|waterfall|cave_entrance|glacier|volcano|saddle|arch|cliff|beach|bay|geyser|dune)$"]${at(1500)};
+  node["place"~"^(city|town|village|hamlet|suburb|neighbourhood|quarter|locality|isolated_dwelling)$"]${at(1500)};
 )->.poi;
 (
   node["man_made"="surveillance"]${at(300)};
@@ -152,10 +159,7 @@ function splitSets(elements: any[]): OverpassSets {
 
 function isPoiCandidate(element: OverpassElement): boolean {
   const tags = element.tags ?? {};
-  if (element.type === 'node') return !!(tags.amenity || tags.shop || tags.tourism || tags.leisure);
-  if (element.type === 'way') return !!(tags.amenity || tags.shop);
-  if (element.type === 'relation') return !!tags.amenity;
-  return false;
+  return !!(tags.amenity || tags.shop || tags.tourism || tags.historic || tags.leisure || tags.natural || tags.place);
 }
 
 function isSurveillanceCandidate(element: OverpassElement): boolean {

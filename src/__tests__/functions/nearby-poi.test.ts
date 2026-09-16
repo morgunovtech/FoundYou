@@ -3,7 +3,16 @@ import { onRequest } from '../../../functions/api/nearby-poi';
 import { onRequest as surveillance } from '../../../functions/api/surveillance-candidates';
 import type { ApiResponse, PoiResult } from '../../../src/types/api';
 import { call, callJson, fetchCall, installCaches, jsonResponse, mockFetch, rejectAborted, urlOf } from './_harness';
-import { COUNT_SEPARATOR, POI_ELEMENTS, SURVEILLANCE_ELEMENTS, TASHKENT, decodeQuery, distanceFromCell, overpassPayload } from './_overpassFixture';
+import {
+  COUNT_SEPARATOR,
+  POI_ELEMENTS,
+  SURVEILLANCE_ELEMENTS,
+  TASHKENT,
+  decodeQuery,
+  distanceFromCell,
+  overpassPayload,
+  type FakeElement
+} from './_overpassFixture';
 
 const PATH = '/api/nearby-poi';
 const SURVEILLANCE_PATH = '/api/surveillance-candidates';
@@ -81,8 +90,16 @@ describe('nearby-poi: success', () => {
 
     // Category comes from amenity/shop/tourism/leisure; the nameless museum has name ''.
     expect(data).toContainEqual({ name: '', category: 'museum', distance: distanceFromCell(POI_ELEMENTS[2]) });
-    expect(data).toContainEqual({ name: 'Korzinka', category: 'supermarket', distance: distanceFromCell(POI_ELEMENTS[1]) });
-    expect(data).toContainEqual({ name: 'Central Park', category: 'park', distance: distanceFromCell(POI_ELEMENTS[5]) });
+    expect(data).toContainEqual({
+      name: 'Korzinka',
+      category: 'supermarket',
+      distance: distanceFromCell(POI_ELEMENTS[1])
+    });
+    expect(data).toContainEqual({
+      name: 'Central Park',
+      category: 'park',
+      distance: distanceFromCell(POI_ELEMENTS[5])
+    });
 
     expect(fetch).toHaveBeenCalledTimes(1);
   });
@@ -172,7 +189,10 @@ describe('nearby-poi: shared Overpass fetch', () => {
       return jsonResponse(overpassPayload());
     });
 
-    const pending = Promise.all([call(onRequest, urlOf(PATH, TASHKENT)), call(surveillance, urlOf(SURVEILLANCE_PATH, TASHKENT))]);
+    const pending = Promise.all([
+      call(onRequest, urlOf(PATH, TASHKENT)),
+      call(surveillance, urlOf(SURVEILLANCE_PATH, TASHKENT))
+    ]);
     // Let both handlers reach loadOverpassSets before the upstream answers.
     await new Promise((resolve) => setTimeout(resolve, 0));
     release();
@@ -211,7 +231,13 @@ describe('nearby-poi: upstream failures', () => {
     [500, 502, 'upstream-500'],
     [429, 429, 'upstream-429']
   ])('upstream %d → %d %s without leaking the body, not cached', async (upstreamStatus, clientStatus, code) => {
-    const fetch = mockFetch(async () => new Response('<p>SECRET Overpass error text</p>', { status: upstreamStatus, headers: { 'Content-Type': 'text/html' } }));
+    const fetch = mockFetch(
+      async () =>
+        new Response('<p>SECRET Overpass error text</p>', {
+          status: upstreamStatus,
+          headers: { 'Content-Type': 'text/html' }
+        })
+    );
     const { response, body, text } = await callJson(onRequest, urlOf(PATH, TASHKENT));
     expect(response.status).toBe(clientStatus);
     expect(body).toEqual({ ok: false, error: code });
@@ -232,7 +258,10 @@ describe('nearby-poi: upstream failures', () => {
 
   it('Overpass "timed out" remark on HTTP 200 → 504 and not cached', async () => {
     const fetch = mockFetch(async () =>
-      jsonResponse({ ...overpassPayload([]), remark: 'runtime error: Query timed out in "query" at line 3 after 8 seconds. SECRET' })
+      jsonResponse({
+        ...overpassPayload([]),
+        remark: 'runtime error: Query timed out in "query" at line 3 after 8 seconds. SECRET'
+      })
     );
     const { response, body, text } = await callJson(onRequest, urlOf(PATH, TASHKENT));
     expect(response.status).toBe(504);
@@ -266,5 +295,58 @@ describe('nearby-poi: upstream failures', () => {
     expect(response.status).toBe(502);
     expect(body).toEqual({ ok: false, error: 'upstream-unavailable' });
     expect(text).not.toContain('SECRET');
+  });
+});
+
+describe('nearby-poi: landmarks and settlements', () => {
+  it('asks Overpass for sights, history, parks, natural features and places at wider radii', async () => {
+    let init: RequestInit | undefined;
+    mockFetch(async (_input, requestInit) => {
+      init = requestInit;
+      return jsonResponse(overpassPayload());
+    });
+    await callJson(onRequest, urlOf(PATH, TASHKENT));
+    const query = decodeQuery(init);
+    expect(query).toContain('nwr["tourism"](around:1000,41.3112,69.2797)');
+    expect(query).toContain('nwr["historic"](around:1000,41.3112,69.2797)');
+    expect(query).toContain('nwr["leisure"~"^(park|');
+    expect(query).toContain('(around:500,41.3112,69.2797)');
+    expect(query).toContain('nwr["natural"~"^(peak|spring|');
+    expect(query).toContain('(around:1500,41.3112,69.2797)');
+    expect(query).toContain('node["place"~"^(city|town|village|hamlet|');
+    // Venues stay tight: a bench 800 m away is noise, a peak 800 m away is the landmark.
+    expect(query).toContain('node["amenity"](around:250,41.3112,69.2797)');
+  });
+
+  it('uses the landmark tag as the category and orders far features by distance', async () => {
+    const elements: FakeElement[] = [
+      {
+        type: 'node',
+        id: 21,
+        lat: 41.32,
+        lon: 69.2797,
+        tags: { natural: 'peak', name: 'Kichik Chimyon', ele: '1300' }
+      },
+      { type: 'node', id: 22, lat: 41.3112, lon: 69.29, tags: { place: 'hamlet', name: 'Teshiktosh' } },
+      {
+        type: 'way',
+        id: 23,
+        center: { lat: 41.315, lon: 69.2797 },
+        tags: { tourism: 'camp_site', name: 'Chimgan camp' }
+      },
+      { type: 'node', id: 24, lat: 41.3113, lon: 69.2798, tags: { historic: 'monument', name: 'Obelisk' } },
+      { type: 'way', id: 25, center: { lat: 41.3125, lon: 69.2805 }, tags: { leisure: 'park', name: 'Central Park' } }
+    ];
+    mockFetch(async () => jsonResponse(overpassPayload([...elements, COUNT_SEPARATOR])));
+    const { body } = await callJson<ApiResponse<PoiResult[]>>(onRequest, urlOf(PATH, TASHKENT));
+    expect(body.ok).toBe(true);
+    expect(body.data?.map((item) => [item.name, item.category])).toEqual([
+      ['Obelisk', 'monument'],
+      ['Central Park', 'park'],
+      ['Chimgan camp', 'camp_site'],
+      ['Teshiktosh', 'hamlet'],
+      ['Kichik Chimyon', 'peak']
+    ]);
+    expect(body.data?.[4].distance).toBeGreaterThan(900);
   });
 });
