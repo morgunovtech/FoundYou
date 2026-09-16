@@ -10,6 +10,7 @@ import type { ScreenshotLevel, ScreenshotReason } from '../../utils/screenshot';
 import type { CompressionCode } from '../../utils/jpegQuant';
 import type { LightVerdict } from '../../utils/lightCheck';
 import type { TimestampIssue } from '../../utils/timestampConsistency';
+import type { FrameCheckStep } from '../../utils/frameChecks';
 
 /*
  * Machine codes from the pure utilities → dictionary keys. The utilities never
@@ -170,4 +171,11 @@ export const TIMESTAMP_ISSUE_KEYS: Record<TimestampIssue, MessageKey> = {
   'zone-differs': 'timestampZone',
   'signed-before-shot': 'timestampSigned',
   'disk-before-shot': 'timestampDisk'
+};
+
+export const FRAME_STEP_KEYS: Record<FrameCheckStep, MessageKey> = {
+  decode: 'frameStepDecode',
+  ela: 'frameStepEla',
+  ghosts: 'frameStepGhosts',
+  noise: 'frameStepNoise'
 };
