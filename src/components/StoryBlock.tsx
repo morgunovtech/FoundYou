@@ -24,6 +24,8 @@ import { TextDetails } from './story/TextDetails';
 import { OriginCard } from './story/OriginCard';
 import { PII_KIND_KEYS, QR_KIND_KEYS } from './story/storyKeys';
 import { timeHeadline } from './story/timeHeadline';
+import { useContainerSignals } from '../hooks/useContainerSignals';
+import { useFrameStats } from '../hooks/useFrameStats';
 
 interface StoryBlockProps {
   fileInfo: BasicFileInfo;
@@ -68,6 +70,9 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   const t = useT();
   const { lang } = useI18n();
   const geo = useGeoContext(metadata);
+  // Authenticity inputs read once per file: the JPEG tables from the bytes, the flat-pixel share from the pixels.
+  const jpeg = useContainerSignals(fileInfo);
+  const frame = useFrameStats(fileInfo);
   const [rawData, setRawData] = useState(false);
 
   const remote = Boolean(geo.coords);
@@ -221,7 +226,10 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
             metadata={metadata}
             proData={proData}
             credentials={credentials}
-            driftSeconds={timeProfile?.driftSeconds ?? null}
+            jpeg={jpeg}
+            frame={frame}
+            stance={stance}
+            timeProfile={timeProfile}
           />
         ) : null}
       </div>

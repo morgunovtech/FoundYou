@@ -35,7 +35,7 @@ describe('buildFileHistory', () => {
     const events = buildFileHistory(
       input({
         metadata: metadata({ shotDateLocal: '2026-06-14T18:30:12' }, { ModifyDate: modified }),
-        editing: { edited: true, software: ['Snapseed'], editingLevel: 'basic', hints: [], isAiGenerated: false, aiTool: null }
+        editing: { edited: true, software: ['Snapseed'], editingLevel: 'basic', hints: [], isAiGenerated: false, aiTool: null, aiDetails: null }
       })
     );
     expect(events.find((e) => e.kind === 'modified')).toEqual({ kind: 'modified', at: '2026-06-20T12:00:00', agent: 'Snapseed' });
@@ -47,7 +47,7 @@ describe('buildFileHistory', () => {
     const edited = buildFileHistory(
       input({
         metadata: metadata({ shotDateLocal: '2026-06-14T18:30:12' }, { ModifyDate: same }),
-        editing: { edited: true, software: ['Adobe Lightroom'], editingLevel: 'professional', hints: [], isAiGenerated: false, aiTool: null }
+        editing: { edited: true, software: ['Adobe Lightroom'], editingLevel: 'professional', hints: [], isAiGenerated: false, aiTool: null, aiDetails: null }
       })
     );
     expect(edited.find((e) => e.kind === 'modified')).toEqual({ kind: 'modified', at: null, agent: 'Adobe Lightroom' });

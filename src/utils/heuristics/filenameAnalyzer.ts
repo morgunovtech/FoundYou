@@ -6,6 +6,8 @@ export interface FilenameAnalysis {
   confidence: number;
   photoIndex: number | null;
   estimatedMonths: number | null;
+  /** The name follows a screenshot pattern (Screenshot_…, Снимок экрана…, IMG_NNNN.PNG). */
+  isScreenshot: boolean;
 }
 
 interface FilenamePattern {
@@ -13,6 +15,7 @@ interface FilenamePattern {
   platform: string;
   device: Record<Lang, string>;
   confidence: number;
+  screenshot?: boolean;
 }
 
 const PATTERNS: FilenamePattern[] = [
@@ -20,7 +23,7 @@ const PATTERNS: FilenamePattern[] = [
   { regex: /^IMG_\d{4}\.(?:JPG|JPEG|HEIC|MOV)$/i, platform: 'Apple iOS', device: { ru: 'iPhone', en: 'iPhone', uz: 'iPhone' }, confidence: 0.9 },
   { regex: /^IMG_\d{4}\s?\(\d+\)\.(?:JPG|JPEG)$/i, platform: 'Apple iOS', device: { ru: 'iPhone (дубликат AirDrop)', en: 'iPhone (AirDrop duplicate)', uz: 'iPhone (AirDrop nusxasi)' }, confidence: 0.85 },
   { regex: /^Live\sPhoto/i, platform: 'Apple iOS', device: { ru: 'iPhone (Live Photo)', en: 'iPhone (Live Photo)', uz: 'iPhone (Live Photo)' }, confidence: 0.95 },
-  { regex: /^IMG_\d{4}\.PNG$/i, platform: 'Apple iOS', device: { ru: 'Скриншот iPhone', en: 'iPhone screenshot', uz: 'iPhone skrinshot' }, confidence: 0.8 },
+  { regex: /^IMG_\d{4}\.PNG$/i, platform: 'Apple iOS', device: { ru: 'Скриншот iPhone', en: 'iPhone screenshot', uz: 'iPhone skrinshot' }, confidence: 0.8, screenshot: true },
 
   // Google Pixel
   { regex: /^PXL_\d{8}_\d{9,}/i, platform: 'Android', device: { ru: 'Google Pixel', en: 'Google Pixel', uz: 'Google Pixel' }, confidence: 0.95 },
@@ -49,10 +52,10 @@ const PATTERNS: FilenamePattern[] = [
   { regex: /^DJI_\d{4,}\./i, platform: 'Drone', device: { ru: 'DJI (дрон)', en: 'DJI (drone)', uz: 'DJI (dron)' }, confidence: 0.95 },
 
   // Screenshots
-  { regex: /^Screenshot_\d{4}-\d{2}-\d{2}/i, platform: 'Android', device: { ru: 'Скриншот Android', en: 'Android screenshot', uz: 'Android skrinshot' }, confidence: 0.95 },
-  { regex: /^Screenshot\s\d{4}-\d{2}-\d{2}\sat\s/i, platform: 'Apple macOS', device: { ru: 'Скриншот Mac', en: 'Mac screenshot', uz: 'Mac skrinshot' }, confidence: 0.95 },
-  { regex: /^Снимок экрана/i, platform: 'Desktop', device: { ru: 'Скриншот (русская ОС)', en: 'Screenshot (Russian OS)', uz: 'Skrinshot (rus OS)' }, confidence: 0.9 },
-  { regex: /^Screen\sShot\s/i, platform: 'Apple macOS', device: { ru: 'Скриншот Mac', en: 'Mac screenshot', uz: 'Mac skrinshot' }, confidence: 0.9 },
+  { regex: /^Screenshot_\d{4}-\d{2}-\d{2}/i, platform: 'Android', device: { ru: 'Скриншот Android', en: 'Android screenshot', uz: 'Android skrinshot' }, confidence: 0.95, screenshot: true },
+  { regex: /^Screenshot\s\d{4}-\d{2}-\d{2}\sat\s/i, platform: 'Apple macOS', device: { ru: 'Скриншот Mac', en: 'Mac screenshot', uz: 'Mac skrinshot' }, confidence: 0.95, screenshot: true },
+  { regex: /^Снимок экрана/i, platform: 'Desktop', device: { ru: 'Скриншот (русская ОС)', en: 'Screenshot (Russian OS)', uz: 'Skrinshot (rus OS)' }, confidence: 0.9, screenshot: true },
+  { regex: /^Screen\sShot\s/i, platform: 'Apple macOS', device: { ru: 'Скриншот Mac', en: 'Mac screenshot', uz: 'Mac skrinshot' }, confidence: 0.9, screenshot: true },
 
   // Messenger re-saves
   { regex: /^photo_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.jpg$/i, platform: 'Telegram', device: { ru: 'Сохранено из Telegram', en: 'Saved from Telegram', uz: 'Telegramdan saqlangan' }, confidence: 0.95 },
@@ -89,8 +92,9 @@ export function analyzeFilename(filename: string, lang: Lang): FilenameAnalysis 
         confidence: pattern.confidence,
         photoIndex: indexInfo?.photoIndex ?? null,
         estimatedMonths: indexInfo?.estimatedMonths ?? null,
+        isScreenshot: Boolean(pattern.screenshot),
       };
     }
   }
-  return { platform: null, device: '', confidence: 0, photoIndex: null, estimatedMonths: null };
+  return { platform: null, device: '', confidence: 0, photoIndex: null, estimatedMonths: null, isScreenshot: false };
 }

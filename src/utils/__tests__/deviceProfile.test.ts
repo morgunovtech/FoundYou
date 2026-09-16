@@ -18,14 +18,16 @@ const NO_FILENAME: FilenameAnalysis = {
   device: '',
   confidence: 0,
   photoIndex: null,
-  estimatedMonths: null
+  estimatedMonths: null,
+  isScreenshot: false
 };
 const IPHONE_FILENAME: FilenameAnalysis = {
   platform: 'Apple iOS',
   device: 'iPhone',
   confidence: 0.9,
   photoIndex: 8215,
-  estimatedMonths: 55
+  estimatedMonths: 55,
+  isScreenshot: false
 };
 const NO_RES: ResolutionAnalysis = {
   possibleDevices: [],

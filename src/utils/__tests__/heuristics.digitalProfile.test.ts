@@ -20,9 +20,9 @@ const section = (profile: DigitalProfile, kind: ProfileSectionKind) => {
 };
 
 /* ── fixtures ─────────────────────────────────────────────── */
-const NO_FILENAME: FilenameAnalysis = { platform: null, device: '', confidence: 0, photoIndex: null, estimatedMonths: null };
-const IPHONE_FILENAME: FilenameAnalysis = { platform: 'Apple iOS', device: 'iPhone', confidence: 0.9, photoIndex: 1234, estimatedMonths: 8 };
-const TELEGRAM_FILENAME: FilenameAnalysis = { platform: 'Telegram', device: 'Saved from Telegram', confidence: 0.95, photoIndex: null, estimatedMonths: null };
+const NO_FILENAME: FilenameAnalysis = { platform: null, device: '', confidence: 0, photoIndex: null, estimatedMonths: null, isScreenshot: false };
+const IPHONE_FILENAME: FilenameAnalysis = { platform: 'Apple iOS', device: 'iPhone', confidence: 0.9, photoIndex: 1234, estimatedMonths: 8, isScreenshot: false };
+const TELEGRAM_FILENAME: FilenameAnalysis = { platform: 'Telegram', device: 'Saved from Telegram', confidence: 0.95, photoIndex: null, estimatedMonths: null, isScreenshot: false };
 
 const NO_RES: ResolutionAnalysis = { possibleDevices: [], contentType: 'unknown', contentHint: '', isScreenshot: false };
 const PHOTO_RES: ResolutionAnalysis = { possibleDevices: ['iPhone 12/13/14/15'], contentType: 'standard_photo', contentHint: '4:3 — standard photo', isScreenshot: false };
@@ -32,9 +32,9 @@ const NOT_STRIPPED: StrippedAnalysis = { stripped: false, strippedBy: null, conf
 const STRIPPED_TELEGRAM: StrippedAnalysis = { stripped: true, strippedBy: 'Telegram', confidence: 0.85, evidence: ['sign-1', 'sign-2'] };
 const STRIPPED_UNKNOWN: StrippedAnalysis = { stripped: true, strippedBy: null, confidence: 0.6, evidence: ['sign-1'] };
 
-const NOT_EDITED: EditingAnalysis = { edited: false, software: [], editingLevel: 'none', hints: [], isAiGenerated: false, aiTool: null };
-const PHOTOSHOP: EditingAnalysis = { edited: true, software: ['Adobe Photoshop'], editingLevel: 'professional', hints: ['pro-hint'], isAiGenerated: false, aiTool: null };
-const AI_MIDJOURNEY: EditingAnalysis = { edited: true, software: ['Midjourney'], editingLevel: 'none', hints: [], isAiGenerated: true, aiTool: 'Midjourney' };
+const NOT_EDITED: EditingAnalysis = { edited: false, software: [], editingLevel: 'none', hints: [], isAiGenerated: false, aiTool: null, aiDetails: null };
+const PHOTOSHOP: EditingAnalysis = { edited: true, software: ['Adobe Photoshop'], editingLevel: 'professional', hints: ['pro-hint'], isAiGenerated: false, aiTool: null, aiDetails: null };
+const AI_MIDJOURNEY: EditingAnalysis = { edited: true, software: ['Midjourney'], editingLevel: 'none', hints: [], isAiGenerated: true, aiTool: 'Midjourney', aiDetails: null };
 
 const TEMPORAL_HIGH: TemporalInsight[] = [
   { fact: 'Night photo (2:00)', inference: 'You were awake late at night', severity: 'medium' },
@@ -305,7 +305,7 @@ describe('generateDigitalProfile: individual branches', () => {
     const ai = section(profile, 'ai');
     expect(ai).toMatchObject({ text: 'Midjourney', leakPoints: 0, severity: 'medium' });
     // isAiGenerated without a tool name still gets a label
-    const unknownTool = generateDigitalProfile({ ...base(), editing: { ...AI_MIDJOURNEY, aiTool: null } });
+    const unknownTool = generateDigitalProfile({ ...base(), editing: { ...AI_MIDJOURNEY, aiTool: null, aiDetails: null } });
     expect(section(unknownTool, 'ai').text).toBe('AI');
   });
 

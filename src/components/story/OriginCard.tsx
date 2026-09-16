@@ -7,7 +7,16 @@ import type { ContentCredentialsState } from '../../hooks/useContentCredentials'
 import type { DeviceProfile } from '../../utils/deviceProfile';
 import { buildFileHistory, type FileEvent } from '../../utils/fileHistory';
 import { formatCompactDate, formatDetailedDate, formatDimensions, formatSecondsDuration } from '../../utils/format';
-import { DRIFT_SUSPICIOUS_SECONDS } from '../../utils/timeProfile';
+import { DRIFT_SUSPICIOUS_SECONDS, type TimeProfile } from '../../utils/timeProfile';
+import type { Stance } from '../../utils/stance';
+import type { JpegSignals } from '../../utils/jpegQuant';
+import { judgeCompression } from '../../utils/jpegQuant';
+import type { FrameStats } from '../../hooks/useFrameStats';
+import { checkLight } from '../../utils/lightCheck';
+import { checkTimestamps } from '../../utils/timestampConsistency';
+import { scoreScreenshot } from '../../utils/screenshot';
+import { wallClockOf } from '../../utils/fileHistory';
+import { COMPRESSION_KEYS, LIGHT_KEYS, SCREENSHOT_LEVEL_KEYS, SCREENSHOT_REASON_KEYS, TIMESTAMP_ISSUE_KEYS } from './storyKeys';
 import { useI18n, useT } from '../../i18n';
 import { FactRow } from './FactRow';
 import { DeviceRows } from './DeviceRows';
@@ -19,8 +28,14 @@ interface OriginCardProps {
   metadata: StructuredMetadata | null;
   proData: ProData | null;
   credentials: ContentCredentialsState;
-  /** Camera clock minus GPS time, seconds (`TimeProfile.driftSeconds`); null without a GPS stamp. */
-  driftSeconds: number | null;
+  /** JPEG quantization tables and subsampling of the original file; null for other containers. */
+  jpeg: JpegSignals | null;
+  /** Pixel statistics (flat interface colours) for the screenshot score. */
+  frame: FrameStats | null;
+  /** The shot geometry, for the sun's height at the moment of capture. */
+  stance: Stance | null;
+  /** The camera and place zones and the GPS drift. */
+  timeProfile: TimeProfile | null;
 }
 
 /** Content Credentials, when the file carries them: who signed, with what, and whether it held. */
@@ -61,9 +76,12 @@ const withEvidence = (text: string, evidence: string | null | undefined) => (evi
  * stamp under it when it exceeds a minute; edited from ModifyDate / Software,
  * «not edited» when nothing points to a later save, otherwise the signs: a smaller picture
  * than the camera wrote, a messenger re-encode, an embedded thumbnail that differs) and the
- * authenticity rows (AI, serial numbers, Content Credentials) in one card.
+ * authenticity rows in one card: AI markers (with the model and the prompt a generator left in
+ * a PNG), the screenshot score, the JPEG quantization tables against the camera in EXIF, the
+ * exposure against the sun, the timestamps against each other, the Live / Motion Photo as a
+ * sign of an untouched original, serial numbers and Content Credentials.
  */
-export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, fileInfo, metadata, proData, credentials, driftSeconds }) => {
+export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, fileInfo, metadata, proData, credentials, jpeg, frame, stance, timeProfile }) => {
   const t = useT();
   const { lang } = useI18n();
 
@@ -90,6 +108,60 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
   const severity = parts.some((p) => p.severity === 'high') ? 'high' : parts.some((p) => p.severity === 'medium') ? 'medium' : 'low';
   const ai = sectionsByKind.get('ai');
   const serial = sectionsByKind.get('serial');
+  const exif = metadata?.groups.exif ?? {};
+  const xmp = metadata?.groups.xmp ?? {};
+  const aiDetails = proData?.editing.aiDetails ?? null;
+  const aiDetailLine = aiDetails
+    ? [
+        aiDetails.model ? t('aiModel', { model: aiDetails.model }) : null,
+        aiDetails.prompt ? t('aiPrompt', { prompt: aiDetails.prompt }) : null,
+        t('aiChunk', { chunk: aiDetails.chunk })
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : null;
+
+  // Authenticity signals, each a pure check over what the file and the lookups already gave us.
+  const screenshot = proData
+    ? scoreScreenshot({
+        filenameScreenshot: proData.filename.isScreenshot,
+        knownScreenSize: proData.resolution.isScreenshot,
+        hasCameraExif: Boolean(metadata?.cameraMake || metadata?.cameraModel),
+        hasShotDate: Boolean(metadata?.shotDateLocal),
+        mimeType: fileInfo.originalMimeType ?? fileInfo.mimeType,
+        flatRatio: frame?.flatRatio ?? null
+      })
+    : null;
+  const compression = jpeg ? judgeCompression(jpeg, metadata?.cameraMake) : null;
+  const flash = exif.Flash;
+  const light = stance?.sun
+    ? checkLight({
+        sunAltitude: stance.sun.altitude,
+        exposureSeconds: typeof exif.ExposureTime === 'number' ? exif.ExposureTime : null,
+        fNumber: metadata?.aperture ?? null,
+        iso: metadata?.iso ?? null,
+        flashFired: typeof flash === 'number' ? (flash & 1) === 1 : null
+      })
+    : null;
+  // exifr names EXIF DateTimeDigitized «CreateDate» and the metadata splitter files it under xmp,
+  // where a real xmp:CreateDate would land too; the un-merged `xmp.xmp` namespace is XMP for sure.
+  const xmpNamespace = xmp.xmp && typeof xmp.xmp === 'object' ? (xmp.xmp as Record<string, unknown>) : null;
+  const xmpCreate = xmpNamespace?.CreateDate ?? null;
+  const timestamps = checkTimestamps({
+    shotLocal: metadata?.shotDateLocal ?? null,
+    digitizedLocal: wallClockOf(exif.DateTimeDigitized ?? exif.CreateDate ?? xmp.CreateDate),
+    modifyLocal: wallClockOf(exif.ModifyDate),
+    xmpCreate: typeof xmpCreate === 'string' ? xmpCreate : wallClockOf(xmpCreate),
+    cameraOffsetMinutes: timeProfile?.camera?.offsetMinutes ?? null,
+    placeOffsetMinutes: timeProfile?.place?.offsetMinutes ?? null,
+    signedAt: credentials.data?.signedAt ?? null,
+    lastModified: (fileInfo.originalFile ?? fileInfo.file).lastModified || null
+  });
+  const originalSign = metadata?.apple?.livePhoto
+    ? t('originalLivePhoto')
+    : metadata?.samsung?.motionPhotoBytes != null
+      ? t('originalMotionPhoto')
+      : null;
   const headline = device
     ? [[device.make, device.model].filter(Boolean).join(' '), device.os ? `${device.os.name} ${device.os.version}` : null]
         .filter(Boolean)
@@ -115,6 +187,7 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
     : t('historyNotEdited');
   const editedNote = modified?.agent ? t('historyModifiedWith', { software: modified.agent }) : null;
   // A clock a minute or more off the GPS stamp was set by hand or edited; seconds are noise.
+  const driftSeconds = timeProfile?.driftSeconds ?? null;
   const driftNote =
     driftSeconds != null && Math.abs(driftSeconds) >= DRIFT_SUSPICIOUS_SECONDS
       ? t('historyClockDrift', {
@@ -167,29 +240,74 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
             ))}
           </dd>
         </dl>
-        {ai || serial ? (
-          <>
-            <h4 className="v4-h3">{t('authenticityTitle')}</h4>
-            <dl className="fy-spec fy-spec--tight">
-              {ai ? (
-                <>
-                  <dt>{ai.title}</dt>
-                  <dd>
-                    <span>{ai.text}</span>
-                    {ai.subtext ? <span className="fy-muted">{ai.subtext}</span> : null}
-                  </dd>
-                </>
-              ) : null}
-              {serial ? (
-                <>
-                  <dt>{serial.title}</dt>
-                  <dd className="fy-mono">{serial.text}</dd>
-                </>
-              ) : null}
-            </dl>
-            <CredentialsDetails credentials={credentials} />
-          </>
-        ) : null}
+        <h4 className="v4-h3">{t('authenticityTitle')}</h4>
+        <dl className="fy-spec fy-spec--tight">
+          {ai ? (
+            <>
+              <dt>{ai.title}</dt>
+              <dd>
+                <span>{ai.text}</span>
+                {aiDetailLine ? <span className="fy-muted">{aiDetailLine}</span> : null}
+                {ai.subtext ? <span className="fy-muted">{ai.subtext}</span> : null}
+              </dd>
+            </>
+          ) : null}
+          {screenshot ? (
+            <>
+              <dt>{t('screenshotTitle')}</dt>
+              <dd>
+                <span>{t(SCREENSHOT_LEVEL_KEYS[screenshot.level], { percent: Math.round(screenshot.probability * 100) })}</span>
+                {screenshot.reasons.length > 0 ? (
+                  <span className="fy-muted">{screenshot.reasons.map((reason) => t(SCREENSHOT_REASON_KEYS[reason])).join(', ')}</span>
+                ) : null}
+              </dd>
+            </>
+          ) : null}
+          {compression ? (
+            <>
+              <dt>{t('compressionTitle')}</dt>
+              <dd>
+                <span>
+                  {t(COMPRESSION_KEYS[compression.code], { quality: compression.quality })}
+                  {compression.subsampling !== 'unknown' ? `; ${t('compressionSubsampling', { subsampling: compression.subsampling })}` : ''}
+                </span>
+                {compression.conflict === 'apple-standard' ? <span className="fy-muted">{t('compressionConflictApple')}</span> : null}
+                {compression.conflict === 'android-low' ? (
+                  <span className="fy-muted">{t('compressionConflictAndroid', { make: device?.make ?? metadata?.cameraMake ?? '', quality: compression.quality })}</span>
+                ) : null}
+              </dd>
+            </>
+          ) : null}
+          {light && stance?.sun ? (
+            <>
+              <dt>{t('lightTitle')}</dt>
+              <dd>{t(LIGHT_KEYS[light.verdict], { ev: light.ev ?? '', altitude: Math.round(stance.sun.altitude) })}</dd>
+            </>
+          ) : null}
+          {timestamps.checked > 0 ? (
+            <>
+              <dt>{t('timestampsTitle')}</dt>
+              <dd>
+                {timestamps.issues.length === 0
+                  ? t('timestampsOk', { count: timestamps.checked })
+                  : timestamps.issues.map((issue) => t(TIMESTAMP_ISSUE_KEYS[issue])).join('; ')}
+              </dd>
+            </>
+          ) : null}
+          {originalSign ? (
+            <>
+              <dt>{t('originalTitle')}</dt>
+              <dd>{originalSign}</dd>
+            </>
+          ) : null}
+          {serial ? (
+            <>
+              <dt>{serial.title}</dt>
+              <dd className="fy-mono">{serial.text}</dd>
+            </>
+          ) : null}
+        </dl>
+        <CredentialsDetails credentials={credentials} />
       </div>
     </FactRow>
   );

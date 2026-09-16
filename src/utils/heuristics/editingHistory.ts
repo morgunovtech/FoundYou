@@ -7,6 +7,74 @@ export interface EditingAnalysis {
   hints: string[];
   isAiGenerated: boolean;
   aiTool: string | null;
+  /** What the generator left inside the file (PNG text chunks): the model and the start of the prompt. */
+  aiDetails: AiDetails | null;
+}
+
+export interface AiDetails {
+  model: string | null;
+  /** First line of the prompt, cut to `AI_PROMPT_EXCERPT` characters. */
+  prompt: string | null;
+  /** The chunk that carried it: `parameters`, `workflow`, `prompt`, `Comment`, `Description`… */
+  chunk: string;
+}
+
+export const AI_PROMPT_EXCERPT = 120;
+
+const excerpt = (text: string): string | null => {
+  const line = text.split(/\r?\n/)[0]?.trim() ?? '';
+  if (!line) return null;
+  return line.length > AI_PROMPT_EXCERPT ? `${line.slice(0, AI_PROMPT_EXCERPT - 1).trimEnd()}…` : line;
+};
+
+const stringChunk = (png: Record<string, unknown>, key: string): string | null => {
+  const value = png[key];
+  return typeof value === 'string' && value.trim() ? value : null;
+};
+
+/**
+ * AI generators write their settings into PNG text chunks, never into EXIF: Automatic1111 /
+ * Forge a `parameters` block («…Steps: 30, Sampler: …, Model: …»), ComfyUI the `workflow` /
+ * `prompt` JSON with `class_type` nodes, NovelAI `Software` + `Comment` JSON, InvokeAI an
+ * `invokeai_metadata` / `sd-metadata` JSON. Returns the tool, the model and the prompt line.
+ */
+export function findPngAiMarkers(png: Record<string, unknown>): { tool: string; details: AiDetails } | null {
+  const parameters = stringChunk(png, 'parameters');
+  if (parameters && /(^|\n)Steps: \d+|Sampler: |Seed: \d+/.test(parameters)) {
+    const model = parameters.match(/(?:^|, |\n)Model: ([^,\n]+)/)?.[1]?.trim() ?? null;
+    return { tool: 'Stable Diffusion', details: { model, prompt: excerpt(parameters), chunk: 'parameters' } };
+  }
+  for (const key of ['workflow', 'prompt']) {
+    const json = stringChunk(png, key);
+    if (json && /"class_type"\s*:/.test(json)) {
+      const model = json.match(/"ckpt_name"\s*:\s*"([^"]+)"/)?.[1] ?? json.match(/"unet_name"\s*:\s*"([^"]+)"/)?.[1] ?? null;
+      const prompt = json.match(/"text"\s*:\s*"([^"]{1,400})"/)?.[1] ?? null;
+      return { tool: 'ComfyUI', details: { model, prompt: prompt ? excerpt(prompt) : null, chunk: key } };
+    }
+  }
+  for (const key of ['invokeai_metadata', 'sd-metadata', 'invokeai']) {
+    const json = stringChunk(png, key);
+    if (json) {
+      const model = json.match(/"(?:model_weights|model_name|model)"\s*:\s*"([^"]+)"/)?.[1] ?? null;
+      const prompt = json.match(/"(?:positive_prompt|prompt)"\s*:\s*"([^"]{1,400})"/)?.[1] ?? null;
+      return { tool: 'InvokeAI', details: { model, prompt: prompt ? excerpt(prompt) : null, chunk: key } };
+    }
+  }
+  const software = stringChunk(png, 'Software');
+  const comment = stringChunk(png, 'Comment');
+  if ((software && /novelai/i.test(software)) || (comment && /"uc"\s*:/.test(comment) && /"steps"\s*:/.test(comment))) {
+    const description = stringChunk(png, 'Description');
+    return { tool: 'NovelAI', details: { model: null, prompt: description ? excerpt(description) : null, chunk: 'Comment' } };
+  }
+  const text = Object.values(png)
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ');
+  for (const marker of AI_MARKERS) {
+    if (marker.pattern.test(text)) {
+      return { tool: marker.tool, details: { model: null, prompt: null, chunk: 'text' } };
+    }
+  }
+  return null;
 }
 
 interface SoftwareProfile {
@@ -195,7 +263,9 @@ function digitalSourceTypeOf(xmp: Record<string, unknown>): string | null {
 export function analyzeEditingHistory(
   metadata: Record<string, unknown>,
   xmp: Record<string, unknown>,
-  lang: Lang
+  lang: Lang,
+  /** PNG header + text chunks (`groups.png`), where the generators leave their settings. */
+  png?: Record<string, unknown> | null
 ): EditingAnalysis {
   const softwareSources = collectSoftwareSources(metadata, xmp);
   const allText = softwareSources.join(' ');
@@ -253,6 +323,15 @@ export function analyzeEditingHistory(
     aiTool = 'AI (unknown)';
   }
 
+  // PNG text chunks: the generator's own settings beat every guess above.
+  let aiDetails: AiDetails | null = null;
+  const pngMarkers = png ? findPngAiMarkers(png) : null;
+  if (pngMarkers) {
+    isAiGenerated = true;
+    aiTool = pngMarkers.tool;
+    aiDetails = pngMarkers.details;
+  }
+
   return {
     edited: foundSoftware.length > 0,
     software: foundSoftware,
@@ -260,5 +339,6 @@ export function analyzeEditingHistory(
     hints,
     isAiGenerated,
     aiTool,
+    aiDetails,
   };
 }

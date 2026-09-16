@@ -35,12 +35,24 @@ const KNOWN: Record<string, ResEntry> = {
   '1320x2868': { devices: ['iPhone 16 Pro Max'], type: 'screenshot' },
   '1125x2436': { devices: ['iPhone X/XS/11 Pro'], type: 'screenshot' },
   '750x1334': { devices: ['iPhone 6/7/8/SE2/SE3'], type: 'screenshot' },
+  '1284x2778': { devices: ['iPhone 12/13 Pro Max'], type: 'screenshot' },
+  '1242x2688': { devices: ['iPhone XS Max/11 Pro Max'], type: 'screenshot' },
+  '828x1792': { devices: ['iPhone XR/11'], type: 'screenshot' },
+  '1080x2340': { devices: ['Xiaomi, Realme, Oppo'], type: 'screenshot' },
+  '2048x2732': { devices: ['iPad Pro 12.9"'], type: 'screenshot' },
+  '1640x2360': { devices: ['iPad Air/10th gen'], type: 'screenshot' },
+  '1620x2160': { devices: ['iPad 9th gen'], type: 'screenshot' },
+  '1668x2388': { devices: ['iPad Pro 11"/Air'], type: 'screenshot' },
 
   // Android screenshots
   '1080x2400': { devices: ['Samsung Galaxy S21/S22, OnePlus 9'], type: 'screenshot' },
-  '1080x2340': { devices: ['Xiaomi, Realme, Oppo'], type: 'screenshot' },
   '1440x3120': { devices: ['Google Pixel 7 Pro'], type: 'screenshot' },
   '1440x3200': { devices: ['Samsung Galaxy S21/S22 Ultra'], type: 'screenshot' },
+  '1440x3088': { devices: ['Samsung Galaxy S23/S24 Ultra'], type: 'screenshot' },
+  '1080x2408': { devices: ['Xiaomi, Redmi, Samsung A-series'], type: 'screenshot' },
+  '1080x2280': { devices: ['Samsung Galaxy S10/A50'], type: 'screenshot' },
+  '720x1600': { devices: ['Budget Android'], type: 'screenshot' },
+  '1440x2960': { devices: ['Samsung Galaxy S8/S9'], type: 'screenshot' },
 
   // Desktop screenshots
   '2560x1440': { devices: ['QHD monitor / iMac 27"'], type: 'screenshot' },
@@ -48,6 +60,15 @@ const KNOWN: Record<string, ResEntry> = {
   '2880x1800': { devices: ['MacBook Pro 15"/16" (Retina)'], type: 'screenshot' },
   '3024x1964': { devices: ['MacBook Pro 14" M1/M2/M3'], type: 'screenshot' },
   '3456x2234': { devices: ['MacBook Pro 16" M1/M2/M3'], type: 'screenshot' },
+  '2560x1600': { devices: ['MacBook Air/Pro 13" (Retina)'], type: 'screenshot' },
+  '2560x1664': { devices: ['MacBook Air 13" M2/M3'], type: 'screenshot' },
+  '3072x1920': { devices: ['MacBook Air 15" M2/M3'], type: 'screenshot' },
+  '3840x2160': { devices: ['4K monitor'], type: 'screenshot' },
+  '1366x768': { devices: ['Laptop (HD)'], type: 'screenshot' },
+  '1536x864': { devices: ['Laptop (FullHD at 125%)'], type: 'screenshot' },
+  '1440x900': { devices: ['MacBook Air (non-Retina), monitor'], type: 'screenshot' },
+  '1680x1050': { devices: ['Monitor (WSXGA+)'], type: 'screenshot' },
+  '1280x800': { devices: ['MacBook (non-Retina), tablet'], type: 'screenshot' },
 };
 
 const CONTENT_TYPES: Record<Lang, Record<string, string>> = {

@@ -6,6 +6,10 @@ import type { SceneMatchKind } from '../../utils/sceneText';
 import type { QrKind } from '../../utils/qr';
 import type { PiiKind } from '../../utils/pii';
 import type { AppleCaptureType } from '../../utils/appleMakerNote';
+import type { ScreenshotLevel, ScreenshotReason } from '../../utils/screenshot';
+import type { CompressionCode } from '../../utils/jpegQuant';
+import type { LightVerdict } from '../../utils/lightCheck';
+import type { TimestampIssue } from '../../utils/timestampConsistency';
 
 /*
  * Machine codes from the pure utilities → dictionary keys. The utilities never
@@ -126,4 +130,44 @@ export const SEVERITY_KEYS: Record<Severity, MessageKey> = {
   low: 'severityLow',
   medium: 'severityMedium',
   high: 'severityHigh'
+};
+
+export const SCREENSHOT_LEVEL_KEYS: Record<ScreenshotLevel, MessageKey> = {
+  unlikely: 'screenshotUnlikely',
+  possible: 'screenshotPossible',
+  likely: 'screenshotLikely',
+  certain: 'screenshotCertain'
+};
+
+export const SCREENSHOT_REASON_KEYS: Record<ScreenshotReason, MessageKey> = {
+  filename: 'screenshotReasonFilename',
+  'screen-size': 'screenshotReasonScreenSize',
+  'no-camera-exif': 'screenshotReasonNoCameraExif',
+  png: 'screenshotReasonPng',
+  'flat-pixels': 'screenshotReasonFlatPixels',
+  'camera-exif': 'screenshotReasonCameraExif',
+  'photo-pixels': 'screenshotReasonPhotoPixels'
+};
+
+export const COMPRESSION_KEYS: Record<CompressionCode, MessageKey> = {
+  'standard-high': 'compressionStandardHigh',
+  'standard-medium': 'compressionStandardMedium',
+  'standard-low': 'compressionStandardLow',
+  custom: 'compressionCustom'
+};
+
+export const LIGHT_KEYS: Record<LightVerdict, MessageKey> = {
+  consistent: 'lightConsistent',
+  'night-daylight-exposure': 'lightNightDaylight',
+  'day-dark-exposure': 'lightDayDark',
+  'no-exposure': 'lightNoExposure'
+};
+
+export const TIMESTAMP_ISSUE_KEYS: Record<TimestampIssue, MessageKey> = {
+  'digitized-differs': 'timestampDigitized',
+  'xmp-create-differs': 'timestampXmp',
+  'modify-before-shot': 'timestampModifyBefore',
+  'zone-differs': 'timestampZone',
+  'signed-before-shot': 'timestampSigned',
+  'disk-before-shot': 'timestampDisk'
 };
