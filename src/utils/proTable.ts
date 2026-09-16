@@ -148,9 +148,37 @@ export function buildProGroups(
     groups.push({ group: lang === 'ru' ? 'Эвристика: время' : 'Heuristic: temporal', rows });
   }
 
-  // 8. Hash
+  // 8. Fingerprints: the byte hash (exact copies) and the perceptual hash (what image search matches on)
   if (proData?.hash) {
-    groups.push({ group: 'SHA-256', rows: [['sha256', proData.hash.sha256]] });
+    const rows: ProRow[] = [['sha256', proData.hash.sha256]];
+    if (proData.hash.phash) rows.push(['phash', proData.hash.phash]);
+    groups.push({ group: lang === 'ru' ? 'Отпечатки' : 'Fingerprints', rows });
+  }
+
+  // 8a. Vendor blocks
+  if (metadata?.apple) {
+    const a = metadata.apple;
+    const rows: ProRow[] = [
+      ['uptimeSeconds', a.uptimeSeconds != null ? String(Math.round(a.uptimeSeconds)) : '—'],
+      ['livePhoto', String(a.livePhoto)],
+      ['burst', String(a.burst)],
+      ['captureType', a.captureType ?? '—'],
+      ['hdr', a.hdr == null ? '—' : String(a.hdr)],
+      ['cameraType', a.cameraType ?? '—'],
+      ['tags', a.tags.map((tag) => '0x' + tag.toString(16).padStart(4, '0')).join(', ')]
+    ];
+    groups.push({ group: 'Apple MakerNote', rows });
+  }
+  if (metadata?.samsung) {
+    const sm = metadata.samsung;
+    const rows: ProRow[] = [
+      ['trailerBytes', String(sm.bytes)],
+      ['mcc', sm.mcc ?? '—'],
+      ['imageUtc', sm.imageUtc ?? '—'],
+      ['motionPhotoBytes', sm.motionPhotoBytes != null ? String(sm.motionPhotoBytes) : '—'],
+      ['blocks', sm.blocks.map((b) => `${b.name} (${b.size})`).join(', ')]
+    ];
+    groups.push({ group: lang === 'ru' ? 'Трейлер Samsung' : 'Samsung trailer', rows });
   }
 
   // 9. Serial numbers

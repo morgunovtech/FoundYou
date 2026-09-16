@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import exifr from 'exifr';
 import { stripContainerMetadata } from './utils/containerMetadata';
+import { hammingDistance, phashFromBlob } from './utils/phash';
 import { InfoBlock } from './components/InfoBlock';
 import { SiteHeader } from './components/SiteHeader';
 import { SiteFooter } from './components/SiteFooter';
@@ -290,7 +291,9 @@ const App: React.FC = () => {
       });
       // Wall-clock of the camera, not the viewer's zone: "night photo" must be night where it was taken.
       const temporalResult = analyzeDateTime(metadata?.shotDateLocal ?? metadata?.shotDate, lang);
-      const hashResult = await generateFileHash(fileInfo.originalFile ?? fileInfo.file);
+      // The perceptual hash needs the decoded picture; the byte hash needs the original bytes.
+      const decoded = await loadImageElement(fileInfo.dataUrl).catch(() => null);
+      const hashResult = await generateFileHash(fileInfo.originalFile ?? fileInfo.file, decoded);
 
       if (cancelled) return;
 
@@ -601,12 +604,21 @@ const App: React.FC = () => {
     const fileName = renameFile ? createAnonymisedName(extension) : `${baseName}.cleaned.${extension}`;
 
     const remaining = await countRemainingMetadata(blob);
-    setVerifyResult({ before: metadataFieldCount, after: remaining });
+    // The perceptual distance to the original tells whether reverse image search still links the copy.
+    const originalPhash = proData?.hash?.phash ?? null;
+    const exportPhash = originalPhash ? await phashFromBlob(blob) : null;
+    const phashDistance = originalPhash && exportPhash ? hammingDistance(originalPhash, exportPhash) : null;
+    setVerifyResult({
+      before: metadataFieldCount,
+      after: remaining,
+      phashDistance,
+      trailingBytesBefore: metadata?.samsung?.bytes ?? 0
+    });
     if (import.meta.env.DEV) {
-      console.info('[pipeline] export:done', { mime: actualMime, remaining });
+      console.info('[pipeline] export:done', { mime: actualMime, remaining, phashDistance });
     }
     return { file: new File([blob], fileName, { type: actualMime }), requested, actualMime };
-  }, [fileInfo, createProcessedCanvas, qualityMode, renameFile, outputFormat, metadataFieldCount]);
+  }, [fileInfo, createProcessedCanvas, qualityMode, renameFile, outputFormat, metadataFieldCount, proData?.hash?.phash, metadata?.samsung?.bytes]);
 
   const triggerDownload = useCallback((file: File) => {
     const link = document.createElement('a');

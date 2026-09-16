@@ -122,9 +122,9 @@ const THREATS: ThreatMap = {
     uz: 'Seriya raqami bitta qurilmadan barcha fotolarni bog\'laydi',
   },
   hash: {
-    ru: 'Хеш позволяет найти это фото на любом сервисе, куда оно загружалось',
-    en: 'Hash allows finding this photo on any service it was uploaded to',
-    uz: 'Xesh bu fotoni yuklangan har qanday xizmatda topishga imkon beradi',
+    ru: 'По отпечатку картинки поиск по изображению находит копии этого фото на любом сервисе, куда оно загружалось',
+    en: 'By the picture fingerprint, reverse image search finds copies of this photo on any service it was uploaded to',
+    uz: 'Rasm izi bo‘yicha rasm qidiruvi bu suratning nusxalarini u yuklangan har qanday xizmatda topadi',
   },
   plates: {
     ru: 'По номеру машины находят владельца через базы штрафов и чаты; вместе с местом съёмки это адрес стоянки',
@@ -260,7 +260,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     sections.push({
       kind: 'time',
       icon: '🕐',
-      title: lang === 'ru' ? 'Время и привычки' : lang === 'uz' ? 'Vaqt va odatlar' : 'Time & habits',
+      title: lang === 'ru' ? 'Когда сделан снимок' : lang === 'uz' ? 'Surat qachon olingan' : 'When the photo was taken',
       text: allFacts,
       subtext: allInferences || null,
       leakPoints: maxSeverity === 'high' ? 15 : 8,
@@ -271,7 +271,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     sections.push({
       kind: 'time',
       icon: '🕐',
-      title: lang === 'ru' ? 'Время и привычки' : lang === 'uz' ? 'Vaqt va odatlar' : 'Time & habits',
+      title: lang === 'ru' ? 'Когда сделан снимок' : lang === 'uz' ? 'Surat qachon olingan' : 'When the photo was taken',
       text: lang === 'ru' ? 'Дата/время съёмки не найдены' : lang === 'uz' ? 'Suratga olish sanasi/vaqti topilmadi' : 'Shot date/time not found',
       subtext: lang === 'ru' ? 'Временные метаданные отсутствуют или были удалены' : 'Temporal metadata is missing or was stripped',
       leakPoints: 0,
@@ -483,10 +483,12 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       kind: 'hash',
       icon: '🔑',
       title: lang === 'ru' ? 'Цифровой отпечаток' : lang === 'uz' ? 'Raqamli barmoq izi' : 'Digital fingerprint',
-      text: `SHA-256: ${hash.sha256.substring(0, 16)}...`,
+      text: hash.phash ? `pHash ${hash.phash} · SHA-256 ${hash.sha256.substring(0, 16)}…` : `SHA-256: ${hash.sha256.substring(0, 16)}...`,
       subtext: lang === 'ru'
-        ? 'Уникальный идентификатор файла — по нему можно найти фото на любом сервисе'
-        : 'Unique file identifier — can be used to find this photo on any service',
+        ? 'Перцептуальный отпечаток картинки переживает сжатие и лёгкие правки: по нему находят копии; SHA-256 меняется от любого пересохранения'
+        : lang === 'uz'
+        ? 'Rasmning pertseptual izi siqish va yengil tahrirlardan keyin ham saqlanadi: u orqali nusxalar topiladi; SHA-256 har qanday qayta saqlashda o‘zgaradi'
+        : 'The perceptual fingerprint survives compression and light edits: copies are found by it; SHA-256 changes with any re-save',
       leakPoints: 5,
       severity: 'low',
       threatScenario: THREATS.hash[lang],

@@ -10,6 +10,11 @@
  *     --make Apple --model "iPhone 15 Pro" --lens "iPhone 15 Pro back triple camera 6.765mm f/1.78" --focal35 24
  *
  * Any option may be omitted; only --lat and --lon are required for the GPS block.
+ *
+ * Vendor blocks for the «Device» card: --software "26.2" (iOS version in the Software tag),
+ * --apple-uptime 1051200 (an Apple MakerNote with RunTime, a Live Photo id, a burst id and
+ * the portrait capture mode), --samsung-mcc 434 (a Samsung SEF trailer after the EOI with
+ * MCC_Data, Image_UTC_Data and a small MotionPhoto_Data payload).
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -45,6 +50,9 @@ const make = opt('make', 'Apple');
 const model = opt('model', 'iPhone 15 Pro');
 const lens = opt('lens', null);
 const focal35 = opt('focal35') != null ? Number(opt('focal35')) : null;
+const software = opt('software', null);
+const appleUptime = opt('apple-uptime') != null ? Number(opt('apple-uptime')) : null;
+const samsungMcc = opt('samsung-mcc', null);
 
 const ascii = (s) => Buffer.from(`${s}\0`, 'latin1');
 const short = (v) => {
@@ -106,7 +114,98 @@ function ifdLength(entries) {
   return 2 + entries.length * 12 + 4 + entries.reduce((sum, e) => sum + (e.data.length > 4 ? e.data.length : 0), 0);
 }
 
+const UNDEFINED = 7;
+
+/** A binary plist holding the CMTime dictionary Apple writes into MakerNote RunTime. */
+function runtimePlist(seconds) {
+  const keys = ['flags', 'value', 'timescale', 'epoch'];
+  const parts = [];
+  const offsets = [];
+  let position = 8;
+  const push = (part) => {
+    offsets.push(position);
+    parts.push(Buffer.from(part));
+    position += part.length;
+  };
+  push([0xd4, 1, 2, 3, 4, 5, 6, 7, 8]);
+  for (const key of keys) push([0x50 | key.length, ...Buffer.from(key, 'latin1')]);
+  const int64 = (n) => {
+    const out = Buffer.alloc(9);
+    out[0] = 0x13;
+    out.writeBigInt64BE(BigInt(Math.floor(n)), 1);
+    return [...out];
+  };
+  push(int64(1));
+  push(int64(seconds * 1e9));
+  push(int64(1e9));
+  push(int64(0));
+  const table = Buffer.from(offsets.flatMap((o) => [(o >> 8) & 0xff, o & 0xff]));
+  const trailer = Buffer.alloc(32);
+  trailer[6] = 2;
+  trailer[7] = 1;
+  trailer.writeBigUInt64BE(BigInt(offsets.length), 8);
+  trailer.writeBigUInt64BE(0n, 16);
+  trailer.writeBigUInt64BE(BigInt(position), 24);
+  return Buffer.concat([Buffer.from('bplist00', 'latin1'), ...parts, table, trailer]);
+}
+
+/** An Apple MakerNote: "Apple iOS\0" + 0001 + "MM" and a big-endian IFD with offsets from the block start. */
+function appleMakerNote(seconds) {
+  const entries = [
+    { tag: 0x0001, type: 9, count: 1, data: Buffer.from([0, 0, 0, 14]) },
+    { tag: 0x0003, type: UNDEFINED, data: runtimePlist(seconds) },
+    { tag: 0x000a, type: 9, count: 1, data: Buffer.from([0, 0, 0, 3]) },
+    { tag: 0x000b, type: ASCII, data: Buffer.from('7A4E0C9B-5D2F-4B11-9C7A-1F2E3D4C5B6A\0', 'latin1') },
+    { tag: 0x0011, type: ASCII, data: Buffer.from('C3D2E1F0-1234-4A5B-8C9D-0E1F2A3B4C5D\0', 'latin1') },
+    { tag: 0x0014, type: 9, count: 1, data: Buffer.from([0, 0, 0, 2]) },
+    { tag: 0x002e, type: 9, count: 1, data: Buffer.from([0, 0, 0, 1]) }
+  ];
+  const header = Buffer.from('Apple iOS\0\0\x01MM', 'latin1');
+  const head = 2 + entries.length * 12 + 4;
+  const ifdBuf = Buffer.alloc(head);
+  ifdBuf.writeUInt16BE(entries.length, 0);
+  let dataOffset = header.length + head;
+  const extra = [];
+  entries.forEach((e, i) => {
+    const o = 2 + i * 12;
+    ifdBuf.writeUInt16BE(e.tag, o);
+    ifdBuf.writeUInt16BE(e.type, o + 2);
+    ifdBuf.writeUInt32BE(e.count ?? e.data.length, o + 4);
+    if (e.data.length <= 4) e.data.copy(ifdBuf, o + 8);
+    else {
+      ifdBuf.writeUInt32BE(dataOffset, o + 8);
+      extra.push(e.data);
+      dataOffset += e.data.length;
+    }
+  });
+  return Buffer.concat([header, ifdBuf, ...extra]);
+}
+
+/** A Samsung SEF trailer: blocks, then the SEFH directory, its length and "SEFT". */
+function samsungTrailer(mcc, dateText) {
+  const utc = String(Date.parse(dateText.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3').replace(' ', 'T') + (offset ?? 'Z')));
+  const blocks = [
+    { type: 0x0a30, name: 'MotionPhoto_Data', data: Buffer.alloc(24_000, 0x42) },
+    { type: 0x0a01, name: 'Image_UTC_Data', data: Buffer.from(utc, 'latin1') },
+    { type: 0x0aa1, name: 'MCC_Data', data: Buffer.from(mcc, 'latin1') }
+  ];
+  const encoded = blocks.map((b) => Buffer.concat([long(b.type), long(b.name.length), Buffer.from(b.name, 'latin1'), b.data]));
+  const body = Buffer.concat(encoded);
+  const entries = [];
+  let position = 0;
+  for (const block of encoded) {
+    entries.push(Buffer.concat([long(0), long(body.length - position), long(block.length)]));
+    position += block.length;
+  }
+  const dir = Buffer.concat([Buffer.from('SEFH', 'latin1'), long(0x106), long(blocks.length), ...entries]);
+  return Buffer.concat([body, dir, long(dir.length), Buffer.from('SEFT', 'latin1')]);
+}
+
 const exifEntries = [{ tag: 0x9003, type: ASCII, count: date.length + 1, data: ascii(date) }];
+if (appleUptime != null) {
+  const note = appleMakerNote(appleUptime);
+  exifEntries.push({ tag: 0x927c, type: UNDEFINED, count: note.length, data: note });
+}
 if (offset) exifEntries.push({ tag: 0x9011, type: ASCII, count: offset.length + 1, data: ascii(offset) });
 if (focal35 != null) exifEntries.push({ tag: 0xa405, type: SHORT, count: 1, data: short(focal35) });
 if (lens) exifEntries.push({ tag: 0xa434, type: ASCII, count: lens.length + 1, data: ascii(lens) });
@@ -147,14 +246,15 @@ if (heading != null) {
 const ifd0Entries = [
   { tag: 0x010f, type: ASCII, count: make.length + 1, data: ascii(make) },
   { tag: 0x0110, type: ASCII, count: model.length + 1, data: ascii(model) },
+  ...(software ? [{ tag: 0x0131, type: ASCII, count: software.length + 1, data: ascii(software) }] : []),
   { tag: 0x8769, type: LONG, count: 1, data: long(0) },
   { tag: 0x8825, type: LONG, count: 1, data: long(0) }
 ];
 const ifd0Offset = 8;
 const exifOffset = ifd0Offset + ifdLength(ifd0Entries);
 const gpsOffset = exifOffset + ifdLength(exifEntries);
-ifd0Entries[2].data = long(exifOffset);
-ifd0Entries[3].data = long(gpsOffset);
+ifd0Entries.find((e) => e.tag === 0x8769).data = long(exifOffset);
+ifd0Entries.find((e) => e.tag === 0x8825).data = long(gpsOffset);
 
 const tiff = Buffer.concat([
   Buffer.from([0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00]),
@@ -177,5 +277,7 @@ let rest = jpeg.subarray(2);
 if (rest[0] === 0xff && rest[1] === 0xe1 && rest.subarray(4, 10).toString('latin1') === 'Exif\0\0') {
   rest = rest.subarray(2 + rest.readUInt16BE(2));
 }
-writeFileSync(output, Buffer.concat([jpeg.subarray(0, 2), marker, payload, rest]));
-console.log(`${output}: EXIF ${payload.length} bytes, GPS ${lat}, ${lon}`);
+// A Samsung trailer goes after the whole JPEG (past the EOI marker), as the phones write it.
+const trailer = samsungMcc ? samsungTrailer(samsungMcc, date) : Buffer.alloc(0);
+writeFileSync(output, Buffer.concat([jpeg.subarray(0, 2), marker, payload, rest, trailer]));
+console.log(`${output}: EXIF ${payload.length} bytes, GPS ${lat}, ${lon}${trailer.length ? `, Samsung trailer ${trailer.length} bytes` : ''}`);

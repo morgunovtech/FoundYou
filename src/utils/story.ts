@@ -29,8 +29,6 @@ export interface StoryInput {
   accuracyLabel: string | null;
   weatherLine: string | null;
   holidayNames: string | null;
-  /** From `TimeProfile.travel`: the camera clock lives in another zone, or a working-hours shot at a leisure place. */
-  travel?: 'zone' | 'leisure' | null;
   /** Licence-plate candidates; the first one is quoted. */
   plates?: PlateCandidate[];
   /** Content Credentials when the file carries a manifest. */
@@ -80,16 +78,13 @@ export function buildStory(input: StoryInput): Story {
   const device = [metadata?.cameraMake, metadata?.cameraModel].filter(Boolean).join(' ').trim();
   if (device) sentences.push(t('storyDevice', { device }));
 
-  // Habits: the temporal heuristics already speak the user's language.
-  const inference = temporal.map((item) => item.inference).filter(Boolean).join('. ');
+  // Time facts only (weekend, age): no habit guesses from a single photo.
   const facts = temporal.map((item) => item.fact).filter(Boolean).join('. ');
-  if (facts) sentences.push(inference ? `${facts}. ${inference}.` : `${facts}.`);
+  if (facts) sentences.push(`${facts}.`);
 
-  // Weather, holiday, trip
+  // Weather and holiday
   if (weatherLine) sentences.push(t('storyWeather', { weather: weatherLine }));
   if (holidayNames) sentences.push(t('storyHoliday', { holiday: holidayNames }));
-  if (input.travel === 'zone') sentences.push(t('storyTravelZone'));
-  else if (input.travel === 'leisure') sentences.push(t('storyTravelLeisure'));
 
   // People
   const persons = detections.filter((d) => d.label === 'person' && d.score >= 0.5).length;

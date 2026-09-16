@@ -57,7 +57,7 @@ const TEMPORAL_HIGH: TemporalInsight[] = [
 ];
 const TEMPORAL_LOW: TemporalInsight[] = [{ fact: 'Lunchtime', inference: '', severity: 'low' }];
 
-const HASH = { sha256: '0123456789abcdef'.repeat(4) };
+const HASH = { sha256: '0123456789abcdef'.repeat(4), phash: 'a1b2c3d4e5f60718' };
 
 const box = (label: string, score: number): BoundingBox => ({ x: 0, y: 0, width: 10, height: 10, score, label });
 const region = (text: string) => ({ text, x: 0, y: 0, width: 1, height: 1, confidence: 90 });
@@ -204,8 +204,8 @@ describe('generateDigitalProfile: full EXIF + GPS', () => {
     expect(profile.serialNumbers).toEqual(['SerialNumber: ABC123']);
   });
 
-  it('hash: first 16 hex chars, 5 points', () => {
-    expect(section(profile, ICON.hash)).toMatchObject({ text: 'SHA-256: 0123456789abcdef...', leakPoints: 5, severity: 'low' });
+  it('hash: pHash first, then the first 16 hex chars of SHA-256, 5 points', () => {
+    expect(section(profile, ICON.hash)).toMatchObject({ text: 'pHash a1b2c3d4e5f60718 · SHA-256 0123456789abcdef…', leakPoints: 5, severity: 'low' });
   });
 });
 
@@ -360,7 +360,8 @@ describe('generateDigitalProfile: individual branches', () => {
 
   it('hash section only when a hash exists', () => {
     expect(icons(generateDigitalProfile(base()))).not.toContain(ICON.hash);
-    expect(section(generateDigitalProfile({ ...base(), hash: HASH }), ICON.hash).text).toMatch(/^SHA-256: [0-9a-f]{16}\.\.\.$/);
+    expect(section(generateDigitalProfile({ ...base(), hash: HASH }), ICON.hash).text).toMatch(/^pHash [0-9a-f]{16} · SHA-256 [0-9a-f]{16}…$/);
+    expect(section(generateDigitalProfile({ ...base(), hash: { ...HASH, phash: null } }), ICON.hash).text).toMatch(/^SHA-256: [0-9a-f]{16}\.\.\.$/);
   });
 });
 

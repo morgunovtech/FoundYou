@@ -1,5 +1,4 @@
 import type { StructuredMetadata } from '../types/metadata';
-import type { ReverseGeocodeResult } from '../types/api';
 import { formatWallClock, parseWallClock, wallClockAsUtcDate, type WallClockParts } from './format';
 import { resolveShotInstant, zoneOffsetMinutes } from './stance';
 
@@ -11,7 +10,8 @@ import { resolveShotInstant, zoneOffsetMinutes } from './stance';
  * saw on the screen; its zone is known only when EXIF wrote an offset or the
  * GPS receiver stamped UTC. The place zone comes from the weather lookup. When
  * both are known, their difference tells whether the phone lives in another
- * region — a strong «trip» signal — and what the local clock showed.
+ * region and what the local clock showed. Facts only: no guesses about habits
+ * from a single photo.
  */
 
 export type TimeOfDay = 'night' | 'earlyMorning' | 'morning' | 'lunch' | 'afternoon' | 'evening' | 'lateEvening';
@@ -64,41 +64,6 @@ export function photoAge(asUtc: Date, now: Date): PhotoAge {
   return { kind: 'days', value: ageDays };
 }
 
-const LEISURE_CATEGORIES = new Set(['natural', 'tourism', 'leisure']);
-const LEISURE_TYPES = new Set([
-  'beach',
-  'park',
-  'hotel',
-  'hostel',
-  'resort',
-  'camp_site',
-  'caravan_site',
-  'viewpoint',
-  'attraction',
-  'nature_reserve',
-  'garden',
-  'zoo',
-  'theme_park',
-  'water_park',
-  'spa',
-  'ski',
-  'peak',
-  'water',
-  'bay',
-  'island'
-]);
-
-/** Nominatim says the point is a place people go to rest, not to work. */
-export function isLeisurePlace(
-  place: Pick<ReverseGeocodeResult, 'category' | 'type' | 'addressType'> | null | undefined
-): boolean {
-  if (!place) return false;
-  const category = place.category?.toLowerCase() ?? '';
-  const addressType = place.addressType?.toLowerCase() ?? '';
-  const type = place.type?.toLowerCase() ?? '';
-  return LEISURE_CATEGORIES.has(category) || LEISURE_CATEGORIES.has(addressType) || LEISURE_TYPES.has(type);
-}
-
 export type CameraClockSource = 'exif-offset' | 'gps-time';
 
 export interface TimeProfile {
@@ -127,12 +92,6 @@ export interface TimeProfile {
     sameDay: boolean;
   } | null;
   age: PhotoAge;
-  travel: {
-    /** The camera clock lives in a different zone than the place. */
-    zone: boolean;
-    /** Working hours of a weekday spent at a leisure place: vacation, day off or business trip. */
-    leisure: boolean;
-  };
 }
 
 export interface TimeProfileInput {
@@ -141,13 +100,11 @@ export interface TimeProfileInput {
   placeTimezone?: string | null;
   /** Holidays lookup answer for the capture date, when allowed and answered. */
   holiday?: { isHoliday: boolean; holidays: Array<{ localName: string; name: string }> } | null;
-  /** Reverse-geocode answer, for the leisure heuristic. */
-  place?: Pick<ReverseGeocodeResult, 'category' | 'type' | 'addressType'> | null;
   now?: Date;
 }
 
 export function buildTimeProfile(input: TimeProfileInput): TimeProfile | null {
-  const { metadata, placeTimezone, holiday, place } = input;
+  const { metadata, placeTimezone, holiday } = input;
   const parts = parseWallClock(metadata?.shotDateLocal);
   if (!metadata || !parts) return null;
   const now = input.now ?? new Date();
@@ -204,10 +161,6 @@ export function buildTimeProfile(input: TimeProfileInput): TimeProfile | null {
     camera,
     place: placeZone,
     clock,
-    age: photoAge(asUtc, now),
-    travel: {
-      zone: clock != null && !clock.match,
-      leisure: workingHours && isLeisurePlace(place)
-    }
+    age: photoAge(asUtc, now)
   };
 }

@@ -16,6 +16,8 @@ import { capitalize, describeWeather } from '../utils/weather';
 import { buildStance, formatOffset, type CompassPoint, type ElevationVerdict, type RelativeDirection, type SunPhase, type InstantSource } from '../utils/stance';
 import { buildTimeProfile, type AgeKind, type DayKind, type TimeOfDay } from '../utils/timeProfile';
 import { buildDeviceProfile, type CameraModule, type DeviceSource } from '../utils/deviceProfile';
+import type { AppleCaptureType } from '../utils/appleMakerNote';
+import { mccCountry } from '../utils/samsungTrailer';
 import { placeTypeLabel } from '../utils/placeType';
 import { ShotDiagram } from './ShotDiagram';
 import { formatBytes, formatDetailedDate, formatDimensions, formatMegapixels, describeFileType } from '../utils/format';
@@ -83,6 +85,22 @@ const DAY_KIND_KEYS: Record<DayKind, MessageKey> = { weekend: 'dayWeekend', week
 const AGE_KEYS: Record<AgeKind, MessageKey> = { future: 'ageFuture', fresh: 'ageFresh', days: 'ageDays', months: 'ageMonths', years: 'ageYears' };
 const CAMERA_MODULE_KEYS: Record<CameraModule, MessageKey> = { main: 'cameraModuleMain', ultrawide: 'cameraModuleUltrawide', tele: 'cameraModuleTele' };
 const DEVICE_SOURCE_KEYS: Record<DeviceSource, MessageKey> = { exif: 'deviceSourceExif', filename: 'deviceSourceFilename', resolution: 'deviceSourceResolution' };
+const CAPTURE_TYPE_KEYS: Record<AppleCaptureType, MessageKey> = {
+  proraw: 'captureProraw',
+  portrait: 'capturePortrait',
+  photo: 'capturePhoto',
+  'manual-focus': 'captureManualFocus',
+  scene: 'captureScene'
+};
+
+/** «Узбекистан» for `UZ` in the UI language; the code itself when the browser has no names. */
+function regionName(code: string, locale: string): string {
+  try {
+    return new Intl.DisplayNames([locale], { type: 'region' }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
 
 /** `YYYY-MM` → «сентябрь 2023 г.» in the UI language. */
 function formatMonthYear(ym: string, locale: string): string {
@@ -156,12 +174,10 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       buildTimeProfile({
         metadata,
         placeTimezone: remote ? geo.weather.data?.timezone ?? null : null,
-        holiday: remote ? geo.holidays.data : null,
-        place: remote ? geo.reverse.data : null
+        holiday: remote ? geo.holidays.data : null
       }),
-    [metadata, remote, geo.weather.data?.timezone, geo.holidays.data, geo.reverse.data]
+    [metadata, remote, geo.weather.data?.timezone, geo.holidays.data]
   );
-  const travel = timeProfile?.travel.zone ? 'zone' : timeProfile?.travel.leisure ? 'leisure' : null;
 
   // «Device»: maker, marketing name, system, age of the model, camera module, shot counter.
   const deviceProfile = useMemo(
@@ -186,11 +202,10 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
         accuracyLabel,
         weatherLine,
         holidayNames,
-        travel,
         plates,
         credentials: credentials.data
       }),
-    [t, lang, metadata, profile, proData, detections, ocrResult, place, accuracyLabel, weatherLine, holidayNames, travel, plates, credentials.data]
+    [t, lang, metadata, profile, proData, detections, ocrResult, place, accuracyLabel, weatherLine, holidayNames, plates, credentials.data]
   );
 
   const proGroups = useMemo(
@@ -464,6 +479,17 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     if (rest > 0 || hours === 0) parts.push(t('durationMinutesShort', { count: rest }));
     return parts.join(' ');
   };
+  /** «12 дн. 4 ч» / «3 ч 20 мин» for an uptime in seconds. */
+  const formatUptime = (seconds: number) => {
+    const days = Math.floor(seconds / 86_400);
+    const hours = Math.floor((seconds % 86_400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const parts: string[] = [];
+    if (days > 0) parts.push(t('durationDaysShort', { count: days }));
+    if (hours > 0 || days > 0) parts.push(t('durationHoursShort', { count: hours }));
+    if (days === 0) parts.push(t('durationMinutesShort', { count: minutes }));
+    return parts.join(' ');
+  };
   /** «2 г. 11 мес.» for an age in months. */
   const formatMonthsAge = (months: number) => {
     const years = Math.floor(months / 12);
@@ -474,7 +500,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     return parts.length > 0 ? parts.join(' ') : t('durationLessThanMonth');
   };
 
-  // «Time and habits»: what the clock says once it is read together with the place.
+  // «When the photo was taken»: what the clock says once it is read together with the place.
   const timeDetails = (() => {
     if (!timeProfile) return null;
     const tp = timeProfile;
@@ -502,20 +528,6 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       const when = tp.clock.sameDay ? tp.clock.local.slice(11, 16) : formatDetailedDate(tp.clock.local, lang) ?? tp.clock.local;
       return `${head}; ${t('timeLocalClock', { when })}`;
     })();
-
-    const inferences: string[] = [];
-    if (tp.dayKind === 'holiday') inferences.push(t('inferHoliday'));
-    else if (tp.dayKind === 'weekend') inferences.push(t('inferWeekend'));
-    else if (tp.workingHours) inferences.push(t('inferWorking'));
-    if (tp.timeOfDay === 'night') inferences.push(t('inferNight'));
-    else if (tp.timeOfDay === 'earlyMorning') inferences.push(t('inferEarly'));
-    else if (tp.timeOfDay === 'lunch') inferences.push(t('inferLunch'));
-    if (tp.travel.zone && tp.camera && tp.place) {
-      inferences.push(t('inferTravelZone', { camera: formatOffset(tp.camera.offsetMinutes), place: formatOffset(tp.place.offsetMinutes) }));
-    } else if (tp.travel.leisure && placeType) {
-      inferences.push(t('inferTravelLeisure', { type: t(placeType.key, placeType.params) }));
-    }
-    if (tp.age.kind === 'fresh') inferences.push(t('inferFresh'));
 
     return (
       <div className="fy-fact-details">
@@ -550,12 +562,6 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
           ) : null}
           <dt>{t('timeAge')}</dt>
           <dd>{t(AGE_KEYS[tp.age.kind], { count: tp.age.value })}</dd>
-          {inferences.length > 0 ? (
-            <>
-              <dt>{t('timeInference')}</dt>
-              <dd>{inferences.join(' ')}</dd>
-            </>
-          ) : null}
         </dl>
       </div>
     );
@@ -626,6 +632,46 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
           <span className="fy-mono">{new Intl.NumberFormat(lang).format(d.shotIndex)}</span>
           <span className="fy-muted">{t('deviceShotCounterHint')}</span>
         </>
+      ]);
+    }
+    // Apple MakerNote: what the iPhone wrote about itself and the shot.
+    const apple = metadata?.apple;
+    if (apple) {
+      if (apple.uptimeSeconds != null) {
+        rows.push([
+          t('deviceUptime'),
+          <>
+            <span>{formatUptime(apple.uptimeSeconds)}</span>
+            <span className="fy-muted">{t('deviceUptimeHint')}</span>
+          </>
+        ]);
+      }
+      rows.push([t('deviceLivePhoto'), apple.livePhoto ? t('deviceLivePhotoYes') : t('answerNo')]);
+      if (apple.burst) rows.push([t('deviceBurst'), t('answerYes')]);
+      if (apple.captureType || apple.hdr) {
+        const mode = [apple.captureType ? t(CAPTURE_TYPE_KEYS[apple.captureType]) : null, apple.hdr ? t('captureHdr') : null].filter(Boolean);
+        rows.push([t('deviceCaptureMode'), mode.join(', ')]);
+      }
+    }
+    // Samsung trailer after the end of the image: SIM country, hidden video.
+    const samsung = metadata?.samsung;
+    if (samsung) {
+      if (samsung.mcc) {
+        const country = mccCountry(samsung.mcc);
+        rows.push([
+          t('deviceSim'),
+          <>
+            <span>{country ? t('deviceSimCountry', { country: regionName(country, lang), mcc: samsung.mcc }) : t('deviceSimUnknown', { mcc: samsung.mcc })}</span>
+            <span className="fy-muted">{t('deviceSimHint')}</span>
+          </>
+        ]);
+      }
+      if (samsung.motionPhotoBytes != null) {
+        rows.push([t('deviceMotionPhoto'), t('deviceMotionPhotoYes', { size: formatBytes(samsung.motionPhotoBytes, lang) })]);
+      }
+      rows.push([
+        t('deviceTrailer'),
+        t('deviceTrailerValue', { size: formatBytes(samsung.bytes, lang), blocks: samsung.blocks.map((b) => b.name).join(', ') })
       ]);
     }
     rows.push([t('deviceSource'), t(DEVICE_SOURCE_KEYS[d.source])]);

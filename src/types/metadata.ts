@@ -1,3 +1,6 @@
+import type { AppleMakerNote } from '../utils/appleMakerNote';
+import type { SamsungTrailer } from '../utils/samsungTrailer';
+
 export interface BasicFileInfo {
   file: File;
   dataUrl: string;
@@ -63,6 +66,10 @@ export interface StructuredMetadata {
   };
   completeness: number;
   orientation?: 'portrait' | 'landscape' | 'square' | 'unknown';
+  /** Apple MakerNote (iPhone / iPad): uptime, Live Photo, burst, capture mode. */
+  apple?: AppleMakerNote;
+  /** Samsung trailer after the JPEG EOI: SIM country, UTC stamp, Motion Photo video. */
+  samsung?: SamsungTrailer;
 }
 
 export type ManualCoordinates = {

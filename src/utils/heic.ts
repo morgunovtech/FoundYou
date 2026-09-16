@@ -308,6 +308,8 @@ export async function extractMetadataFromOriginal(file: File): Promise<RawMetada
       // PNG header + tEXt chunks (Stable Diffusion `parameters`, ComfyUI `workflow`, …).
       // exifr only ever emits this segment for PNG sources, so it is harmless for JPEG/HEIC.
       ihdr: true,
+      // The raw MakerNote bytes: `appleMakerNote.ts` reads uptime / Live Photo / burst out of them.
+      makerNote: true,
       translateKeys: true,
       translateValues: false,
     })
