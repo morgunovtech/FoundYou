@@ -242,3 +242,21 @@ describe('analyzeEditingHistory: languages', () => {
     expect(new Set(results.map((result) => result.hints[0])).size).toBe(3);
   });
 });
+
+describe('analyzeEditingHistory: IPTC DigitalSourceType', () => {
+  it('reads the standard AI marker the generators write, top-level or nested', () => {
+    const top = analyzeEditingHistory({}, { DigitalSourceType: 'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia' }, 'en');
+    expect(top.isAiGenerated).toBe(true);
+    expect(top.aiTool).toBe('AI (IPTC DigitalSourceType)');
+    const nested = analyzeEditingHistory(
+      { Software: 'Imagen 3' },
+      { Iptc4xmpExt: { DigitalSourceType: 'http://cv.iptc.org/newscodes/digitalsourcetype/compositeWithTrainedAlgorithmicMedia' } },
+      'en'
+    );
+    expect(nested.isAiGenerated).toBe(true);
+    expect(nested.aiTool).toBe('Imagen 3');
+    // A camera photo carries digitalCapture and is not AI.
+    const capture = analyzeEditingHistory({}, { DigitalSourceType: 'http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture' }, 'en');
+    expect(capture.isAiGenerated).toBe(false);
+  });
+});

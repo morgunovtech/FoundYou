@@ -11,8 +11,6 @@ interface SceneBlockProps {
   detections: BoundingBox[];
   sceneDescription: string;
   detectionProgress: { label: string; value: number } | null;
-  onMakeSafeCopy: () => void;
-  onBlurFaces: () => void;
 }
 
 /**
@@ -24,9 +22,7 @@ export const SceneBlock: React.FC<SceneBlockProps> = ({
   fileInfo,
   detections,
   sceneDescription,
-  detectionProgress,
-  onMakeSafeCopy,
-  onBlurFaces
+  detectionProgress
 }) => {
   const t = useT();
   return (
@@ -41,24 +37,11 @@ export const SceneBlock: React.FC<SceneBlockProps> = ({
             progress={detectionProgress}
           />
         </div>
-        <div className="fy-explainers">
-          <Explainer title={t('explainerAttackerTitle')}>
-            <p>{t('sceneExplainer1')}</p>
-            <p>{t('sceneExplainer2')}</p>
-            <p>{t('sceneExplainer3')}</p>
-          </Explainer>
-          <Explainer title={t('factWhatToDo')}>
-            <p>{t('sceneTodo')}</p>
-            <div className="fy-actions">
-              <button type="button" className="v4-btn fy-btn-sm" onClick={onBlurFaces}>
-                {t('todoPeopleButton')}
-              </button>
-              <button type="button" className="v4-btn fy-btn-sm" onClick={onMakeSafeCopy}>
-                {t('verdictCta')}
-              </button>
-            </div>
-          </Explainer>
-        </div>
+        <Explainer title={t('explainerAttackerTitle')}>
+          <p>{t('sceneExplainer1')}</p>
+          <p>{t('sceneExplainer2')}</p>
+          <p>{t('sceneExplainer3')}</p>
+        </Explainer>
       </div>
     </section>
   );

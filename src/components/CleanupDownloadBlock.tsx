@@ -48,6 +48,10 @@ interface CleanupDownloadBlockProps {
   plateCount: number;
   blurPlates: boolean;
   setBlurPlates: (value: boolean) => void;
+  /** Decoded QR codes; the toggle blurs their boxes. */
+  qrCount: number;
+  blurQr: boolean;
+  setBlurQr: (value: boolean) => void;
   /** Web Share API with files is available here; shows the share button. */
   shareSupported: boolean;
   /** A cleaned file is prepared and waits for one more tap (the activation window closed). */
@@ -143,6 +147,9 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
   antiSearchDistance = null,
   plateCount = 0,
   blurPlates = false,
+  qrCount = 0,
+  blurQr = false,
+  setBlurQr,
   setBlurPlates = () => {},
   shareSupported = false,
   shareReady = false,
@@ -195,9 +202,10 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     if (blurFaces && blurTargetCount > 0) parts.push(t('privacyDiffBlurFaces', { count: blurTargetCount }));
     else if (blurFaces) parts.push(t('privacyDiffBlurFacesNoDetections'));
     if (blurPlates && plateCount > 0) parts.push(t('privacyDiffBlurPlates', { count: plateCount }));
+    if (blurQr && qrCount > 0) parts.push(t('privacyDiffBlurQr', { count: qrCount }));
     if (manualMasks.length > 0) parts.push(t('privacyDiffBlurManual', { count: manualMasks.length }));
     return parts.length > 0 ? parts.join(' ') : t('privacyDiffBlurNone');
-  }, [blurFaces, blurPlates, plateCount, manualMasks.length, blurTargetCount, t]);
+  }, [blurFaces, blurPlates, plateCount, blurQr, qrCount, manualMasks.length, blurTargetCount, t]);
 
   const renameSummary = useMemo(() => {
     if (!fileInfo) return t('privacyDiffRenameOff', { name: t('emptyValue') });
@@ -210,7 +218,11 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
   }, [fileInfo, renameFile, t]);
 
   const blurActive =
-    (blurFaces && blurTargetCount > 0) || (blurText && ocrRegionCount > 0) || (blurPlates && plateCount > 0) || manualMasks.length > 0;
+    (blurFaces && blurTargetCount > 0) ||
+    (blurText && ocrRegionCount > 0) ||
+    (blurPlates && plateCount > 0) ||
+    (blurQr && qrCount > 0) ||
+    manualMasks.length > 0;
 
   const summaryItems = useMemo(
     () =>
@@ -256,6 +268,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     setBlurFaces(false);
     setBlurText(false);
     setBlurPlates(false);
+    setBlurQr(false);
     setManualMaskMode(false);
     manualMasks.forEach((mask) => onManualMaskRemove(mask.id));
     setAntiSearchEnabled(false);
@@ -270,6 +283,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     setAntiSearchEnabled,
     setBlurFaces,
     setBlurPlates,
+    setBlurQr,
     setBlurText,
     setDownscaleMax,
     setManualMaskMode,
@@ -286,6 +300,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     if (!detectionUnavailable && blurTargetCount > 0) setBlurFaces(true);
     setBlurText(true);
     if (plateCount > 0) setBlurPlates(true);
+    if (qrCount > 0) setBlurQr(true);
     setManualMaskMode(true);
     setAntiSearchEnabled(true);
     setAntiSearchLevel(3);
@@ -304,7 +319,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     setMirrorEnabled,
     setPrnuCleanup,
     setRenameFile,
-    setWatermarkEnabled, plateCount, setBlurPlates]);
+    setWatermarkEnabled, plateCount, setBlurPlates, qrCount, setBlurQr]);
 
   const toImagePoint = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
@@ -455,7 +470,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     }
   }, [draftStroke, fileInfo, manualMasks, mapStrokeToOverlay, overlayRedrawKey, previewDataUrl]);
 
-  const showBlurStrength = blurFaces || blurText || blurPlates || manualMaskMode;
+  const showBlurStrength = blurFaces || blurText || blurPlates || blurQr || manualMaskMode;
 
   const verifyMessage = useMemo(() => {
     if (!verifyResult) return null;
@@ -555,8 +570,13 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
               </select>
             </div>
             <span className="fy-field-meta">
-              {t('qualityPercentLabel', { percent: QUALITY_PERCENT[qualityMode], size: estimatedLabel })}
+              {t('qualityPercentLabel', {
+                percent: QUALITY_PERCENT[qualityMode],
+                size: estimatedLabel,
+                original: fileInfo ? formatBytesPrecise(fileInfo.originalSizeBytes ?? fileInfo.sizeBytes) : t('emptyValue')
+              })}
             </span>
+            <p className="fy-hint">{t('qualityHint')}</p>
           </div>
 
           {/* Card 2: metadata */}
@@ -620,7 +640,17 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
                 <span>{t('hideRowNone', { label: t('hidePlatesLabel'), state: t('hideNone') })}</span>
               </p>
             )}
-            {blurTargetCount === 0 || ocrRegionCount === 0 || plateCount === 0 ? <p className="fy-hint">{t('hideNoneHint')}</p> : null}
+            {qrCount > 0 ? (
+              <label className="fy-check">
+                <input type="checkbox" checked={blurQr} onChange={(event) => setBlurQr(event.target.checked)} />
+                <span>{t('blurQr', { count: qrCount })}</span>
+              </label>
+            ) : (
+              <p className="fy-check fy-check--none">
+                <span>{t('hideRowNone', { label: t('hideQrLabel'), state: t('hideNone') })}</span>
+              </p>
+            )}
+            {blurTargetCount === 0 || ocrRegionCount === 0 || plateCount === 0 || qrCount === 0 ? <p className="fy-hint">{t('hideNoneHint')}</p> : null}
             <label className="fy-check">
               <input type="checkbox" checked={manualMaskMode} onChange={(event) => setManualMaskMode(event.target.checked)} />
               <span>{t('manualMaskToggle')}</span>

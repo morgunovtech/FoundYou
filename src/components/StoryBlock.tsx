@@ -1,17 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { DigitalProfile, ProfileSection, ProfileSectionKind } from '../utils/heuristics/digitalProfile';
+import { ORIGIN_KINDS, type DigitalProfile, type ProfileSection, type ProfileSectionKind } from '../utils/heuristics/digitalProfile';
 import type { StructuredMetadata, BasicFileInfo } from '../types/metadata';
 import type { BoundingBox } from '../types/detection';
 import type { OCRResult } from '../hooks/useOCR';
 import type { ProData } from '../App';
 import { useI18n, useT, type MessageKey } from '../i18n';
 import { useGeoContext, type RemoteStatus } from '../hooks/useGeoContext';
-import { buildStory, ORIGIN_KINDS } from '../utils/story';
 import { buildFileHistory, type FileEvent } from '../utils/fileHistory';
 import { DRIFT_EXACT_SECONDS } from '../utils/timeProfile';
 import { buildProGroups } from '../utils/proTable';
 import { geotagTipKey } from '../utils/geotagTips';
-import type { PlateCandidate } from '../utils/plates';
+import type { QrCode } from '../utils/qr';
+import type { PiiFinding } from '../utils/pii';
+import { matchSceneText, type SceneMatchKind } from '../utils/sceneText';
+import { qrKindLabel, piiKindLabel } from '../utils/heuristics/digitalProfile';
 import type { ContentCredentialsState } from '../hooks/useContentCredentials';
 import { formatCoords, formatDistance, localizeCategoryKey, localizePlaceParts } from '../utils/insightsCompact';
 import { capitalize, describeWeather } from '../utils/weather';
@@ -39,10 +41,9 @@ interface StoryBlockProps {
   ocrError: string | null;
   ocrProgressLabel: string | null;
   onMakeSafeCopy: () => void;
-  /** «What to do» buttons: switch a cleanup option on and go to the cleanup section. */
-  actions: { blurFaces: () => void; blurText: () => void; blurPlates: () => void };
   credentials: ContentCredentialsState;
-  plates: PlateCandidate[];
+  qrCodes: QrCode[];
+  pii: PiiFinding[];
 }
 
 const PRO_ROW_CAP = 200;
@@ -89,6 +90,12 @@ const DAY_KIND_KEYS: Record<DayKind, MessageKey> = { weekend: 'dayWeekend', week
 const AGE_KEYS: Record<AgeKind, MessageKey> = { future: 'ageFuture', fresh: 'ageFresh', days: 'ageDays', months: 'ageMonths', years: 'ageYears' };
 const CAMERA_MODULE_KEYS: Record<CameraModule, MessageKey> = { main: 'cameraModuleMain', ultrawide: 'cameraModuleUltrawide', tele: 'cameraModuleTele' };
 const DEVICE_SOURCE_KEYS: Record<DeviceSource, MessageKey> = { exif: 'deviceSourceExif', filename: 'deviceSourceFilename', resolution: 'deviceSourceResolution' };
+const SCENE_MATCH_KEYS: Record<SceneMatchKind, MessageKey> = {
+  road: 'sceneMatchRoad',
+  place: 'sceneMatchPlace',
+  poi: 'sceneMatchPoi',
+  house: 'sceneMatchHouse'
+};
 const CAPTURE_TYPE_KEYS: Record<AppleCaptureType, MessageKey> = {
   proraw: 'captureProraw',
   portrait: 'capturePortrait',
@@ -131,9 +138,9 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   ocrError,
   ocrProgressLabel,
   onMakeSafeCopy,
-  actions,
   credentials,
-  plates
+  qrCodes,
+  pii
 }) => {
   const t = useT();
   const { lang } = useI18n();
@@ -142,18 +149,10 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   const [textExpanded, setTextExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const tipRef = useRef<HTMLDetailsElement>(null);
-  const openGeotagTip = useCallback(() => {
-    const tip = tipRef.current;
-    if (!tip) return;
-    tip.open = true;
-    tip.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, []);
   useEffect(() => () => clearTimeout(copyTimerRef.current), []);
 
   const remote = geo.enabled && Boolean(geo.coords);
   const placeInfo = useMemo(() => localizePlaceParts(geo.reverse.data, lang), [geo.reverse.data, lang]);
-  const place = remote && !geo.reverse.status.loading && !geo.reverse.status.error ? placeInfo.place || null : null;
   const accuracyLabel = geo.accuracyMeters != null ? formatDistance(geo.accuracyMeters, lang) : null;
   const weatherLine = useMemo(
     () => (remote && geo.weather.data ? describeWeather(geo.weather.data, t, lang) : null),
@@ -197,26 +196,19 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     [metadata, proData?.filename, proData?.resolution]
   );
 
-  const story = useMemo(
+  // Does the text in the picture agree with the place? Compared on the device over data already here.
+  const sceneMatches = useMemo(
     () =>
-      buildStory({
-        t,
-        lang,
-        metadata,
-        profile,
-        temporal: proData?.temporal ?? [],
-        editing: proData?.editing ?? null,
-        stripped: proData?.stripped ?? null,
-        detections,
-        ocrResult,
-        place,
-        accuracyLabel,
-        weatherLine,
-        holidayNames,
-        plates,
-        credentials: credentials.data
-      }),
-    [t, lang, metadata, profile, proData, detections, ocrResult, place, accuracyLabel, weatherLine, holidayNames, plates, credentials.data]
+      remote && ocrResult && geo.reverse.data
+        ? matchSceneText({
+            text: ocrResult.fullText,
+            road: geo.reverse.data.road,
+            houseNumber: geo.reverse.data.houseNumber,
+            placeName: geo.reverse.data.name,
+            poiNames: geo.poi.items.map((poi) => poi.name).filter(Boolean)
+          })
+        : [],
+    [remote, ocrResult, geo.reverse.data, geo.poi.items]
   );
 
   const proGroups = useMemo(
@@ -327,6 +319,18 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
             <span className="fy-mono">{formatCoords(geo.coords.lat, geo.coords.lon)}</span>
             {!remote && accuracyLabel ? <span className="fy-muted">{accuracyLabel}</span> : null}
           </dd>
+          {sceneMatches.length > 0 ? (
+            <>
+              <dt>{t('sceneMatchTitle')}</dt>
+              <dd>
+                <span>
+                  {sceneMatches
+                    .map((match) => t(SCENE_MATCH_KEYS[match.kind], { token: match.token, name: match.name }))
+                    .join('; ')}
+                </span>
+              </dd>
+            </>
+          ) : null}
           {metadata?.gps?.altitude != null ? (
             <>
               <dt>{t('insightCompactAltitude')}</dt>
@@ -394,7 +398,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
           </div>
         </div>
       ) : null}
-      <details className="fy-tip" ref={tipRef}>
+      <details className="fy-tip">
         <summary data-more={t('showAction')} data-less={t('hideAction')}>{t('geotagTipTitle')}</summary>
         <p>{t(geotagTipKey(metadata?.cameraMake, metadata?.cameraModel, proData?.filename.platform))}</p>
       </details>
@@ -456,7 +460,6 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
         value={null}
         sub={null}
         soWhat={t('stanceSoWhat')}
-        todo={{ text: t('todoStance'), buttons: [{ label: t('verdictCta'), onClick: onMakeSafeCopy }] }}
       >
         <div className="fy-fact-details fy-shot">
           <ShotDiagram
@@ -731,6 +734,32 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     );
   })();
 
+  // «QR-коды»: one row per code, the kind and a masked summary; the raw text stays in the raw data.
+  const qrDetails =
+    qrCodes.length > 0 ? (
+      <dl className="fy-spec fy-spec--tight">
+        {qrCodes.map((code, index) => (
+          <React.Fragment key={`${code.kind}-${index}`}>
+            <dt>{qrKindLabel(code.kind, lang)}</dt>
+            <dd>{code.summary || t('emptyValue')}</dd>
+          </React.Fragment>
+        ))}
+      </dl>
+    ) : null;
+
+  // «Документы и контакты»: the kind and a masked sample per finding.
+  const documentDetails =
+    pii.length > 0 ? (
+      <dl className="fy-spec fy-spec--tight">
+        {pii.map((finding, index) => (
+          <React.Fragment key={`${finding.kind}-${index}`}>
+            <dt>{piiKindLabel(finding.kind, lang)}</dt>
+            <dd className="fy-mono">{finding.sample}</dd>
+          </React.Fragment>
+        ))}
+      </dl>
+    ) : null;
+
   const textDetails = (() => {
     if (ocrLoading) {
       return <p className="fy-hint">{ocrProgressLabel ?? t('factTextLoading')}</p>;
@@ -872,7 +901,6 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
         value={headline}
         sub={null}
         soWhat={t('originSoWhat')}
-        todo={{ text: t('todoOriginMerged'), buttons: [{ label: t('verdictCta'), onClick: onMakeSafeCopy }] }}
       >
         <div className="fy-fact-details fy-origin">
           {deviceDetails ? (
@@ -952,26 +980,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
 
   // The SHA-256 fingerprint stays in the raw data table (it still counts in the score); device,
   // serial, origin, editing, AI and content type render together as the «Откуда файл» card.
-  const factOrder: ProfileSectionKind[] = ['location', 'time', 'people', 'text', 'plates'];
-
-  /** The «what to do» part of a fact: the sentence and the buttons that act on it. */
-  const todoFor = (kind: ProfileSectionKind, section: ProfileSection | null): FactTodo | null => {
-    const copy = { label: t('verdictCta'), onClick: onMakeSafeCopy };
-    switch (kind) {
-      case 'location':
-        return { text: t('todoLocation'), buttons: [copy, { label: t('todoLocationTip'), onClick: openGeotagTip }] };
-      case 'time':
-        return section && section.leakPoints > 0 ? { text: t('todoTime'), buttons: [copy] } : null;
-      case 'people':
-        return { text: t('todoPeople'), buttons: [{ label: t('todoPeopleButton'), onClick: actions.blurFaces }, copy] };
-      case 'text':
-        return { text: t('todoText'), buttons: [{ label: t('todoTextButton'), onClick: actions.blurText }] };
-      case 'plates':
-        return { text: t('todoPlates'), buttons: [{ label: t('todoPlatesButton'), onClick: actions.blurPlates }] };
-      default:
-        return null;
-    }
-  };
+  const factOrder: ProfileSectionKind[] = ['location', 'time', 'people', 'text', 'plates', 'qr', 'documents'];
 
   const renderFact = (kind: ProfileSectionKind) => {
     const section = sectionsByKind.get(kind);
@@ -989,6 +998,10 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     const details =
       kind === 'location'
         ? locationDetails
+        : kind === 'qr'
+        ? qrDetails
+        : kind === 'documents'
+        ? documentDetails
         : kind === 'time'
         ? timeDetails
         : kind === 'device'
@@ -1012,7 +1025,6 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
         value={value}
         sub={sub}
         soWhat={section.threatScenario}
-        todo={todoFor(kind, section)}
       >
         {details}
       </FactRow>
@@ -1023,17 +1035,11 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     <section className="v4-section" aria-labelledby="sec-story">
       <SectionHead num="02" title={t('storyTitle')} id="sec-story" />
 
-      {profile ? (
-        <div className="fy-card fy-story">
-          <h3 className="v4-h3">{t('storyHeading')}</h3>
-          <p>{story.sentences.join(' ')}</p>
-          {story.conclusion ? <p className="fy-story-conclusion">{story.conclusion}</p> : null}
-        </div>
-      ) : (
+      {!profile ? (
         <p className="fy-hint" role="status">
           {t('verdictPending')}
         </p>
-      )}
+      ) : null}
 
       <div className="fy-facts">
         {factOrder.map((kind) => (kind === 'location' ? [renderFact(kind), stanceRow] : renderFact(kind)))}
@@ -1072,11 +1078,6 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
 
 /* ── fact row ─────────────────────────────────────────────── */
 
-interface FactTodo {
-  text: string;
-  buttons: Array<{ label: string; onClick: () => void }>;
-}
-
 interface FactRowProps {
   title: string;
   severity: 'low' | 'medium' | 'high';
@@ -1085,17 +1086,11 @@ interface FactRowProps {
   sub: string | null;
   /** How an attacker uses this fact. */
   soWhat: string | null;
-  /** What the owner can do about it, with the buttons that do it. */
-  todo?: FactTodo | null;
   children?: React.ReactNode;
 }
 
-/**
- * One fact card in three parts: what the file says (value, rows), how an attacker uses it,
- * and what to do about it. The three always sit together so the page reads as a lesson,
- * not as a list of scares.
- */
-const FactRow: React.FC<FactRowProps> = ({ title, severity, points, value, sub, soWhat, todo, children }) => {
+/** One fact card: what the file says (value, rows) and how an attacker uses it. */
+const FactRow: React.FC<FactRowProps> = ({ title, severity, points, value, sub, soWhat, children }) => {
   const t = useT();
   return (
     <article className="fy-fact" data-severity={severity}>
@@ -1111,21 +1106,6 @@ const FactRow: React.FC<FactRowProps> = ({ title, severity, points, value, sub, 
           <b>{t('factSoWhat')}</b>
           <span>{soWhat}</span>
         </p>
-      ) : null}
-      {todo ? (
-        <div className="fy-fact-do">
-          <b>{t('factWhatToDo')}</b>
-          <span>{todo.text}</span>
-          {todo.buttons.length > 0 ? (
-            <div className="fy-actions">
-              {todo.buttons.map((button) => (
-                <button key={button.label} type="button" className="v4-btn fy-btn-sm" onClick={button.onClick}>
-                  {button.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
       ) : null}
     </article>
   );
