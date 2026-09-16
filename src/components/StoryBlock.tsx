@@ -6,7 +6,7 @@ import type { OCRResult } from '../hooks/useOCR';
 import type { ProData } from '../App';
 import { useI18n, useT, type MessageKey } from '../i18n';
 import { useGeoContext, type RemoteStatus } from '../hooks/useGeoContext';
-import { buildStory, buildVerdict } from '../utils/story';
+import { buildStory } from '../utils/story';
 import { buildProGroups } from '../utils/proTable';
 import { geotagTipKey } from '../utils/geotagTips';
 import type { PlateCandidate } from '../utils/plates';
@@ -37,6 +37,8 @@ interface StoryBlockProps {
   ocrError: string | null;
   ocrProgressLabel: string | null;
   onMakeSafeCopy: () => void;
+  /** «What to do» buttons: switch a cleanup option on and go to the cleanup section. */
+  actions: { blurFaces: () => void; blurText: () => void; blurPlates: () => void };
   credentials: ContentCredentialsState;
   plates: PlateCandidate[];
 }
@@ -127,6 +129,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   ocrError,
   ocrProgressLabel,
   onMakeSafeCopy,
+  actions,
   credentials,
   plates
 }) => {
@@ -137,6 +140,13 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   const [textExpanded, setTextExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const tipRef = useRef<HTMLDetailsElement>(null);
+  const openGeotagTip = useCallback(() => {
+    const tip = tipRef.current;
+    if (!tip) return;
+    tip.open = true;
+    tip.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, []);
   useEffect(() => () => clearTimeout(copyTimerRef.current), []);
 
   const remote = geo.enabled && Boolean(geo.coords);
@@ -185,7 +195,6 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     [metadata, proData?.filename, proData?.resolution]
   );
 
-  const verdict = useMemo(() => (profile ? buildVerdict(profile, t) : null), [profile, t]);
   const story = useMemo(
     () =>
       buildStory({
@@ -383,7 +392,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
           </div>
         </div>
       ) : null}
-      <details className="fy-tip">
+      <details className="fy-tip" ref={tipRef}>
         <summary data-more={t('showAction')} data-less={t('hideAction')}>{t('geotagTipTitle')}</summary>
         <p>{t(geotagTipKey(metadata?.cameraMake, metadata?.cameraModel, proData?.filename.platform))}</p>
       </details>
@@ -437,7 +446,16 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       return t('stanceTerrainPending');
     })();
     return (
-      <FactRow key="stance" title={t('stanceTitle')} severity="low" points={0} value={null} sub={null} soWhat={t('stanceSoWhat')}>
+      <FactRow
+        key="stance"
+        title={t('stanceTitle')}
+        severity="low"
+        points={0}
+        value={null}
+        sub={null}
+        soWhat={t('stanceSoWhat')}
+        todo={{ text: t('todoStance'), buttons: [{ label: t('verdictCta'), onClick: onMakeSafeCopy }] }}
+      >
         <div className="fy-fact-details fy-shot">
           <ShotDiagram
             stance={stance}
@@ -771,6 +789,31 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   // The SHA-256 fingerprint stays in the raw data table (it still counts in the score).
   const factOrder: ProfileSectionKind[] = ['location', 'time', 'device', 'people', 'text', 'plates', 'serial', 'origin', 'editing', 'ai', 'content'];
 
+  /** The «what to do» part of a fact: the sentence and the buttons that act on it. */
+  const todoFor = (kind: ProfileSectionKind, section: ProfileSection | null): FactTodo | null => {
+    const copy = { label: t('verdictCta'), onClick: onMakeSafeCopy };
+    switch (kind) {
+      case 'location':
+        return { text: t('todoLocation'), buttons: [copy, { label: t('todoLocationTip'), onClick: openGeotagTip }] };
+      case 'time':
+        return section && section.leakPoints > 0 ? { text: t('todoTime'), buttons: [copy] } : null;
+      case 'device':
+        return { text: t('todoDevice'), buttons: [copy] };
+      case 'people':
+        return { text: t('todoPeople'), buttons: [{ label: t('todoPeopleButton'), onClick: actions.blurFaces }, copy] };
+      case 'text':
+        return { text: t('todoText'), buttons: [{ label: t('todoTextButton'), onClick: actions.blurText }] };
+      case 'plates':
+        return { text: t('todoPlates'), buttons: [{ label: t('todoPlatesButton'), onClick: actions.blurPlates }] };
+      case 'serial':
+        return { text: t('todoSerial'), buttons: [copy] };
+      case 'origin':
+        return { text: t('todoOrigin'), buttons: [copy] };
+      default:
+        return null;
+    }
+  };
+
   const renderFact = (kind: ProfileSectionKind) => {
     const section = sectionsByKind.get(kind);
     if (!section) {
@@ -810,6 +853,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
         value={value}
         sub={sub}
         soWhat={section.threatScenario}
+        todo={todoFor(kind, section)}
       >
         {details}
       </FactRow>
@@ -820,40 +864,29 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     <section className="v4-section" aria-labelledby="sec-story">
       <SectionHead num="02" title={t('storyTitle')} id="sec-story" />
 
-      <div className="fy-grid-2 fy-grid-2--lead">
-        <div className="fy-card fy-verdict" data-level={verdict?.level ?? 'pending'} aria-live="polite">
-          {verdict && profile ? (
-            <>
-              <h3 className="fy-verdict-title">{verdict.title}</h3>
-              <p className="fy-verdict-why">{verdict.why}</p>
-              {verdict.reasons.length > 0 ? (
-                <p className="fy-verdict-reasons">
-                  {t('verdictReasons', { items: '' }).replace(/\s*$/, '')} <b>{verdict.reasons.join(', ')}</b>
-                </p>
-              ) : null}
-              <div className="fy-actions">
-                <button type="button" className={verdict.level === 'low' ? 'v4-btn' : 'v4-btn v4-btn-primary'} onClick={onMakeSafeCopy}>
-                  {t(verdict.ctaKey)}
-                </button>
-              </div>
-              <p className="fy-verdict-index">{t('leakIndex', { score: profile.leakScore })}</p>
-            </>
-          ) : (
-            <p className="fy-hint">{t('verdictPending')}</p>
-          )}
+      {profile ? (
+        <div className="fy-card fy-story">
+          <h3 className="v4-h3">{t('storyHeading')}</h3>
+          <p>{story.sentences.join(' ')}</p>
+          {story.conclusion ? <p className="fy-story-conclusion">{story.conclusion}</p> : null}
         </div>
-        {profile ? (
-          <div className="fy-card fy-story">
-            <h3 className="v4-h3">{t('storyHeading')}</h3>
-            <p>{story.sentences.join(' ')}</p>
-            {story.conclusion ? <p className="fy-story-conclusion">{story.conclusion}</p> : null}
-          </div>
-        ) : null}
-      </div>
+      ) : (
+        <p className="fy-hint" role="status">
+          {t('verdictPending')}
+        </p>
+      )}
 
       <div className="fy-facts">
         {factOrder.map((kind) => (kind === 'location' ? [renderFact(kind), stanceRow] : renderFact(kind)))}
-        <FactRow title={t('factFile')} severity="low" points={0} value={null} sub={fileFactSub} soWhat={t('factFileSoWhat')}>
+        <FactRow
+          title={t('factFile')}
+          severity="low"
+          points={0}
+          value={null}
+          sub={fileFactSub}
+          soWhat={t('factFileSoWhat')}
+          todo={{ text: t('todoFile'), buttons: [{ label: t('verdictCta'), onClick: onMakeSafeCopy }] }}
+        >
           <dl className="fy-spec fy-spec--tight">
             {fileRows.map(([label, value]) => (
               <React.Fragment key={label}>
@@ -864,6 +897,14 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
           </dl>
         </FactRow>
       </div>
+
+      {profile ? (
+        <div className="fy-actions fy-facts-cta">
+          <button type="button" className="v4-btn v4-btn-primary" onClick={onMakeSafeCopy}>
+            {t('verdictCta')}
+          </button>
+        </div>
+      ) : null}
 
       {profile ? (
         <div className="fy-raw">
@@ -889,18 +930,30 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
 
 /* ── fact row ─────────────────────────────────────────────── */
 
+interface FactTodo {
+  text: string;
+  buttons: Array<{ label: string; onClick: () => void }>;
+}
+
 interface FactRowProps {
   title: string;
   severity: 'low' | 'medium' | 'high';
   points: number;
   value: string | null;
   sub: string | null;
-  /** The "so what": what a stranger gains from this fact. */
+  /** How an attacker uses this fact. */
   soWhat: string | null;
+  /** What the owner can do about it, with the buttons that do it. */
+  todo?: FactTodo | null;
   children?: React.ReactNode;
 }
 
-const FactRow: React.FC<FactRowProps> = ({ title, severity, points, value, sub, soWhat, children }) => {
+/**
+ * One fact card in three parts: what the file says (value, rows), how an attacker uses it,
+ * and what to do about it. The three always sit together so the page reads as a lesson,
+ * not as a list of scares.
+ */
+const FactRow: React.FC<FactRowProps> = ({ title, severity, points, value, sub, soWhat, todo, children }) => {
   const t = useT();
   return (
     <article className="fy-fact" data-severity={severity}>
@@ -916,6 +969,21 @@ const FactRow: React.FC<FactRowProps> = ({ title, severity, points, value, sub, 
           <b>{t('factSoWhat')}</b>
           <span>{soWhat}</span>
         </p>
+      ) : null}
+      {todo ? (
+        <div className="fy-fact-do">
+          <b>{t('factWhatToDo')}</b>
+          <span>{todo.text}</span>
+          {todo.buttons.length > 0 ? (
+            <div className="fy-actions">
+              {todo.buttons.map((button) => (
+                <button key={button.label} type="button" className="v4-btn fy-btn-sm" onClick={button.onClick}>
+                  {button.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
       ) : null}
     </article>
   );
