@@ -37,7 +37,7 @@ const args = process.argv.slice(2);
 const [input, output] = args;
 if (!input || !output) {
   console.error(
-    'usage: make-exif-fixture.mjs in.jpg out.jpg [--lat --lon --alt --acc --heading --speed --date --offset --gps-time --make --model --lens --focal35 --software --apple-uptime --samsung-mcc --samsung-video-size --samsung-video-last --modify-date --exif-size --thumbnail --orientation]'
+    'usage: make-exif-fixture.mjs in.jpg out.jpg [--lat --lon --alt --acc --heading --speed --date --offset --gps-time --make --model --lens --focal35 --software --apple-uptime --samsung-mcc --samsung-video-size --samsung-video-last --modify-date --exif-size --thumbnail --orientation --exposure --fnumber --iso --flash --digitized]'
   );
   process.exit(1);
 }
@@ -68,6 +68,13 @@ const thumbnailPath = opt('thumbnail', null);
 const orientation = opt('orientation') != null ? Number(opt('orientation')) : null;
 const samsungVideoSize = opt('samsung-video-size') != null ? Number(opt('samsung-video-size')) : 24_000;
 const samsungVideoLast = args.includes('--samsung-video-last');
+// Exposure for the «light vs time» check: --exposure 1/1000 (or seconds), --fnumber 1.8, --iso 50, --flash 1 (fired).
+const exposure = opt('exposure', null);
+const fnumber = opt('fnumber') != null ? Number(opt('fnumber')) : null;
+const iso = opt('iso') != null ? Number(opt('iso')) : null;
+const flash = opt('flash') != null ? Number(opt('flash')) : null;
+// DateTimeDigitized, for the timestamp consistency row.
+const digitized = opt('digitized', null);
 
 const ascii = (s) => Buffer.from(`${s}\0`, 'latin1');
 const short = (v) => {
@@ -230,6 +237,14 @@ if (exifSize) {
 if (offset) exifEntries.push({ tag: 0x9011, type: ASCII, count: offset.length + 1, data: ascii(offset) });
 if (focal35 != null) exifEntries.push({ tag: 0xa405, type: SHORT, count: 1, data: short(focal35) });
 if (lens) exifEntries.push({ tag: 0xa434, type: ASCII, count: lens.length + 1, data: ascii(lens) });
+if (exposure) {
+  const [n, d] = exposure.includes('/') ? exposure.split('/').map(Number) : [Math.round(Number(exposure) * 1_000_000), 1_000_000];
+  exifEntries.push({ tag: 0x829a, type: RATIONAL, count: 1, data: rat([[n, d]]) });
+}
+if (fnumber != null) exifEntries.push({ tag: 0x829d, type: RATIONAL, count: 1, data: rat([[Math.round(fnumber * 100), 100]]) });
+if (iso != null) exifEntries.push({ tag: 0x8827, type: SHORT, count: 1, data: short(iso) });
+if (flash != null) exifEntries.push({ tag: 0x9209, type: SHORT, count: 1, data: short(flash) });
+if (digitized) exifEntries.push({ tag: 0x9004, type: ASCII, count: digitized.length + 1, data: ascii(digitized) });
 
 const gpsEntries = [
   { tag: 0x0000, type: BYTE, count: 4, data: Buffer.from([2, 3, 0, 0]) },

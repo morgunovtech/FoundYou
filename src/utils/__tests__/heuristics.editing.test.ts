@@ -7,7 +7,7 @@ const LANGS: Lang[] = ['ru', 'en', 'uz'];
 const analyze = (metadata: Record<string, unknown>, xmp: Record<string, unknown> = {}, lang: Lang = 'en') =>
   analyzeEditingHistory(metadata, xmp, lang);
 
-const UNTOUCHED = { edited: false, software: [], editingLevel: 'none', hints: [], isAiGenerated: false, aiTool: null };
+const UNTOUCHED = { edited: false, software: [], editingLevel: 'none', hints: [], isAiGenerated: false, aiTool: null, aiDetails: null };
 
 describe('analyzeEditingHistory: software profiles', () => {
   it('Adobe Photoshop → professional edit', () => {
@@ -258,5 +258,56 @@ describe('analyzeEditingHistory: IPTC DigitalSourceType', () => {
     // A camera photo carries digitalCapture and is not AI.
     const capture = analyzeEditingHistory({}, { DigitalSourceType: 'http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture' }, 'en');
     expect(capture.isAiGenerated).toBe(false);
+  });
+});
+
+describe('PNG text chunks of AI generators', () => {
+  const parameters =
+    'a cat sitting on a sofa, photorealistic, 85mm\nNegative prompt: blurry, lowres\nSteps: 30, Sampler: DPM++ 2M Karras, CFG scale: 7, Seed: 123456, Size: 1024x1024, Model hash: 1fe6c7ec54, Model: juggernautXL_v9, Version: v1.9.4';
+
+  it('reads the Automatic1111 «parameters» block: tool, model and the first prompt line', () => {
+    const result = analyzeEditingHistory({}, {}, 'ru', { parameters });
+    expect(result.isAiGenerated).toBe(true);
+    expect(result.aiTool).toBe('Stable Diffusion');
+    expect(result.aiDetails).toEqual({
+      model: 'juggernautXL_v9',
+      prompt: 'a cat sitting on a sofa, photorealistic, 85mm',
+      chunk: 'parameters'
+    });
+  });
+
+  it('reads a ComfyUI workflow: the checkpoint and the CLIP text', () => {
+    const workflow = JSON.stringify({
+      3: { class_type: 'KSampler', inputs: { seed: 1 } },
+      4: { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'sd_xl_base_1.0.safetensors' } },
+      6: { class_type: 'CLIPTextEncode', inputs: { text: 'a dog on the beach at sunset' } }
+    });
+    const result = analyzeEditingHistory({}, {}, 'en', { workflow });
+    expect(result.aiTool).toBe('ComfyUI');
+    expect(result.aiDetails).toEqual({ model: 'sd_xl_base_1.0.safetensors', prompt: 'a dog on the beach at sunset', chunk: 'workflow' });
+  });
+
+  it('recognises NovelAI by its Software chunk and takes the prompt from Description', () => {
+    const result = analyzeEditingHistory({}, {}, 'en', {
+      Software: 'NovelAI',
+      Description: 'masterpiece, best quality, 1girl, city at night',
+      Comment: '{"steps": 28, "sampler": "k_euler", "uc": "lowres"}'
+    });
+    expect(result.aiTool).toBe('NovelAI');
+    expect(result.aiDetails?.prompt).toBe('masterpiece, best quality, 1girl, city at night');
+  });
+
+  it('cuts a long prompt to one line of 120 characters', () => {
+    const long = `${'word '.repeat(60)}\nSteps: 20, Sampler: Euler a`;
+    const result = analyzeEditingHistory({}, {}, 'en', { parameters: long });
+    expect(result.aiDetails?.prompt?.length).toBe(120);
+    expect(result.aiDetails?.prompt?.endsWith('…')).toBe(true);
+  });
+
+  it('leaves an ordinary PNG alone', () => {
+    const result = analyzeEditingHistory({}, {}, 'en', { Software: 'GIMP 2.10', Comment: 'Created with GIMP', ImageWidth: 800 });
+    expect(result.isAiGenerated).toBe(false);
+    expect(result.aiDetails).toBeNull();
+    expect(analyzeEditingHistory({}, {}, 'en').aiDetails).toBeNull();
   });
 });

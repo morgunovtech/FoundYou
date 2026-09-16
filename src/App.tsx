@@ -305,7 +305,7 @@ const App: React.FC = () => {
       const resolutionResult = analyzeResolution(fileInfo.width, fileInfo.height, lang);
       const exif = metadata?.groups?.exif ?? {};
       const xmp = metadata?.groups?.xmp ?? {};
-      const editingResult = analyzeEditingHistory(exif, xmp, lang);
+      const editingResult = analyzeEditingHistory(exif, xmp, lang, metadata?.groups?.png ?? null);
       const strippedResult = detectStrippedMetadata({
         filename: originalName,
         filenameAnalysis: filenameResult,

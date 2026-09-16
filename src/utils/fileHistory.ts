@@ -61,7 +61,7 @@ const MINUTE_MS = 60_000;
 const DAY_MS = 86_400_000;
 
 /** ModifyDate as a wall clock: exifr revives EXIF dates into local-field `Date`s, XMP dates are ISO. */
-function wallClockOf(value: unknown): string | null {
+export function wallClockOf(value: unknown): string | null {
   if (value instanceof Date) {
     if (Number.isNaN(value.getTime())) return null;
     return formatWallClock({

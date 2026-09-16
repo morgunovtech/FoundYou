@@ -4,7 +4,7 @@ import { analyzeFilename } from '../heuristics/filenameAnalyzer';
 type Lang = 'ru' | 'en' | 'uz';
 const LANGS: Lang[] = ['ru', 'en', 'uz'];
 
-const UNKNOWN = { platform: null, device: '', confidence: 0, photoIndex: null, estimatedMonths: null };
+const UNKNOWN = { platform: null, device: '', confidence: 0, photoIndex: null, estimatedMonths: null, isScreenshot: false };
 
 describe('analyzeFilename: platform table', () => {
   it.each<[string, string, number]>([
