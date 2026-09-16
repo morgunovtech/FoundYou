@@ -23,7 +23,7 @@ function horizontalZone(box: BoundingBox, imageWidth: number): Zone {
 }
 
 
-/* ── COCO label (EfficientDet-Lite0) → human-readable label ─ */
+/* ── COCO label (EfficientDet-Lite2) → human-readable label ─ */
 
 const LABELS_RU: Record<string, string> = {
   person: 'человек', car: 'автомобиль', bus: 'автобус', truck: 'грузовик',

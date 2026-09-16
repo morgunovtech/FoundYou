@@ -17,8 +17,11 @@
   contain-intrinsic-size: none;
 }
 
+/* dvh, not vh: on iOS Safari 100vh is the viewport with the toolbars hidden, so a short page
+   (the first screen before a photo) got a blank band and the footer sat below the fold. */
 .v4-root {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -118,6 +121,42 @@
   max-width: 52ch;
   margin: 0;
   color: var(--v4-fg);
+}
+
+/* The intro: a lead sentence, three points with a small square marker, the action line. */
+.fy-hero-text {
+  display: grid;
+  gap: 12px;
+}
+
+.fy-intro-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-width: 52ch;
+}
+
+.fy-intro-list li {
+  position: relative;
+  padding-left: 18px;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.fy-intro-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 6px;
+  height: 6px;
+  background: var(--v4-orange);
+}
+
+.fy-intro-action {
+  font-weight: 500;
 }
 
 /* --- Upload card ------------------------------------------------------- */

@@ -16,9 +16,10 @@ import type { BasicFileInfo } from '../types/metadata';
 /** Directory with `vision_wasm[_nosimd]_internal.{js,wasm}`; FilesetResolver picks the SIMD variant itself. */
 const WASM_BASE_PATH = '/mediapipe/wasm';
 const FACE_MODEL_URL = '/mediapipe/models/blaze_face_short_range.tflite';
-const OBJECT_MODEL_URL = '/mediapipe/models/efficientdet_lite0.tflite';
+/** Lite2 instead of Lite0: better recall on small and partly hidden objects for a 12 MB model (see prepare-assets). */
+const OBJECT_MODEL_URL = '/mediapipe/models/efficientdet_lite2.tflite';
 
-/** EfficientDet-Lite0 works on 320×320 and BlazeFace short-range on 128×128, so anything above ~800 px is wasted decode work. */
+/** EfficientDet-Lite2 works on 448×448 and BlazeFace short-range on 128×128, so anything above ~800 px is wasted decode work. */
 const DETECTION_MAX_DIMENSION = 800;
 const MAX_ANALYSIS_PIXELS = 14_000_000;
 const DECODE_MAX_DIMENSION = DETECTION_MAX_DIMENSION;
@@ -56,7 +57,7 @@ const noop = () => undefined;
 
 /**
  * Loads the MediaPipe bundle, resolves the self-hosted WASM fileset and creates both detectors
- * once per page. The CPU delegate goes first: EfficientDet-Lite0 + BlazeFace answer in roughly
+ * once per page. The CPU delegate goes first: EfficientDet-Lite2 + BlazeFace answer in roughly
  * 50–100 ms on WASM SIMD, while the GPU delegate spends about five seconds compiling shaders
  * before its first inference — a bad trade for a session of one or two photos. GPU (WebGL2)
  * is kept as the fallback should the CPU build refuse to load. A failed load resets the

@@ -6,7 +6,7 @@
  *   public/ocr/                tesseract.js worker + tesseract.js-core wasm builds
  *   public/ocr/lang/           rus / eng traineddata (LSTM "4.0.0_best_int" variant)
  *   public/mediapipe/wasm/     @mediapipe/tasks-vision runtime (SIMD and no-SIMD loader + wasm)
- *   public/mediapipe/models/   BlazeFace short-range (faces) + EfficientDet-Lite0 (COCO objects)
+ *   public/mediapipe/models/   BlazeFace short-range (faces) + EfficientDet-Lite2 (COCO objects)
  *
  * Idempotent: a copy is skipped when the destination already has the source's
  * size; a download is skipped when the destination exists with the pinned size
@@ -89,10 +89,12 @@ const MEDIAPIPE_MODELS = [
     md5: 'a3dd6ec31725290770b97cec0cbf94c9'
   },
   {
-    file: 'efficientdet_lite0.tflite',
-    url: `${MEDIAPIPE_MODELS_BASE_URL}object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite`,
-    size: 7_254_339,
-    md5: '8df894b732bb95a58e0271b93dc65896'
+    // Lite2 (448×448 input) over Lite0 (320×320): noticeably better on small and partly hidden
+    // objects such as a dog behind two people, at 12 MB instead of 7 MB and a slower pass.
+    file: 'efficientdet_lite2.tflite',
+    url: `${MEDIAPIPE_MODELS_BASE_URL}object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite`,
+    size: 12_138_859,
+    md5: '3c5d155842c308a5f6d07bf5513d3c12'
   }
 ];
 
