@@ -57,6 +57,13 @@ const metadata = {
 } as unknown as StructuredMetadata;
 
 describe('buildStory', () => {
+  it('adds one trip sentence after the holiday: the zone mismatch beats the leisure heuristic', () => {
+    expect(buildStory(input({ travel: 'zone' })).sentences).toContain('storyTravelZone');
+    const leisure = buildStory(input({ travel: 'leisure', holidayNames: 'Navruz' })).sentences;
+    expect(leisure.indexOf('storyTravelLeisure')).toBe(leisure.indexOf('storyHoliday(holiday=Navruz)') + 1);
+    expect(buildStory(input({ travel: null })).sentences.join(' ')).not.toMatch(/storyTravel/);
+  });
+
   it('never emits placeholders: an empty analysis still reads as a short, honest paragraph', () => {
     const story = buildStory(input());
     expect(story.sentences).toEqual(['storyWhenUnknown', 'storyNoPeople', 'storyOriginal']);

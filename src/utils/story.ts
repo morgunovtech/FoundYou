@@ -29,6 +29,8 @@ export interface StoryInput {
   accuracyLabel: string | null;
   weatherLine: string | null;
   holidayNames: string | null;
+  /** From `TimeProfile.travel`: the camera clock lives in another zone, or a working-hours shot at a leisure place. */
+  travel?: 'zone' | 'leisure' | null;
   /** Licence-plate candidates; the first one is quoted. */
   plates?: PlateCandidate[];
   /** Content Credentials when the file carries a manifest. */
@@ -83,9 +85,11 @@ export function buildStory(input: StoryInput): Story {
   const facts = temporal.map((item) => item.fact).filter(Boolean).join('. ');
   if (facts) sentences.push(inference ? `${facts}. ${inference}.` : `${facts}.`);
 
-  // Weather and holiday
+  // Weather, holiday, trip
   if (weatherLine) sentences.push(t('storyWeather', { weather: weatherLine }));
   if (holidayNames) sentences.push(t('storyHoliday', { holiday: holidayNames }));
+  if (input.travel === 'zone') sentences.push(t('storyTravelZone'));
+  else if (input.travel === 'leisure') sentences.push(t('storyTravelLeisure'));
 
   // People
   const persons = detections.filter((d) => d.label === 'person' && d.score >= 0.5).length;

@@ -14,6 +14,8 @@ import type { ContentCredentialsState } from '../hooks/useContentCredentials';
 import { formatCoords, formatDistance, localizeCategoryKey, localizePlaceParts } from '../utils/insightsCompact';
 import { capitalize, describeWeather } from '../utils/weather';
 import { buildStance, formatOffset, type CompassPoint, type ElevationVerdict, type RelativeDirection, type SunPhase, type InstantSource } from '../utils/stance';
+import { buildTimeProfile, type AgeKind, type DayKind, type TimeOfDay } from '../utils/timeProfile';
+import { buildDeviceProfile, type CameraModule, type DeviceSource } from '../utils/deviceProfile';
 import { placeTypeLabel } from '../utils/placeType';
 import { ShotDiagram } from './ShotDiagram';
 import { formatBytes, formatDetailedDate, formatDimensions, formatMegapixels, describeFileType } from '../utils/format';
@@ -68,6 +70,26 @@ const TERRAIN_KEYS: Record<ElevationVerdict, MessageKey> = {
   high: 'stanceTerrainHigh',
   below: 'stanceTerrainBelow'
 };
+const TIME_OF_DAY_KEYS: Record<TimeOfDay, MessageKey> = {
+  night: 'todNight',
+  earlyMorning: 'todEarlyMorning',
+  morning: 'todMorning',
+  lunch: 'todLunch',
+  afternoon: 'todAfternoon',
+  evening: 'todEvening',
+  lateEvening: 'todLateEvening'
+};
+const DAY_KIND_KEYS: Record<DayKind, MessageKey> = { weekend: 'dayWeekend', weekday: 'dayWeekday', holiday: 'dayHoliday' };
+const AGE_KEYS: Record<AgeKind, MessageKey> = { future: 'ageFuture', fresh: 'ageFresh', days: 'ageDays', months: 'ageMonths', years: 'ageYears' };
+const CAMERA_MODULE_KEYS: Record<CameraModule, MessageKey> = { main: 'cameraModuleMain', ultrawide: 'cameraModuleUltrawide', tele: 'cameraModuleTele' };
+const DEVICE_SOURCE_KEYS: Record<DeviceSource, MessageKey> = { exif: 'deviceSourceExif', filename: 'deviceSourceFilename', resolution: 'deviceSourceResolution' };
+
+/** `YYYY-MM` → «сентябрь 2023 г.» in the UI language. */
+function formatMonthYear(ym: string, locale: string): string {
+  const date = new Date(`${ym}-01T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return ym;
+  return new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date);
+}
 
 /**
  * Section 02 — what the photo says about you: the verdict (share / clean first / do not
@@ -128,6 +150,25 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   );
   const placeType = useMemo(() => (remote ? placeTypeLabel(geo.reverse.data) : null), [remote, geo.reverse.data]);
 
+  // «Time and habits»: the camera clock read together with the place zone and the holidays.
+  const timeProfile = useMemo(
+    () =>
+      buildTimeProfile({
+        metadata,
+        placeTimezone: remote ? geo.weather.data?.timezone ?? null : null,
+        holiday: remote ? geo.holidays.data : null,
+        place: remote ? geo.reverse.data : null
+      }),
+    [metadata, remote, geo.weather.data?.timezone, geo.holidays.data, geo.reverse.data]
+  );
+  const travel = timeProfile?.travel.zone ? 'zone' : timeProfile?.travel.leisure ? 'leisure' : null;
+
+  // «Device»: maker, marketing name, system, age of the model, camera module, shot counter.
+  const deviceProfile = useMemo(
+    () => buildDeviceProfile({ metadata, filename: proData?.filename ?? null, resolution: proData?.resolution ?? null }),
+    [metadata, proData?.filename, proData?.resolution]
+  );
+
   const verdict = useMemo(() => (profile ? buildVerdict(profile, t) : null), [profile, t]);
   const story = useMemo(
     () =>
@@ -145,10 +186,11 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
         accuracyLabel,
         weatherLine,
         holidayNames,
+        travel,
         plates,
         credentials: credentials.data
       }),
-    [t, lang, metadata, profile, proData, detections, ocrResult, place, accuracyLabel, weatherLine, holidayNames, plates, credentials.data]
+    [t, lang, metadata, profile, proData, detections, ocrResult, place, accuracyLabel, weatherLine, holidayNames, travel, plates, credentials.data]
   );
 
   const proGroups = useMemo(
@@ -365,13 +407,6 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
         : stance.movement === 'walking'
         ? t('stanceWalking', { speed: stance.speedKmh })
         : t('stanceVehicle', { speed: stance.speedKmh });
-    const clockText = stance.clock
-      ? stance.clock.mismatch
-        ? t('stanceClockMismatch', { camera: formatOffset(stance.clock.cameraOffsetMinutes), place: formatOffset(stance.clock.placeOffsetMinutes) })
-        : t('stanceClockMatch', { offset: formatOffset(stance.clock.placeOffsetMinutes) })
-      : stance.instant?.cameraOffsetMinutes != null
-      ? `UTC${formatOffset(stance.instant.cameraOffsetMinutes)}`
-      : t('stanceClockUnknown');
     const terrainText = (() => {
       if (stance.elevation) {
         return t(TERRAIN_KEYS[stance.elevation.verdict], {
@@ -408,8 +443,6 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
             <dd>{sunText}</dd>
             <dt>{t('stanceSpeed')}</dt>
             <dd>{speedText}</dd>
-            <dt>{t('stanceClock')}</dt>
-            <dd>{clockText}</dd>
             <dt>{t('stanceTerrain')}</dt>
             <dd>
               <span>{terrainText}</span>
@@ -418,6 +451,193 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
           </dl>
         </div>
       </FactRow>
+    );
+  })();
+
+  /** «2 ч 30 мин» / «45 мин» for a clock difference. */
+  const formatMinutes = (minutes: number) => {
+    const abs = Math.abs(minutes);
+    const hours = Math.floor(abs / 60);
+    const rest = abs % 60;
+    const parts: string[] = [];
+    if (hours > 0) parts.push(t('durationHoursShort', { count: hours }));
+    if (rest > 0 || hours === 0) parts.push(t('durationMinutesShort', { count: rest }));
+    return parts.join(' ');
+  };
+  /** «2 г. 11 мес.» for an age in months. */
+  const formatMonthsAge = (months: number) => {
+    const years = Math.floor(months / 12);
+    const rest = months % 12;
+    const parts: string[] = [];
+    if (years > 0) parts.push(t('durationYearsShort', { count: years }));
+    if (rest > 0) parts.push(t('durationMonthsShort', { count: rest }));
+    return parts.length > 0 ? parts.join(' ') : t('durationLessThanMonth');
+  };
+
+  // «Time and habits»: what the clock says once it is read together with the place.
+  const timeDetails = (() => {
+    if (!timeProfile) return null;
+    const tp = timeProfile;
+    const dayText = `${
+      tp.dayKind === 'holiday'
+        ? t('dayHoliday', { names: tp.holidayNames.join(', ') })
+        : tp.dayKind === 'weekday' && tp.workingHours
+        ? t('dayWorkingHours')
+        : t(DAY_KIND_KEYS[tp.dayKind])
+    }, ${t(TIME_OF_DAY_KEYS[tp.timeOfDay])}`;
+
+    const placeZoneText = (() => {
+      if (!metadata?.gps) return null;
+      if (!geo.enabled) return t('timePlaceZoneOff');
+      if (tp.place) return `${tp.place.timezone}, UTC${formatOffset(tp.place.offsetMinutes)}`;
+      if (geo.weather.status.loading) return t('insightCompactLoading');
+      return t('timePlaceZoneUnavailable');
+    })();
+
+    const diffText = (() => {
+      if (!tp.clock) return null;
+      if (tp.clock.match) return t('timeDiffMatch');
+      const delta = formatMinutes(tp.clock.differenceMinutes);
+      const head = tp.clock.differenceMinutes > 0 ? t('timeDiffAhead', { delta }) : t('timeDiffBehind', { delta });
+      const when = tp.clock.sameDay ? tp.clock.local.slice(11, 16) : formatDetailedDate(tp.clock.local, lang) ?? tp.clock.local;
+      return `${head}; ${t('timeLocalClock', { when })}`;
+    })();
+
+    const inferences: string[] = [];
+    if (tp.dayKind === 'holiday') inferences.push(t('inferHoliday'));
+    else if (tp.dayKind === 'weekend') inferences.push(t('inferWeekend'));
+    else if (tp.workingHours) inferences.push(t('inferWorking'));
+    if (tp.timeOfDay === 'night') inferences.push(t('inferNight'));
+    else if (tp.timeOfDay === 'earlyMorning') inferences.push(t('inferEarly'));
+    else if (tp.timeOfDay === 'lunch') inferences.push(t('inferLunch'));
+    if (tp.travel.zone && tp.camera && tp.place) {
+      inferences.push(t('inferTravelZone', { camera: formatOffset(tp.camera.offsetMinutes), place: formatOffset(tp.place.offsetMinutes) }));
+    } else if (tp.travel.leisure && placeType) {
+      inferences.push(t('inferTravelLeisure', { type: t(placeType.key, placeType.params) }));
+    }
+    if (tp.age.kind === 'fresh') inferences.push(t('inferFresh'));
+
+    return (
+      <div className="fy-fact-details">
+        <dl className="fy-spec fy-spec--tight">
+          <dt>{t('timeDay')}</dt>
+          <dd>{dayText}</dd>
+          <dt>{t('timeCameraZone')}</dt>
+          <dd>
+            {tp.camera ? (
+              <>
+                <span className="fy-mono">{`UTC${formatOffset(tp.camera.offsetMinutes)}`}</span>
+                <span className="fy-muted">{tp.camera.source === 'exif-offset' ? t('timeCameraZoneExif') : t('timeCameraZoneGps')}</span>
+              </>
+            ) : (
+              <span>{t('timeCameraZoneUnknown')}</span>
+            )}
+          </dd>
+          {placeZoneText ? (
+            <>
+              <dt>{t('timePlaceZone')}</dt>
+              <dd>
+                <span>{placeZoneText}</span>
+                {!tp.place && remote ? retryButton(geo.weather.status) : null}
+              </dd>
+            </>
+          ) : null}
+          {diffText ? (
+            <>
+              <dt>{t('timeDiff')}</dt>
+              <dd>{diffText}</dd>
+            </>
+          ) : null}
+          <dt>{t('timeAge')}</dt>
+          <dd>{t(AGE_KEYS[tp.age.kind], { count: tp.age.value })}</dd>
+          {inferences.length > 0 ? (
+            <>
+              <dt>{t('timeInference')}</dt>
+              <dd>{inferences.join(' ')}</dd>
+            </>
+          ) : null}
+        </dl>
+      </div>
+    );
+  })();
+
+  // «Device»: the structured rows behind the maker/model headline.
+  const deviceDetails = (() => {
+    if (!deviceProfile) return null;
+    const d = deviceProfile;
+    const rows: Array<[string, React.ReactNode]> = [];
+    if (d.make) rows.push([t('deviceMake'), d.make]);
+    rows.push([
+      t('deviceModel'),
+      <>
+        <span>{d.model}</span>
+        {d.modelCode ? <span className="fy-muted fy-mono">{t('deviceModelCode', { code: d.modelCode })}</span> : null}
+      </>
+    ]);
+    if (d.os) {
+      const note = d.os.newerAtShot
+        ? t('deviceOsBehind', { latest: `${d.os.newerAtShot.name} ${d.os.newerAtShot.major}` })
+        : d.os.familyReleased
+        ? `${t('deviceOsFamily', { name: d.os.name, major: d.os.major, when: formatMonthYear(d.os.familyReleased, lang) })}${
+            d.os.newerAtShot === null && metadata?.shotDateLocal ? `; ${t('deviceOsCurrent')}` : ''
+          }`
+        : null;
+      rows.push([
+        t('deviceOs'),
+        <>
+          <span>{`${d.os.name} ${d.os.version}`}</span>
+          {note ? <span className="fy-muted">{note}</span> : null}
+        </>
+      ]);
+    } else if (d.firmware) {
+      rows.push([
+        t('deviceFirmware'),
+        <>
+          <span className="fy-mono">{d.firmware.build}</span>
+          {d.firmware.built ? <span className="fy-muted">{t('deviceFirmwareBuilt', { when: formatMonthYear(d.firmware.built, lang) })}</span> : null}
+        </>
+      ]);
+    }
+    if (d.released) {
+      rows.push([
+        t('deviceReleased'),
+        <>
+          <span>{formatMonthYear(d.released, lang)}</span>
+          {d.ageAtShotMonths != null ? <span className="fy-muted">{t('deviceAgeAtShot', { age: formatMonthsAge(d.ageAtShotMonths) })}</span> : null}
+          {d.ageNowMonths != null && d.ageNowMonths !== d.ageAtShotMonths ? (
+            <span className="fy-muted">{t('deviceAgeNow', { age: formatMonthsAge(d.ageNowMonths) })}</span>
+          ) : null}
+        </>
+      ]);
+    }
+    if (d.camera) {
+      const parts: string[] = [];
+      if (d.camera.side === 'front') parts.push(t('cameraModuleFront'));
+      else if (d.camera.module) parts.push(`${t('cameraModuleRear')}, ${t(CAMERA_MODULE_KEYS[d.camera.module])}`);
+      else if (d.camera.side === 'rear') parts.push(t('cameraModuleRear'));
+      if (d.camera.focalLength35mm) parts.push(t('cameraFocal', { mm: d.camera.focalLength35mm }));
+      if (d.camera.aperture) parts.push(`f/${d.camera.aperture}`);
+      if (parts.length > 0) rows.push([t('deviceCamera'), parts.join(' · ')]);
+    }
+    if (d.shotIndex != null) {
+      rows.push([
+        t('deviceShotCounter'),
+        <>
+          <span className="fy-mono">{new Intl.NumberFormat(lang).format(d.shotIndex)}</span>
+          <span className="fy-muted">{t('deviceShotCounterHint')}</span>
+        </>
+      ]);
+    }
+    rows.push([t('deviceSource'), t(DEVICE_SOURCE_KEYS[d.source])]);
+    return (
+      <dl className="fy-spec fy-spec--tight">
+        {rows.map(([label, value]) => (
+          <React.Fragment key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </React.Fragment>
+        ))}
+      </dl>
     );
   })();
 
@@ -495,9 +715,6 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     [t('resolutionLabel'), `${formatDimensions(fileInfo.width, fileInfo.height)} · ${formatMegapixels(fileInfo.width, fileInfo.height, lang)} Mp`],
     [t('metadataFieldsLabel'), metadataFieldCount ? new Intl.NumberFormat(lang).format(metadataFieldCount) : t('emptyValue')]
   ];
-  if (metadata?.shotDateLocal) {
-    fileRows.push([t('shotDate'), formatDetailedDate(metadata.shotDateLocal, lang) ?? t('emptyValue')]);
-  }
   // The filename pattern names a platform; its device guess only matters when EXIF has no model.
   const fileFactSub = proData?.filename.platform
     ? `${proData.filename.platform}${!metadata?.cameraModel && proData.filename.device ? ` · ${proData.filename.device}` : ''}`
@@ -505,7 +722,8 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
 
   /* ── fact order and extras ────────────────────────────── */
 
-  const factOrder: ProfileSectionKind[] = ['location', 'time', 'device', 'people', 'text', 'plates', 'serial', 'hash', 'origin', 'editing', 'ai', 'content'];
+  // The SHA-256 fingerprint stays in the raw data table (it still counts in the score).
+  const factOrder: ProfileSectionKind[] = ['location', 'time', 'device', 'people', 'text', 'plates', 'serial', 'origin', 'editing', 'ai', 'content'];
 
   const renderFact = (kind: ProfileSectionKind) => {
     const section = sectionsByKind.get(kind);
@@ -520,15 +738,31 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       }
       return null;
     }
-    const details = kind === 'location' ? locationDetails : kind === 'text' ? textDetails : kind === 'ai' ? credentialsDetails : null;
+    const details =
+      kind === 'location'
+        ? locationDetails
+        : kind === 'time'
+        ? timeDetails
+        : kind === 'device'
+        ? deviceDetails
+        : kind === 'text'
+        ? textDetails
+        : kind === 'ai'
+        ? credentialsDetails
+        : null;
+    // Time: the camera wall-clock is the headline, the rows below read it with the place.
+    // Device: the rows carry maker/model/system, so the headline and subtext are dropped.
+    const shotDate = kind === 'time' && timeProfile ? formatDetailedDate(timeProfile.wallClock, lang) ?? null : null;
+    const value = kind === 'location' || (kind === 'device' && deviceDetails) ? null : shotDate ?? section.text;
+    const sub = kind === 'location' || (kind === 'device' && deviceDetails) || shotDate ? null : section.subtext;
     return (
       <FactRow
         key={kind}
         title={section.title}
         severity={section.severity}
         points={section.leakPoints}
-        value={kind === 'location' ? null : section.text}
-        sub={kind === 'location' ? null : section.subtext}
+        value={value}
+        sub={sub}
         soWhat={section.threatScenario}
       >
         {details}
