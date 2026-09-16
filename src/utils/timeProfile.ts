@@ -92,7 +92,15 @@ export interface TimeProfile {
     sameDay: boolean;
   } | null;
   age: PhotoAge;
+  /**
+   * How far the phone clock was from GPS time, seconds (positive: the clock runs ahead), once the
+   * zone offset is taken out. Null without a GPS stamp or when the stamp belongs to another shot.
+   */
+  driftSeconds: number | null;
 }
+
+/** Below this the clock counts as exact: GPS stamps are whole seconds and EXIF has no sub-second offset. */
+export const DRIFT_EXACT_SECONDS = 5;
 
 export interface TimeProfileInput {
   metadata: Pick<StructuredMetadata, 'shotDateLocal' | 'utcOffset' | 'gps'> | null;
@@ -150,6 +158,16 @@ export function buildTimeProfile(input: TimeProfileInput): TimeProfile | null {
     };
   }
 
+  // Clock drift: wall clock minus zone offset is the camera's idea of UTC; GPS has the true UTC.
+  let driftSeconds: number | null = null;
+  const gpsUtc = metadata.gps?.timestampUtc ? new Date(metadata.gps.timestampUtc) : null;
+  if (camera && gpsUtc && !Number.isNaN(gpsUtc.getTime())) {
+    const cameraUtc = asUtc.getTime() - camera.offsetMinutes * 60_000;
+    const drift = Math.round((cameraUtc - gpsUtc.getTime()) / 1000);
+    // A stamp more than a day away belongs to another fix, not to this shot.
+    if (Math.abs(drift) <= 26 * 3600) driftSeconds = drift;
+  }
+
   return {
     wallClock: formatWallClock(parts),
     parts,
@@ -161,6 +179,7 @@ export function buildTimeProfile(input: TimeProfileInput): TimeProfile | null {
     camera,
     place: placeZone,
     clock,
-    age: photoAge(asUtc, now)
+    age: photoAge(asUtc, now),
+    driftSeconds
   };
 }

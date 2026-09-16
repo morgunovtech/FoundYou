@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  formatCompactDate,
   formatBytes,
   formatBytesPrecise,
   formatDetailedDate,
@@ -129,5 +130,16 @@ describe('formatDetailedDate', () => {
 
   it('renders an instant in an explicit time zone (legacy path)', () => {
     expect(formatDetailedDate('2024-06-14T21:30:00Z', 'en', 'Asia/Tashkent')).toContain('02:30');
+  });
+});
+
+describe('formatCompactDate', () => {
+  it('renders a wall clock digit-for-digit and a zoned instant in the viewer zone', () => {
+    expect(formatCompactDate('2026-06-14T18:30:12', 'ru')).toBe('14.06.2026, 18:30');
+    expect(formatCompactDate('2026-06-14T18:30:12', 'en-GB')).toBe('14/06/2026, 18:30');
+    expect(formatCompactDate('nope', 'ru')).toBeUndefined();
+    expect(formatCompactDate(undefined, 'ru')).toBeUndefined();
+    const zoned = formatCompactDate('2026-09-01T09:00:00.000Z', 'ru');
+    expect(zoned).toMatch(/^\d{2}\.\d{2}\.2026, \d{2}:\d{2}$/);
   });
 });

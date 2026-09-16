@@ -1379,6 +1379,68 @@
   margin-top: 16px;
 }
 
+/* «Откуда файл»: three sub-blocks under one card, each with its own small heading. */
+.fy-origin {
+  display: grid;
+  gap: 14px;
+}
+
+.fy-origin > h4 {
+  margin: 4px 0 0;
+}
+
+/* File history: a dated list; the date column is mono, events are prose. */
+.fy-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.fy-timeline li {
+  display: grid;
+  grid-template-columns: minmax(100px, 130px) minmax(0, 1fr);
+  gap: 4px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.fy-timeline-when {
+  font-family: var(--v4-mono);
+  font-size: var(--v4-label-xs-size);
+  letter-spacing: var(--v4-label-xs-tracking);
+  text-transform: uppercase;
+  color: var(--v4-muted);
+  padding-top: 3px;
+}
+
+.fy-timeline-body {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.fy-timeline-thumb {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.fy-timeline-thumb img {
+  width: 96px;
+  height: auto;
+  border: 1px solid var(--v4-line);
+  flex: 0 0 auto;
+}
+
+@media (max-width: 480px) {
+  .fy-timeline li {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
 /* Two explainers stacked next to the preview. */
 .fy-explainers {
   display: grid;

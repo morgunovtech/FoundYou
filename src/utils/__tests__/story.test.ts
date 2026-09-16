@@ -176,7 +176,16 @@ describe('buildVerdict', () => {
       ]),
       t
     );
-    // The fingerprint never makes the list: it has no card, only a row in the raw data.
-    expect(verdict.reasons).toEqual(['Location', 'Time', 'Device']);
+    // The fingerprint never makes the list: it has no card, only a row in the raw data; the device
+    // is named by its shared «Откуда файл» card.
+    expect(verdict.reasons).toEqual(['Location', 'Time', 'factOriginTitle']);
+  });
+
+  it('counts the device, origin, editing and serial sections as one «Откуда файл» reason', () => {
+    const verdict = buildVerdict(
+      profile('high', [section('device', 15, 'Device'), section('serial', 10, 'Serial'), section('origin', 5, 'Origin'), section('people', 20, 'People')]),
+      t
+    );
+    expect(verdict.reasons).toEqual(['People', 'factOriginTitle']);
   });
 });

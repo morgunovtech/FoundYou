@@ -86,6 +86,22 @@ describe('buildTimeProfile', () => {
     expect(tp?.clock).toMatchObject({ local: '2026-08-17T01:30:00', sameDay: false });
   });
 
+  it('measures the clock drift against the GPS stamp once the zone is taken out', () => {
+    // 10:26:00 on a +05:00 clock is 05:26:00 UTC; GPS says 05:23:20 → the phone runs 160 s ahead.
+    const ahead = buildTimeProfile({
+      metadata: { shotDateLocal: '2026-08-16T10:26:00', utcOffset: '+05:00', gps: { lat: 41.3, lon: 69.3, timestampUtc: '2026-08-16T05:23:20Z' } },
+      now: NOW
+    });
+    expect(ahead?.driftSeconds).toBe(160);
+    const exact = buildTimeProfile({ metadata: { ...sunday, gps: { ...sunday.gps, timestampUtc: '2026-08-16T05:26:03Z' } }, now: NOW });
+    expect(exact?.driftSeconds).toBe(-3);
+    // No GPS stamp, or a stamp from another day: no drift.
+    expect(buildTimeProfile({ metadata: sunday, now: NOW })?.driftSeconds).toBeNull();
+    expect(
+      buildTimeProfile({ metadata: { ...sunday, gps: { ...sunday.gps, timestampUtc: '2026-08-10T05:26:00Z' } }, now: NOW })?.driftSeconds
+    ).toBeNull();
+  });
+
   it('derives the camera zone from the GPS stamp when EXIF has no offset', () => {
     const tp = buildTimeProfile({
       metadata: {
