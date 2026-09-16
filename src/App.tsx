@@ -10,6 +10,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { useImageFile } from './hooks/useImageFile';
 import { useExifMetadata } from './hooks/useExifMetadata';
 import { StoryBlock } from './components/StoryBlock';
+import { ResultsBar } from './components/ResultsBar';
 import { SceneBlock } from './components/SceneBlock';
 import { CleanupDownloadBlock } from './components/CleanupDownloadBlock';
 import { useImageAnalysis } from './hooks/useImageAnalysis';
@@ -778,6 +779,24 @@ const App: React.FC = () => {
     heading.focus({ preventScroll: true });
   }, []);
 
+  // «What to do» buttons in the facts: switch the option on and go to the cleanup section.
+  const handleBlurFaces = useCallback(() => {
+    setBlurFaces(true);
+    handleMakeSafeCopy();
+  }, [handleMakeSafeCopy]);
+  const handleBlurText = useCallback(() => {
+    setBlurText(true);
+    handleMakeSafeCopy();
+  }, [handleMakeSafeCopy]);
+  const handleBlurPlates = useCallback(() => {
+    setBlurPlates(true);
+    handleMakeSafeCopy();
+  }, [handleMakeSafeCopy]);
+  const factActions = useMemo(
+    () => ({ blurFaces: handleBlurFaces, blurText: handleBlurText, blurPlates: handleBlurPlates }),
+    [handleBlurFaces, handleBlurText, handleBlurPlates]
+  );
+
   const sceneDescription = useMemo(() => {
     if (analysisLoading) return t('sceneDescriptionLoading');
     // An unavailable model must never read as "nothing found".
@@ -802,6 +821,11 @@ const App: React.FC = () => {
           <section className="fy-hero" aria-labelledby="hero-title">
             <InfoBlock scenariosActive={!fileInfo} />
             <UploadZone loading={loading} onFile={handleFile} error={error ?? undefined} />
+            {fileInfo ? (
+              <ErrorBoundary variant="inline" resetKey={fileInfo}>
+                <ResultsBar fileInfo={fileInfo} profile={digitalProfile} onMakeSafeCopy={handleMakeSafeCopy} />
+              </ErrorBoundary>
+            ) : null}
           </section>
 
           {fileInfo ? (
@@ -810,6 +834,8 @@ const App: React.FC = () => {
                 fileInfo={fileInfo}
                 detections={detections}
                 sceneDescription={sceneDescription}
+                onMakeSafeCopy={handleMakeSafeCopy}
+                onBlurFaces={handleBlurFaces}
                 detectionProgress={
                   analysisLoading && detectionStatus
                     ? { label: t(DETECTION_STAGE_KEYS[detectionStatus.stage]), value: detectionStatus.progress }
@@ -832,6 +858,7 @@ const App: React.FC = () => {
                 ocrError={ocrError ? t(OCR_ERROR_KEYS[ocrError]) : null}
                 ocrProgressLabel={ocrProgress ? t(OCR_STAGE_KEYS[ocrProgress.stage]) : null}
                 onMakeSafeCopy={handleMakeSafeCopy}
+                actions={factActions}
                 credentials={credentials}
                 plates={plateCandidates}
               />

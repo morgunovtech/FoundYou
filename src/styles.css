@@ -1349,6 +1349,80 @@
   gap: 10px;
 }
 
+/* «What to do»: the third part of a fact card, plain paper with a grey rule so it reads as
+   an instruction, not as another warning; the buttons act on the cleanup section. */
+.fy-fact-do {
+  margin: 0;
+  padding: 8px 12px;
+  border-left: 2px solid var(--v4-line);
+  font-size: 13px;
+  line-height: 1.5;
+  display: grid;
+  gap: 6px;
+}
+
+.fy-fact-do b {
+  font-family: var(--v4-mono);
+  font-size: var(--v4-label-xs-size);
+  font-weight: var(--v4-label-weight);
+  letter-spacing: var(--v4-label-xs-tracking);
+  text-transform: uppercase;
+  color: var(--v4-muted);
+}
+
+.fy-fact-do .fy-actions,
+.fy-explainer .fy-actions {
+  margin-top: 2px;
+}
+
+.fy-facts-cta {
+  margin-top: 16px;
+}
+
+/* Two explainers stacked next to the preview. */
+.fy-explainers {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+/* Results bar under the upload zone: file name and status on the left, the primary action on the right. */
+.fy-results-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-top: 16px;
+}
+
+.fy-results-bar-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.fy-results-bar-file {
+  margin: 0;
+  font-family: var(--v4-mono);
+  font-size: var(--v4-label-xs-size);
+  letter-spacing: var(--v4-label-xs-tracking);
+  color: var(--v4-muted);
+  overflow-wrap: anywhere;
+}
+
+.fy-results-bar-status {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.fy-results-bar[data-level="high"] .fy-results-bar-status,
+.fy-results-bar[data-level="critical"] .fy-results-bar-status {
+  color: var(--v4-orange-text);
+}
+
 .fy-fact-details .fy-insights {
   gap: 14px;
 }
