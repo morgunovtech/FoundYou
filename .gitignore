@@ -142,6 +142,7 @@ vite.config.ts.timestamp-*
 public/ocr/*
 !public/ocr/.gitkeep
 public/mediapipe/
+public/c2pa/
 
 # Cloudflare (wrangler / Pages Functions local secrets)
 .dev.vars

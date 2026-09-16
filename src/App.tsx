@@ -9,9 +9,13 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { useImageFile } from './hooks/useImageFile';
 import { useExifMetadata } from './hooks/useExifMetadata';
 import { StoryBlock } from './components/StoryBlock';
+import { SceneBlock } from './components/SceneBlock';
 import { CleanupDownloadBlock } from './components/CleanupDownloadBlock';
 import { useImageAnalysis } from './hooks/useImageAnalysis';
 import { useOCR } from './hooks/useOCR';
+import { useContentCredentials } from './hooks/useContentCredentials';
+import { findPlateCandidates } from './utils/plates';
+import { canShareFiles, shareFile } from './utils/share';
 import { useI18n, useT, type MessageKey } from './i18n';
 import { FACE_LABEL, PERSON_LABEL, type DetectionErrorCode, type DetectionStage } from './types/detection';
 import type { OCRErrorCode, OCRStage } from './hooks/useOCR';
@@ -57,6 +61,7 @@ import {
   selectBlurTargets,
   blurManualMasks,
   blurOcrRegions,
+  blurPlates as blurPlateRegions,
   generateAntiSearchParams
 } from './utils/cleanup';
 
@@ -242,6 +247,7 @@ const App: React.FC = () => {
   }, [lang]);
   const { fileInfo, error, loading, processFile } = useImageFile();
   const { metadata } = useExifMetadata(fileInfo);
+  const credentials = useContentCredentials(fileInfo);
   const { loading: analysisLoading, error: analysisError, detectionStatus, detections, modelUnavailable, settledFile } =
     useImageAnalysis(fileInfo);
   // OCR starts only once detection has settled for this very file (success or failure):
@@ -249,6 +255,12 @@ const App: React.FC = () => {
   const { loading: ocrLoading, error: ocrError, result: ocrResult, progress: ocrProgress } = useOCR(fileInfo, {
     enabled: settledFile === fileInfo
   });
+
+  // Plates are OCR tokens that read like a plate or sit on a detected vehicle; shared by the profile and the blur.
+  const plateCandidates = useMemo(
+    () => (fileInfo ? findPlateCandidates(ocrResult, detections, { width: fileInfo.width, height: fileInfo.height }) : []),
+    [fileInfo, ocrResult, detections]
+  );
 
   const [digitalProfile, setDigitalProfile] = useState<DigitalProfile | null>(null);
   const [proData, setProData] = useState<ProData | null>(null);
@@ -292,6 +304,9 @@ const App: React.FC = () => {
         metadata: metadata ?? null,
         detections,
         ocrResult: ocrResult ?? null,
+        plates: plateCandidates,
+        credentials: credentials.data,
+        credentialsStatus: credentials.status,
         originalFilename: originalName,
         lang,
       });
@@ -299,9 +314,9 @@ const App: React.FC = () => {
       setProData({ filename: filenameResult, resolution: resolutionResult, stripped: strippedResult, editing: editingResult, hash: hashResult, temporal: temporalResult });
     })();
     return () => { cancelled = true; };
-  }, [fileInfo, metadata, detections, ocrResult, analysisLoading, ocrLoading, lang]);
+  }, [fileInfo, metadata, detections, ocrResult, plateCandidates, credentials.data, credentials.status, analysisLoading, ocrLoading, lang]);
 
-  type NoticeState = { type: 'success' | 'error'; message: string };
+  type NoticeState = { type: 'success' | 'error' | 'info'; message: string };
 
   const [prnuCleanup, setPrnuCleanup] = useState(true);
   const [blurFaces, setBlurFaces] = useState(false);
@@ -317,6 +332,12 @@ const App: React.FC = () => {
   const [watermarkEnabled, setWatermarkEnabled] = useState(false);
   const [watermarkText, setWatermarkText] = useState('');
   const [blurText, setBlurText] = useState(false);
+  const [blurPlates, setBlurPlates] = useState(false);
+  /**
+   * Cleaned file kept for a second tap when the share sheet needs a fresh user gesture. It is
+   * stored with the settings it was made for, so any change simply makes it stale.
+   */
+  const [shareEntry, setShareEntry] = useState<{ file: File; token: object } | null>(null);
   const [mirrorEnabled, setMirrorEnabled] = useState(false);
   const [downscaleMax, setDownscaleMax] = useState<number>(0); // 0 = off
   const [outputFormat, setOutputFormat] = useState<OutputFormat>('original');
@@ -401,13 +422,13 @@ const App: React.FC = () => {
     setVerifyResult(null);
   }, [fileInfo, replacePreviewUrl]);
 
-  // Once a file is accepted, bring the first results section into view and focus.
+  // Once a file is accepted, bring the first results section (01, the scene) into view and focus.
   const previousFileRef = useRef<BasicFileInfo | null>(null);
   useEffect(() => {
     const previous = previousFileRef.current;
     previousFileRef.current = fileInfo;
     if (!fileInfo || fileInfo === previous) return;
-    const heading = document.getElementById('sec-story');
+    const heading = document.getElementById('sec-scene');
     if (!heading) return;
     const reduceMotion =
       typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -492,6 +513,10 @@ const App: React.FC = () => {
         blurOcrRegions(ctx, baseCanvas, ocrResult.regions, blurStrength, scale);
       }
 
+      if (blurPlates && plateCandidates.length > 0) {
+        blurPlateRegions(ctx, baseCanvas, plateCandidates, blurStrength, scale);
+      }
+
       if (scaledMasks.length > 0) {
         blurManualMasks(ctx, baseCanvas, scaledMasks, blurStrength);
       }
@@ -526,6 +551,8 @@ const App: React.FC = () => {
       getSourceImage,
       blurFaces,
       blurText,
+      blurPlates,
+      plateCandidates,
       ocrResult,
       blurCandidates,
       blurStrength,
@@ -542,6 +569,57 @@ const App: React.FC = () => {
     ]
   );
 
+  /** Runs the pipeline and returns the verified clean file. Shared by download and share. */
+  const exportCleanFile = useCallback(async (): Promise<{ file: File; requested: string; actualMime: string }> => {
+    if (!fileInfo) {
+      throw new Error('no-file');
+    }
+    if (import.meta.env.DEV) {
+      console.info('[pipeline] export:start', { mime: fileInfo.mimeType, qualityMode, outputFormat });
+    }
+    const result = await createProcessedCanvas();
+    if (!result) {
+      throw new Error('no-canvas');
+    }
+    const { canvas } = result;
+    setPlatformCapped(result.platformCapped);
+    const { requested, mime: exportMime } = resolveExportMime(outputFormat, fileInfo.mimeType);
+    const quality = exportMime === 'image/png' ? undefined : qualityForMode(qualityMode);
+    const encodedBlob: Blob = await new Promise((resolve, reject) => {
+      canvas.toBlob((encoded) => {
+        if (encoded) resolve(encoded);
+        else reject(new Error('export-failed'));
+      }, exportMime, quality);
+    });
+    // The browser's encoder adds container metadata of its own (Chrome: an sRGB ICC
+    // profile in APP2 / iCCP). Harmless, but "0 fields left" must be literally true.
+    const blob = await stripContainerMetadata(encodedBlob);
+    // Safari answers a WebP request with PNG; trust the blob, not the request.
+    const actualMime = blob.type || exportMime;
+    const extension = extensionForMime(actualMime);
+    const baseName = (fileInfo.originalName ?? fileInfo.file.name).replace(/\.[^/.]+$/, '');
+    const fileName = renameFile ? createAnonymisedName(extension) : `${baseName}.cleaned.${extension}`;
+
+    const remaining = await countRemainingMetadata(blob);
+    setVerifyResult({ before: metadataFieldCount, after: remaining });
+    if (import.meta.env.DEV) {
+      console.info('[pipeline] export:done', { mime: actualMime, remaining });
+    }
+    return { file: new File([blob], fileName, { type: actualMime }), requested, actualMime };
+  }, [fileInfo, createProcessedCanvas, qualityMode, renameFile, outputFormat, metadataFieldCount]);
+
+  const triggerDownload = useCallback((file: File) => {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(file);
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(link.href);
+      document.body.removeChild(link);
+    }, 2000);
+  }, []);
+
   const handleDownload = useCallback(async () => {
     if (!fileInfo) {
       return;
@@ -549,60 +627,67 @@ const App: React.FC = () => {
     setProcessing(true);
     setNotice(null);
     try {
-      if (import.meta.env.DEV) {
-        console.info('[pipeline] export:start', { mime: fileInfo.mimeType, qualityMode, outputFormat });
-      }
-      const result = await createProcessedCanvas();
-      if (!result) {
-        throw new Error('no-canvas');
-      }
-      const { canvas } = result;
-      setPlatformCapped(result.platformCapped);
-      const { requested, mime: exportMime } = resolveExportMime(outputFormat, fileInfo.mimeType);
-      const quality = exportMime === 'image/png' ? undefined : qualityForMode(qualityMode);
-      const encodedBlob: Blob = await new Promise((resolve, reject) => {
-        canvas.toBlob((encoded) => {
-          if (encoded) resolve(encoded);
-          else reject(new Error('export-failed'));
-        }, exportMime, quality);
-      });
-      // The browser's encoder adds container metadata of its own (Chrome: an sRGB ICC
-      // profile in APP2 / iCCP). Harmless, but "0 fields left" must be literally true.
-      const blob = await stripContainerMetadata(encodedBlob);
-      // Safari answers a WebP request with PNG; trust the blob, not the request.
-      const actualMime = blob.type || exportMime;
-      const extension = extensionForMime(actualMime);
-
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      const baseName = (fileInfo.originalName ?? fileInfo.file.name).replace(/\.[^/.]+$/, '');
-      const fallbackName = `${baseName}.cleaned.${extension}`;
-      link.download = renameFile ? createAnonymisedName(extension) : fallbackName;
-      document.body.appendChild(link);
-      link.click();
-      setTimeout(() => {
-        URL.revokeObjectURL(link.href);
-        document.body.removeChild(link);
-      }, 2000);
-
-      const remaining = await countRemainingMetadata(blob);
-      setVerifyResult({ before: metadataFieldCount, after: remaining });
-
+      const { file, requested, actualMime } = await exportCleanFile();
+      triggerDownload(file);
       const messages = [t('downloadReady')];
       if (actualMime !== requested) {
         messages.push(t('formatFallback', { from: mimeLabel(requested), to: mimeLabel(actualMime) }));
       }
       setNotice({ type: 'success', message: messages.join(' ') });
-      if (import.meta.env.DEV) {
-        console.info('[pipeline] export:done', { mime: actualMime, remaining });
-      }
     } catch (err) {
       console.error(err);
       setNotice({ type: 'error', message: t('cleanupFailed') });
     } finally {
       setProcessing(false);
     }
-  }, [fileInfo, createProcessedCanvas, qualityMode, renameFile, outputFormat, metadataFieldCount, t]);
+  }, [fileInfo, exportCleanFile, triggerDownload, t]);
+
+  // The share sheet needs a user gesture and a long export can outlive it: the prepared file
+  // is then kept for one more tap instead of being thrown away.
+  // A fresh token whenever the pipeline or export settings change; the prepared file is tied to it.
+  const shareToken = useMemo(() => ({}), [createProcessedCanvas, outputFormat, qualityMode, renameFile]);
+  const shareReady = shareEntry && shareEntry.token === shareToken ? shareEntry.file : null;
+  const setShareReady = useCallback((file: File | null) => setShareEntry(file ? { file, token: shareToken } : null), [shareToken]);
+
+  const handleShare = useCallback(async () => {
+    if (!fileInfo) {
+      return;
+    }
+    setNotice(null);
+    let file = shareReady;
+    if (!file) {
+      setProcessing(true);
+      try {
+        file = (await exportCleanFile()).file;
+      } catch (err) {
+        console.error(err);
+        setNotice({ type: 'error', message: t('cleanupFailed') });
+        return;
+      } finally {
+        setProcessing(false);
+      }
+    }
+    const outcome = await shareFile(file, file.name);
+    switch (outcome) {
+      case 'shared':
+        setShareReady(null);
+        setNotice({ type: 'success', message: t('shareDone') });
+        break;
+      case 'cancelled':
+        setShareReady(file);
+        break;
+      case 'needs-gesture':
+        setShareReady(file);
+        setNotice({ type: 'info', message: t('shareTapAgain') });
+        break;
+      default:
+        setShareReady(null);
+        triggerDownload(file);
+        setNotice({ type: 'info', message: t('shareFallbackDownload') });
+    }
+  }, [fileInfo, shareReady, setShareReady, exportCleanFile, triggerDownload, t]);
+
+  const shareSupported = useMemo(() => canShareFiles(), []);
 
   useEffect(() => {
     if (!fileInfo) {
@@ -703,9 +788,24 @@ const App: React.FC = () => {
         <SiteHeader />
         <main id="main" className="fy-main">
           <section className="fy-hero" aria-labelledby="hero-title">
-            <InfoBlock />
+            <InfoBlock scenariosActive={!fileInfo} />
             <UploadZone loading={loading} onFile={handleFile} error={error ?? undefined} />
           </section>
+
+          {fileInfo ? (
+            <ErrorBoundary variant="inline" resetKey={fileInfo}>
+              <SceneBlock
+                fileInfo={fileInfo}
+                detections={detections}
+                sceneDescription={sceneDescription}
+                detectionProgress={
+                  analysisLoading && detectionStatus
+                    ? { label: t(DETECTION_STAGE_KEYS[detectionStatus.stage]), value: detectionStatus.progress }
+                    : null
+                }
+              />
+            </ErrorBoundary>
+          ) : null}
 
           {fileInfo ? (
             <ErrorBoundary variant="inline" resetKey={fileInfo}>
@@ -715,17 +815,13 @@ const App: React.FC = () => {
                 profile={digitalProfile}
                 proData={proData}
                 detections={detections}
-                sceneDescription={sceneDescription}
-                detectionProgress={
-                  analysisLoading && detectionStatus
-                    ? { label: t(DETECTION_STAGE_KEYS[detectionStatus.stage]), value: detectionStatus.progress }
-                    : null
-                }
                 ocrResult={ocrResult}
                 ocrLoading={ocrLoading}
                 ocrError={ocrError ? t(OCR_ERROR_KEYS[ocrError]) : null}
                 ocrProgressLabel={ocrProgress ? t(OCR_STAGE_KEYS[ocrProgress.stage]) : null}
                 onMakeSafeCopy={handleMakeSafeCopy}
+                credentials={credentials}
+                plates={plateCandidates}
               />
             </ErrorBoundary>
           ) : null}
@@ -767,6 +863,12 @@ const App: React.FC = () => {
                 outputFormat={outputFormat}
                 setOutputFormat={setOutputFormat}
                 ocrRegionCount={ocrResult?.regions.length ?? 0}
+                plateCount={plateCandidates.length}
+                blurPlates={blurPlates}
+                setBlurPlates={setBlurPlates}
+                shareSupported={shareSupported}
+                shareReady={shareReady !== null}
+                onShare={handleShare}
                 onClean={handleDownload}
                 processing={processing}
                 previewDataUrl={previewDataUrl}
@@ -782,7 +884,7 @@ const App: React.FC = () => {
             </ErrorBoundary>
           ) : null}
           {notice ? (
-            <p className={`fy-status ${notice.type === 'success' ? 'fy-notice--positive' : 'fy-notice--negative'}`} role="status">
+            <p className={`fy-status ${notice.type === 'success' ? 'fy-notice--positive' : notice.type === 'error' ? 'fy-notice--negative' : ''}`} role="status">
               {notice.message}
             </p>
           ) : null}

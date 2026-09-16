@@ -33,6 +33,7 @@ const OCR_LANG_DIR = path.join(OCR_DIR, 'lang');
 const MEDIAPIPE_DIR = path.join(PUBLIC_DIR, 'mediapipe');
 const MEDIAPIPE_WASM_DIR = path.join(MEDIAPIPE_DIR, 'wasm');
 const MEDIAPIPE_MODEL_DIR = path.join(MEDIAPIPE_DIR, 'models');
+const C2PA_DIR = path.join(PUBLIC_DIR, 'c2pa');
 
 /** Output of the previous detection stack (tfjs COCO-SSD); removed so stale weights never ship. */
 const STALE_OUTPUT_DIRS = [path.join(PUBLIC_DIR, 'models')];
@@ -213,6 +214,14 @@ async function prepareMediaPipe(summary) {
   );
 }
 
+/* ── Content Credentials (c2pa) toolkit: worker + WASM ─────── */
+
+async function prepareC2pa(summary) {
+  const dist = path.join(NODE_MODULES, 'c2pa', 'dist');
+  await copyIfNeeded(path.join(dist, 'c2pa.worker.min.js'), path.join(C2PA_DIR, 'c2pa.worker.min.js'), summary);
+  await copyIfNeeded(path.join(dist, 'assets', 'wasm', 'toolkit_bg.wasm'), path.join(C2PA_DIR, 'toolkit_bg.wasm'), summary);
+}
+
 /* ── main ──────────────────────────────────────────────────── */
 
 async function removeStaleOutputs() {
@@ -259,7 +268,7 @@ async function main() {
   }
   await removeStaleOutputs();
   const summary = [];
-  await Promise.all([prepareTesseract(summary), prepareMediaPipe(summary)]);
+  await Promise.all([prepareTesseract(summary), prepareMediaPipe(summary), prepareC2pa(summary)]);
   printSummary(summary);
 }
 

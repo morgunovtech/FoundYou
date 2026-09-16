@@ -81,24 +81,6 @@
   min-width: 0;
 }
 
-.fy-eyebrow {
-  font-family: var(--v4-mono);
-  font-size: var(--v4-label-size);
-  font-weight: var(--v4-label-weight);
-  text-transform: uppercase;
-  letter-spacing: var(--v4-label-tracking);
-  color: var(--v4-muted);
-  margin: 0 0 16px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-}
-
-.fy-eyebrow b {
-  color: var(--v4-fg);
-  font-weight: var(--v4-label-weight);
-}
-
 .fy-h1 {
   font-size: clamp(30px, 4.2vw, 48px);
   line-height: 1.05;
@@ -107,20 +89,35 @@
   margin: 0 0 16px;
 }
 
+/* Rotating sharing scenario in the title. Every phrase is stacked in one
+   inline-grid cell, so the slot is as wide as the longest one and the heading
+   keeps its line breaks when the phrase changes. Only opacity moves: a
+   dissolve, no slide. The phrase is set in the DS text accent so the change
+   reads as deliberate rather than as a glitch; the static title around it
+   stays in the heading colour. Reduced motion never reaches this markup
+   (InfoBlock renders the plain title), so no animation guard is needed. */
+.fy-h1-scenario {
+  display: inline-grid;
+}
+
+.fy-h1-scenario-item {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+  color: var(--v4-orange-text);
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.fy-h1-scenario-item.is-current {
+  opacity: 1;
+}
+
 .fy-tagline {
   font-size: 17px;
   line-height: 1.45;
   max-width: 52ch;
-  margin: 0 0 22px;
+  margin: 0;
   color: var(--v4-fg);
-}
-
-.fy-hero .v4-list {
-  color: var(--v4-fg);
-}
-
-.fy-hero .v4-h3 {
-  margin-top: 22px;
 }
 
 /* --- Upload card ------------------------------------------------------- */
@@ -209,6 +206,58 @@
   .fy-grid-2 {
     grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
   }
+  /* Section 02: the short verdict comes first, the prose gets the wide column. */
+  .fy-grid-2--lead {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  }
+}
+
+/* --- Explainer (educational insert) ------------------------------------
+   The reusable «why this matters» block: paper card, 2px orange rule on the
+   left (the same signal as a high-severity fact and the scene quote), mono
+   label in the text accent, prose below. It sits next to the data it
+   explains and is never collapsed or hidden behind a toggle. */
+.fy-explainer {
+  background: var(--v4-paper);
+  border: 1px solid var(--v4-line);
+  border-left: 2px solid var(--v4-orange);
+  padding: 16px 18px 18px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  min-width: 0;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.fy-explainer-label {
+  margin: 0;
+  font-family: var(--v4-mono);
+  font-size: var(--v4-label-size);
+  font-weight: var(--v4-label-weight);
+  letter-spacing: var(--v4-label-tracking);
+  text-transform: uppercase;
+  color: var(--v4-orange-text);
+}
+
+.fy-explainer-body {
+  display: grid;
+  gap: 10px;
+}
+
+.fy-explainer-body p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  max-width: 62ch;
+}
+
+/* Raw data table at the end of section 02: plain button, table appears under it. */
+.fy-raw {
+  margin-top: 16px;
+}
+
+.fy-raw-table {
+  margin-top: 12px;
 }
 
 .fy-grid-cards {
@@ -1224,6 +1273,24 @@
   margin-top: 4px;
 }
 
+.fy-tip {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--v4-line);
+  font-size: 13px;
+  line-height: 1.5;
+  display: grid;
+  gap: 2px;
+}
+
+.fy-tip b {
+  font-weight: 500;
+}
+
+.fy-cred {
+  margin-top: 8px;
+}
+
 .fy-geo-note {
   margin: 0;
   font-size: 12.5px;
@@ -1364,6 +1431,15 @@
   .fy-lightbox-media img {
     max-width: 96vw;
     max-height: 78vh;
+  }
+}
+
+/* Phones have neither drag-and-drop nor Ctrl+V: the button is the only path,
+   and the hint would only push the upload card further down the first screen.
+   Tablets keep it (they do drag between apps), hence the width bound. */
+@media (max-width: 640px) and (hover: none) and (pointer: coarse) {
+  .fy-drop-hint {
+    display: none;
   }
 }
 

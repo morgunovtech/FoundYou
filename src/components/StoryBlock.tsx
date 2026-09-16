@@ -8,6 +8,9 @@ import { useI18n, useT, type MessageKey } from '../i18n';
 import { useGeoContext, type RemoteStatus } from '../hooks/useGeoContext';
 import { buildStory, buildVerdict } from '../utils/story';
 import { buildProGroups } from '../utils/proTable';
+import { geotagTipKey } from '../utils/geotagTips';
+import type { PlateCandidate } from '../utils/plates';
+import type { ContentCredentialsState } from '../hooks/useContentCredentials';
 import {
   formatCoords,
   formatDistance,
@@ -19,7 +22,6 @@ import { formatBytes, formatDetailedDate, formatDimensions, formatMegapixels, de
 import { googleMapsLink, streetViewLink } from '../utils/mapLinks';
 import type { PoiResult } from '../types/api';
 import { SectionHead } from './SectionHead';
-import { PreviewViewer } from './PreviewViewer';
 import { MapBlock } from './MapBlock';
 
 interface StoryBlockProps {
@@ -28,22 +30,23 @@ interface StoryBlockProps {
   profile: DigitalProfile | null;
   proData: ProData | null;
   detections: BoundingBox[];
-  sceneDescription: string;
-  detectionProgress: { label: string; value: number } | null;
   ocrResult: OCRResult | null;
   ocrLoading: boolean;
   ocrError: string | null;
   ocrProgressLabel: string | null;
   onMakeSafeCopy: () => void;
+  credentials: ContentCredentialsState;
+  plates: PlateCandidate[];
 }
 
 const PRO_ROW_CAP = 200;
 
 /**
- * Everything the photo reveals, in one section: the verdict (share / clean first / do not
- * share), the portrait a stranger could write from this one file, and the facts with what
- * each of them gives away. Place context is fetched from our own Functions with rounded
- * coordinates only; the user can switch it off here.
+ * Section 02 — what the photo says about you: the verdict (share / clean first / do not
+ * share), the portrait a stranger could write from this one file, the facts with what each
+ * of them gives away, and the raw data table behind a plainly named button at the end.
+ * Place context is fetched from our own Functions with rounded coordinates only; the user
+ * can switch it off here. The picture itself is section 01 (SceneBlock).
  */
 const StoryBlockInner: React.FC<StoryBlockProps> = ({
   fileInfo,
@@ -51,18 +54,18 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   profile,
   proData,
   detections,
-  sceneDescription,
-  detectionProgress,
   ocrResult,
   ocrLoading,
   ocrError,
   ocrProgressLabel,
-  onMakeSafeCopy
+  onMakeSafeCopy,
+  credentials,
+  plates
 }) => {
   const t = useT();
   const { lang } = useI18n();
   const geo = useGeoContext(metadata);
-  const [proMode, setProMode] = useState(false);
+  const [rawData, setRawData] = useState(false);
   const [textExpanded, setTextExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -98,14 +101,16 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
         place,
         accuracyLabel,
         weatherLine,
-        holidayNames
+        holidayNames,
+        plates,
+        credentials: credentials.data
       }),
-    [t, lang, metadata, profile, proData, detections, ocrResult, place, accuracyLabel, weatherLine, holidayNames]
+    [t, lang, metadata, profile, proData, detections, ocrResult, place, accuracyLabel, weatherLine, holidayNames, plates, credentials.data]
   );
 
   const proGroups = useMemo(
-    () => (proMode && profile ? buildProGroups(profile, metadata, proData, fileInfo, detections, ocrResult, lang) : []),
-    [proMode, profile, metadata, proData, fileInfo, detections, ocrResult, lang]
+    () => (rawData && profile ? buildProGroups(profile, metadata, proData, fileInfo, detections, ocrResult, lang) : []),
+    [rawData, profile, metadata, proData, fileInfo, detections, ocrResult, lang]
   );
 
   const handleCopyCoords = useCallback(async () => {
@@ -265,6 +270,10 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
           </div>
         </div>
       ) : null}
+      <p className="fy-tip">
+        <b>{t('geotagTipTitle')}</b>
+        <span>{t(geotagTipKey(metadata?.cameraMake, metadata?.cameraModel, proData?.filename.platform))}</span>
+      </p>
       <p className="fy-geo-note">
         <span>{geo.enabled ? t('geoDisclosure') : t('geoDisabledNote')}</span>
         <button type="button" className="fy-link-btn" onClick={() => geo.setEnabled(!geo.enabled)}>
@@ -303,6 +312,34 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     );
   })();
 
+  // Content Credentials, when the file carries them: who signed, with what, and whether it held.
+  const credentialsDetails = (() => {
+    if (credentials.status !== 'found' || !credentials.data) return null;
+    const c = credentials.data;
+    const rows: Array<[string, string]> = [];
+    if (c.generator) rows.push([t('credGenerator'), c.generator]);
+    if (c.producer) rows.push([t('credProducer'), c.producer]);
+    if (c.issuer) rows.push([t('credIssuer'), c.issuer]);
+    if (c.signedAt) rows.push([t('credSignedAt'), formatDetailedDate(c.signedAt, lang) ?? c.signedAt]);
+    if (c.actions.length > 0) rows.push([t('credActions'), c.actions.map((a) => a.replace(/^c2pa\./, '')).join(', ')]);
+    if (c.ingredients > 0) rows.push([t('credIngredients'), String(c.ingredients)]);
+    return (
+      <div className="fy-fact-details fy-cred">
+        <dl className="fy-spec fy-spec--tight">
+          {rows.map(([label, value]) => (
+            <React.Fragment key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </React.Fragment>
+          ))}
+        </dl>
+        <p className="fy-hint" role={c.valid ? undefined : 'alert'}>
+          {c.valid ? t('credValid') : t('credInvalid', { codes: c.failures.join(', ') })}
+        </p>
+      </div>
+    );
+  })();
+
   const displayMime = fileInfo.originalMimeType ?? fileInfo.mimeType;
   const { typeKey, format } = describeFileType(displayMime, fileInfo.originalName ?? fileInfo.file.name);
   const metadataFieldCount = useMemo(() => {
@@ -330,7 +367,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
 
   /* ── fact order and extras ────────────────────────────── */
 
-  const factOrder: ProfileSectionKind[] = ['location', 'time', 'device', 'people', 'text', 'serial', 'hash', 'origin', 'editing', 'ai', 'content'];
+  const factOrder: ProfileSectionKind[] = ['location', 'time', 'device', 'people', 'text', 'plates', 'serial', 'hash', 'origin', 'editing', 'ai', 'content'];
 
   const renderFact = (kind: ProfileSectionKind) => {
     const section = sectionsByKind.get(kind);
@@ -345,7 +382,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       }
       return null;
     }
-    const details = kind === 'location' ? locationDetails : kind === 'text' ? textDetails : null;
+    const details = kind === 'location' ? locationDetails : kind === 'text' ? textDetails : kind === 'ai' ? credentialsDetails : null;
     return (
       <FactRow
         key={kind}
@@ -363,18 +400,9 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
 
   return (
     <section className="v4-section" aria-labelledby="sec-story">
-      <SectionHead num="01" title={t('storyTitle')} id="sec-story" />
-      <div className="fy-toolbar">
-        <p className="fy-hint">{t('storyLead')}</p>
-        <button type="button" className="v4-btn fy-btn-sm" aria-pressed={proMode} onClick={() => setProMode((v) => !v)}>
-          {t('proMode')}
-        </button>
-      </div>
+      <SectionHead num="02" title={t('storyTitle')} id="sec-story" />
 
-      <div className="fy-grid-2">
-        <div className="fy-card">
-          <PreviewViewer fileInfo={fileInfo} detections={detections} sceneDescription={sceneDescription} progress={detectionProgress} />
-        </div>
+      <div className="fy-grid-2 fy-grid-2--lead">
         <div className="fy-card fy-verdict" data-level={verdict?.level ?? 'pending'} aria-live="polite">
           {verdict && profile ? (
             <>
@@ -396,35 +424,47 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
             <p className="fy-hint">{t('verdictPending')}</p>
           )}
         </div>
+        {profile ? (
+          <div className="fy-card fy-story">
+            <h3 className="v4-h3">{t('storyHeading')}</h3>
+            <p>{story.sentences.join(' ')}</p>
+            {story.conclusion ? <p className="fy-story-conclusion">{story.conclusion}</p> : null}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="fy-facts">
+        {factOrder.map(renderFact)}
+        <FactRow title={t('factFile')} severity="low" points={0} value={null} sub={fileFactSub} soWhat={t('factFileSoWhat')}>
+          <dl className="fy-spec fy-spec--tight">
+            {fileRows.map(([label, value]) => (
+              <React.Fragment key={label}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </React.Fragment>
+            ))}
+          </dl>
+        </FactRow>
       </div>
 
       {profile ? (
-        <div className="fy-card fy-story" style={{ marginTop: 16 }}>
-          <h3 className="v4-h3">{t('storyHeading')}</h3>
-          <p>{story.sentences.join(' ')}</p>
-          {story.conclusion ? <p className="fy-story-conclusion">{story.conclusion}</p> : null}
+        <div className="fy-raw">
+          <button
+            type="button"
+            className="v4-btn fy-btn-sm"
+            aria-expanded={rawData}
+            aria-controls="raw-data"
+            onClick={() => setRawData((v) => !v)}
+          >
+            {rawData ? t('rawDataHide') : t('rawDataShow')}
+          </button>
+          {rawData ? (
+            <div id="raw-data" className="fy-card fy-raw-table">
+              <ProTable groups={proGroups} showMoreLabel={(count) => t('showMore', { count })} />
+            </div>
+          ) : null}
         </div>
       ) : null}
-
-      {proMode && profile ? (
-        <div className="fy-card" style={{ marginTop: 16 }}>
-          <ProTable groups={proGroups} showMoreLabel={(count) => t('showMore', { count })} />
-        </div>
-      ) : (
-        <div className="fy-facts">
-          {factOrder.map(renderFact)}
-          <FactRow title={t('factFile')} severity="low" points={0} value={null} sub={fileFactSub} soWhat={t('factFileSoWhat')}>
-            <dl className="fy-spec fy-spec--tight">
-              {fileRows.map(([label, value]) => (
-                <React.Fragment key={label}>
-                  <dt>{label}</dt>
-                  <dd>{value}</dd>
-                </React.Fragment>
-              ))}
-            </dl>
-          </FactRow>
-        </div>
-      )}
     </section>
   );
 };
