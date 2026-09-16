@@ -1,4 +1,4 @@
-import { FACE_LABEL, type BoundingBox } from '../types/detection';
+import { FACE_LABEL, PERSON_LABEL, type BoundingBox } from '../types/detection';
 
 type Lang = 'ru' | 'en' | 'uz';
 
@@ -64,7 +64,8 @@ const LABELS_UZ: Record<string, string> = {
   backpack: 'ryukzak', umbrella: 'soyabon', handbag: 'sumka',
 };
 
-function localizeLabel(label: string, lang: Lang): string {
+/** Human label for a COCO class in the UI language (the preview boxes use it too). */
+export function localizeLabel(label: string, lang: Lang): string {
   if (lang === 'ru') return LABELS_RU[label] ?? label;
   if (lang === 'uz') return LABELS_UZ[label] ?? label;
   return label;
@@ -79,6 +80,23 @@ const ZONE_UZ: Record<Zone, string> = { left: 'chapda', center: 'markazda', righ
 const DEPTH_RU: Record<Depth, string> = { foreground: 'на переднем плане', midground: '', background: 'на заднем плане' };
 const DEPTH_EN: Record<Depth, string> = { foreground: 'in the foreground', midground: '', background: 'in the background' };
 const DEPTH_UZ: Record<Depth, string> = { foreground: 'old planda', midground: '', background: 'orqa planda' };
+
+/**
+ * Objects the detector saw with a score between `UNCERTAIN_SCORE` and `CONFIDENT_SCORE` are
+ * mentioned as «возможно»: a dog half hidden behind two people usually lands there. People
+ * stay at the higher bar because they drive the verdict.
+ */
+export const CONFIDENT_SCORE = 0.5;
+export const UNCERTAIN_SCORE = 0.4;
+
+export function isSceneObject(d: BoundingBox): boolean {
+  if (d.label === FACE_LABEL) return false;
+  return d.score >= (d.label === PERSON_LABEL ? CONFIDENT_SCORE : UNCERTAIN_SCORE);
+}
+
+const MAYBE_RU = 'возможно, ';
+const MAYBE_EN = 'possibly ';
+const MAYBE_UZ = 'ehtimol, ';
 
 function zoneLabel(zone: Zone, lang: Lang): string {
   if (lang === 'ru') return ZONE_RU[zone];
@@ -123,6 +141,8 @@ interface GroupedEntry {
   count: number;
   zone: Zone;
   depth: Depth;
+  /** Every member scored below `CONFIDENT_SCORE`. */
+  uncertain: boolean;
 }
 
 function groupDetections(items: DetectionItem[]): GroupedEntry[] {
@@ -132,8 +152,9 @@ function groupDetections(items: DetectionItem[]): GroupedEntry[] {
     const existing = map.get(key);
     if (existing) {
       existing.count += 1;
+      existing.uncertain = existing.uncertain && item.score < CONFIDENT_SCORE;
     } else {
-      map.set(key, { label: item.label, count: 1, zone: item.zone, depth: item.depth });
+      map.set(key, { label: item.label, count: 1, zone: item.zone, depth: item.depth, uncertain: item.score < CONFIDENT_SCORE });
     }
   }
   // Sort: foreground first, then midground, then background
@@ -184,28 +205,35 @@ function countedLabel(label: string, count: number, lang: Lang): string {
   // English: simple plural
   const en = localizeLabel(label, lang);
   if (count === 1) return en;
+  if (en === 'person') return `${count} people`;
   return `${count} ${en}${en.endsWith('s') ? '' : 's'}`;
 }
 
+const EN_VOWEL = /^[aeiou]/i;
+
 /* ── sentence builders ───────────────────────────────────── */
 
+/**
+ * One phrase per group, place first, object last: «На переднем плане справа — человек»,
+ * «Справа — собака», «A person in the foreground on the right».
+ */
 function buildPhrase(entry: GroupedEntry, lang: Lang): string {
-  const object = countedLabel(entry.label, entry.count, lang);
+  const counted = countedLabel(entry.label, entry.count, lang);
   const depth = depthLabel(entry.depth, lang);
   const zone = zoneLabel(entry.zone, lang);
+  const place = [depth, zone].filter(Boolean).join(' ');
 
-  // Skip midground depth label (it's empty)
   if (lang === 'ru') {
-    if (!depth) return `${object} (${zone})`;
-    return `${depth} — ${object} (${zone})`;
+    const object = entry.uncertain ? `${MAYBE_RU}${counted}` : counted;
+    return `${place} — ${object}`;
   }
   if (lang === 'uz') {
-    if (!depth) return `${object} (${zone})`;
-    return `${depth} — ${object} (${zone})`;
+    const object = entry.uncertain ? `${MAYBE_UZ}${counted}` : counted;
+    return `${place} — ${object}`;
   }
-  // English
-  if (!depth) return `${object} (${zone})`;
-  return `${depth} — ${object} (${zone})`;
+  const article = entry.count === 1 ? (EN_VOWEL.test(counted) ? 'an ' : 'a ') : '';
+  const object = `${entry.uncertain ? MAYBE_EN : ''}${article}${counted}`;
+  return `${object} ${place}`;
 }
 
 function capitalize(s: string): string {
@@ -218,7 +246,7 @@ export function generateSceneNarrative(input: NarrativeInput): string {
   const { detections, imageWidth: imgW, imageHeight: imgH, lang } = input;
 
   // Face boxes duplicate the person they belong to and are not scene objects.
-  const confident = detections.filter((d) => d.score >= 0.5 && d.label !== FACE_LABEL);
+  const confident = detections.filter(isSceneObject);
   if (confident.length === 0) {
     return lang === 'ru'
       ? 'Объекты не обнаружены.'
@@ -242,8 +270,8 @@ export function generateSceneNarrative(input: NarrativeInput): string {
   // Build phrases
   const phrases = groups.map((g) => buildPhrase(g, lang));
 
-  // Compose final text
-  const joined = phrases.map((p, i) => (i === 0 ? capitalize(p) : p)).join('. ');
+  // Every phrase is its own sentence.
+  const joined = phrases.map((p) => capitalize(p)).join('. ');
 
   // Add total summary suffix if many objects
   const total = confident.length;

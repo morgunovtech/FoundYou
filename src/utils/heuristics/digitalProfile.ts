@@ -285,18 +285,18 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   const faceDetections = detections.filter(d => d.label === 'face');
   const peopleCount = Math.max(personDetections.length, faceDetections.length);
   if (peopleCount > 0) {
-    const faceNote = faceDetections.length > 0
-      ? (lang === 'ru' ? `, лиц: ${faceDetections.length}` : lang === 'uz' ? `, yuzlar: ${faceDetections.length}` : `, faces: ${faceDetections.length}`)
-      : '';
+    const faces = faceDetections.length;
+    const text =
+      lang === 'ru'
+        ? `${peopleCount} чел., ${faces > 0 ? `лиц различимо: ${faces}` : 'лицо не найдено'}`
+        : lang === 'uz'
+        ? `${peopleCount} kishi, ${faces > 0 ? `yuzlar aniq: ${faces}` : 'yuz topilmadi'}`
+        : `${peopleCount} ${peopleCount === 1 ? 'person' : 'people'}, ${faces > 0 ? `recognisable faces: ${faces}` : 'no face found'}`;
     sections.push({
       kind: 'people',
       icon: '👤',
       title: lang === 'ru' ? 'Люди на фото' : lang === 'uz' ? 'Fotodagi odamlar' : 'People in photo',
-      text: (lang === 'ru'
-        ? `Обнаружено ${peopleCount} чел.`
-        : lang === 'uz'
-        ? `${peopleCount} kishi aniqlandi`
-        : `${peopleCount} person(s) detected`) + faceNote,
+      text,
       subtext: lang === 'ru'
         ? 'Лица могут быть найдены через сервисы поиска по изображениям'
         : lang === 'uz'
