@@ -492,6 +492,8 @@ export async function frameBlockData(bitmap: ImageBitmap): Promise<{
   elaTexture: number[];
   noise: number[];
   noiseTexture: number[];
+  /** Grid of the noise blocks, so a caller can put them back in place without guessing. */
+  noiseGrid: { cols: number; rows: number; block: number };
   curve: GhostPoint[];
 }> {
   const { canvas, ctx } = centreCrop(bitmap, ELA_MAX_SIDE);
@@ -516,6 +518,11 @@ export async function frameBlockData(bitmap: ImageBitmap): Promise<{
     elaTexture,
     noise: blocks.map((b) => b.noise),
     noiseTexture: blocks.map((b) => b.texture),
+    noiseGrid: {
+      cols: Math.ceil(scaled.canvas.width / BLOCK),
+      rows: Math.ceil(scaled.canvas.height / BLOCK),
+      block: BLOCK
+    },
     curve: ghosts.curve
   };
 }
