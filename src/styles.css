@@ -1127,6 +1127,38 @@
 }
 
 /* «Проверка кадра»: three results, each a heading, how / what, the verdict, the map or chart, a caveat. */
+/* --- Educational insert (Explainer) ------------------------------------- */
+
+.fy-explainer {
+  background: var(--v4-paper);
+  border: 1px solid var(--v4-line);
+  border-left: 2px solid var(--v4-orange);
+  padding: 12px 14px;
+  display: grid;
+  gap: 6px;
+}
+
+.fy-explainer-label {
+  margin: 0;
+  color: var(--v4-orange-text);
+  font-family: var(--v4-mono);
+  font-size: var(--v4-label-xs-size);
+  font-weight: var(--v4-label-weight);
+  letter-spacing: var(--v4-label-xs-tracking);
+  text-transform: uppercase;
+}
+
+.fy-explainer-body p {
+  margin: 0;
+  max-width: 72ch;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.fy-explainer-body p + p {
+  margin-top: 8px;
+}
+
 .fy-frame {
   display: grid;
   gap: 16px;

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  GHOST_BLIND_QUALITY,
   findDips,
   hotBlocks,
   judgeGhosts,
@@ -45,10 +46,24 @@ describe('judgeGhosts', () => {
     expect(judgeGhosts([74], jpeg(null))).toBe('single');
   });
 
-  it('names a JPEG past inside a PNG, no dips as none, and no grain as unreliable', () => {
+  it('names a JPEG past inside a PNG and no grain as unreliable', () => {
     expect(judgeGhosts([74], { currentQuality: null, isJpeg: false, hasGrain: true })).toBe('jpeg-inside');
-    expect(judgeGhosts([], jpeg(90))).toBe('none');
     expect(judgeGhosts([64], { currentQuality: null, isJpeg: false, hasGrain: false })).toBe('unreliable');
+  });
+
+  it('separates «no dip» in a file where a dip would show from the two cases where it could not', () => {
+    // A JPEG below the blind quality: «no dip» is an answer.
+    expect(judgeGhosts([], jpeg(80))).toBe('none');
+    expect(judgeGhosts([], jpeg(GHOST_BLIND_QUALITY - 1))).toBe('none');
+    // At and above it the curve is too flat for any dip — an iPhone upload lands here.
+    expect(judgeGhosts([], jpeg(GHOST_BLIND_QUALITY))).toBe('insensitive');
+    expect(judgeGhosts([], jpeg(93))).toBe('insensitive');
+    // Not a JPEG and no JPEG past: the method has nothing to look at.
+    expect(judgeGhosts([], { currentQuality: null, isJpeg: false, hasGrain: true })).toBe('not-applicable');
+    // Unknown quality (unreadable tables) stays the plain answer, not a claim of blindness.
+    expect(judgeGhosts([], jpeg(null))).toBe('none');
+    // No grain still wins over everything.
+    expect(judgeGhosts([], { currentQuality: 95, isJpeg: true, hasGrain: false })).toBe('unreliable');
   });
 });
 
