@@ -10,10 +10,15 @@ interface SectionHeadProps {
   children?: React.ReactNode;
 }
 
-/** `.v4-section-head`: mono number on the title's baseline, rule underneath. */
+/**
+ * `.v4-section-head`: mono number on the title's baseline, rule underneath. The number also
+ * carries `.fy-section-num`, which lifts it from the design system's 11 px label size to the
+ * heading's own size — the vendored `public/ds/v1` is synced from `about-me-page` and is never
+ * edited here, so the override lives in `styles.css`.
+ */
 export const SectionHead: React.FC<SectionHeadProps> = ({ num, title, id, children }) => (
   <div className="v4-section-head">
-    <span className="v4-section-num" aria-hidden="true">
+    <span className="v4-section-num fy-section-num" aria-hidden="true">
       {num}
     </span>
     <h2 className="v4-h2" id={id}>

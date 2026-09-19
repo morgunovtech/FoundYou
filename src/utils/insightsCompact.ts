@@ -78,6 +78,25 @@ export function dedupeByNameAndDistance(items: PoiResult[]): PoiResult[] {
   });
 }
 
+/**
+ * Drops the entries that only repeat the address already printed above the list: the village a
+ * point sits in came back as a «popular place nearby, 85 m», which says nothing the line
+ * «O‘zbekiston, Tashmehleshoz, Piskent Tumani» had not.
+ */
+export function withoutPlaceEchoes(
+  items: PoiResult[],
+  place: Pick<ReverseGeocodeResult, 'city' | 'district' | 'state' | 'country' | 'name'> | null | undefined
+): PoiResult[] {
+  if (!place) return items;
+  const echoes = new Set(
+    [place.city, place.district, place.state, place.country, place.name]
+      .map((value) => value?.trim().toLowerCase())
+      .filter((value): value is string => Boolean(value))
+  );
+  if (echoes.size === 0) return items;
+  return items.filter((poi) => !echoes.has(poi.name?.trim().toLowerCase() ?? ''));
+}
+
 const CATEGORY_KEYS: Record<string, MessageKey> = {
   cafe: 'poiCategory_cafe',
   restaurant: 'poiCategory_restaurant',

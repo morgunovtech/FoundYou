@@ -4,10 +4,10 @@ import type { StructuredMetadata } from '../../types/metadata';
 import type { OCRResult } from '../../hooks/useOCR';
 import type { PoiResult } from '../../types/api';
 import { useI18n, useT, type MessageKey } from '../../i18n';
-import { formatCoords, localizeCategoryKey, localizePlaceParts } from '../../utils/insightsCompact';
+import { formatCoords, localizeCategoryKey, localizePlaceParts, withoutPlaceEchoes } from '../../utils/insightsCompact';
 import { capitalize, describeWeather } from '../../utils/weather';
 import { matchSceneText } from '../../utils/sceneText';
-import { placeTypeLabel } from '../../utils/placeType';
+import { isAtThePoint, placeTypeLabel } from '../../utils/placeType';
 import { geotagTipKey } from '../../utils/geotagTips';
 import { googleMapsLink, streetViewLink } from '../../utils/mapLinks';
 import { MapBlock } from '../MapBlock';
@@ -48,6 +48,11 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
     return names.length > 0 ? names.join(', ') : null;
   }, [remote, geo.holidays.data]);
   const placeType = useMemo(() => (remote ? placeTypeLabel(geo.reverse.data) : null), [remote, geo.reverse.data]);
+  // A road, or anything far enough away, is the nearest object on the map — not what is here.
+  const placeIsHere = useMemo(() => isAtThePoint(geo.reverse.data), [geo.reverse.data]);
+  const placeDistance = geo.reverse.data?.distanceMeters ?? null;
+  // The settlement the point sits in is not a «place nearby»: it is the address line above.
+  const poiItems = useMemo(() => withoutPlaceEchoes(geo.poi.items, geo.reverse.data), [geo.poi.items, geo.reverse.data]);
 
   // Does the text in the picture agree with the place? Compared on the device over data already here.
   const sceneMatches = useMemo(
@@ -142,7 +147,7 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
           ) : null}
           {placeType ? (
             <>
-              <dt>{t('insightCompactPlaceType')}</dt>
+              <dt>{placeIsHere ? t('insightCompactPlaceType') : t('insightCompactNearestObject')}</dt>
               <dd>
                 <span>
                   {geo.reverse.data?.name
@@ -150,6 +155,13 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
                     : t(placeType.key, placeType.params)}
                   {geo.reverse.data?.houseNumber ? `, ${t('placeTypeHouseNumber', { number: geo.reverse.data.houseNumber })}` : ''}
                 </span>
+                {!placeIsHere ? (
+                  <span className="fy-muted">
+                    {placeDistance != null
+                      ? t('placeTypeNearestHint', { distance: formatPoiDistance(placeDistance) })
+                      : t('placeTypeNearestHintNoDistance')}
+                  </span>
+                ) : null}
               </dd>
             </>
           ) : null}
@@ -220,7 +232,7 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
         <div className="fy-lists">
           <div>
             <h4 className="v4-h3">{t('insightPoiTitle')}</h4>
-            {renderList(geo.poi.status, geo.poi.items, 'insightPoiError', 'insightPoiEmpty', (poi) =>
+            {renderList(geo.poi.status, poiItems, 'insightPoiError', 'insightPoiEmpty', (poi) =>
               poi.name?.trim() ? poi.name : localizeCategoryKey(poi.category, t)
             )}
           </div>

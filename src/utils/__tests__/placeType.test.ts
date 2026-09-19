@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { placeTypeLabel } from '../placeType';
+import { isAtThePoint, placeTypeLabel } from '../placeType';
 
 describe('placeTypeLabel', () => {
   it('names homes, blocks of flats, offices and industry from building types', () => {
@@ -34,5 +34,24 @@ describe('placeTypeLabel', () => {
     expect(placeTypeLabel({ category: 'boundary', type: 'administrative' })).toBeNull();
     expect(placeTypeLabel({})).toBeNull();
     expect(placeTypeLabel(null)).toBeNull();
+  });
+});
+
+describe('isAtThePoint', () => {
+  it('never calls a road «what is here»: a point on open ground resolves to the nearest one', () => {
+    expect(isAtThePoint({ category: 'highway', distanceMeters: 5 })).toBe(false);
+    expect(isAtThePoint({ category: 'highway' })).toBe(false);
+  });
+
+  it('accepts an object at the point and rejects the same object far away', () => {
+    expect(isAtThePoint({ category: 'tourism', distanceMeters: 12 })).toBe(true);
+    expect(isAtThePoint({ category: 'tourism', distanceMeters: 60 })).toBe(true);
+    expect(isAtThePoint({ category: 'tourism', distanceMeters: 61 })).toBe(false);
+    expect(isAtThePoint({ category: 'building', distanceMeters: 400 })).toBe(false);
+  });
+
+  it('keeps the old behaviour when the upstream gave no distance', () => {
+    expect(isAtThePoint({ category: 'building' })).toBe(true);
+    expect(isAtThePoint(null)).toBe(false);
   });
 });

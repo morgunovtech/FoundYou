@@ -89,6 +89,15 @@ const MEDIAPIPE_MODELS = [
     md5: 'a3dd6ec31725290770b97cec0cbf94c9'
   },
   {
+    // The far pass: BlazeFace full range sees faces that are small in the frame (a group photo),
+    // which the short-range model misses entirely; the short-range one owns the close-up it
+    // cannot see. Both are loaded, see `useImageAnalysis`.
+    file: 'blaze_face_full_range.tflite',
+    url: `${MEDIAPIPE_MODELS_BASE_URL}face_detector/blaze_face_full_range/float16/1/blaze_face_full_range.tflite`,
+    size: 1_083_786,
+    md5: '5de376fcc855273c5c720766d36523a0'
+  },
+  {
     // Lite2 (448×448 input) over Lite0 (320×320): noticeably better on small and partly hidden
     // objects such as a dog behind two people, at 12 MB instead of 7 MB and a slower pass.
     file: 'efficientdet_lite2.tflite',

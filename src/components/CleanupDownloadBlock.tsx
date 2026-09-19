@@ -178,6 +178,32 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
   const [overlayRedrawKey, setOverlayRedrawKey] = useState(0);
   const blurMode = useMemo(() => canvasBlurMode(), []);
 
+  /**
+   * The targets with nothing found, grouped by what the page can say about them: five rows of
+   * «не обнаружено» under one another were noise, one line per state is the same information.
+   */
+  const emptyTargetLines = useMemo(() => {
+    const rows: Array<{ label: string; state: string }> = [];
+    if (!(blurTargetCount > 0 && !detectionUnavailable)) {
+      rows.push({ label: t('hideFacesLabel'), state: detectionUnavailable ? t('hideUnavailable') : t('hideNone') });
+    }
+    if (ocrRegionCount === 0) rows.push({ label: t('hideTextLabel'), state: ocrPending ? t('hideScanning') : t('hideNone') });
+    if (plateCount === 0) rows.push({ label: t('hidePlatesLabel'), state: t('hideNone') });
+    if (qrCount === 0) rows.push({ label: t('hideQrLabel'), state: qrPending ? t('hideScanning') : t('hideNone') });
+    if (documentCount === 0) {
+      rows.push({ label: t('hideDocumentsLabel'), state: ocrPending ? t('hideScanning') : t('hideNone') });
+    }
+    const byState = new Map<string, string[]>();
+    for (const row of rows) {
+      byState.set(row.state, [...(byState.get(row.state) ?? []), row.label]);
+    }
+    return Array.from(byState.entries()).map(([state, labels]) => ({
+      state,
+      // Only the first label keeps its capital; «QR-коды» keeps its own, an acronym is not a word.
+      labels: labels.map((label, index) => (index === 0 ? label : uncapitalizeWord(label))).join(', ')
+    }));
+  }, [blurTargetCount, detectionUnavailable, ocrRegionCount, ocrPending, plateCount, qrCount, qrPending, documentCount, t]);
+
   const estimatedLabel = useMemo(() => {
     if (estimatedSize != null) {
       return formatBytesPrecise(estimatedSize);
@@ -644,54 +670,38 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
                 <input type="checkbox" checked={blurFaces} onChange={(event) => setBlurFaces(event.target.checked)} />
                 <span>{t('blurFaces', { count: blurTargetCount })}</span>
               </label>
-            ) : (
-              <p className="fy-check fy-check--none">
-                <span>{t('hideRowNone', { label: t('hideFacesLabel'), state: detectionUnavailable ? t('hideUnavailable') : t('hideNone') })}</span>
-              </p>
-            )}
+            ) : null}
             {ocrRegionCount > 0 ? (
               <label className="fy-check">
                 <input type="checkbox" checked={blurText} onChange={(event) => setBlurText(event.target.checked)} />
                 <span>{t('textWithCount', { count: ocrRegionCount })}</span>
               </label>
-            ) : (
-              <p className="fy-check fy-check--none">
-                <span>{t('hideRowNone', { label: t('hideTextLabel'), state: ocrPending ? t('hideScanning') : t('hideNone') })}</span>
-              </p>
-            )}
+            ) : null}
             {plateCount > 0 ? (
               <label className="fy-check">
                 <input type="checkbox" checked={blurPlates} onChange={(event) => setBlurPlates(event.target.checked)} />
                 <span>{t('blurPlates', { count: plateCount })}</span>
               </label>
-            ) : (
-              <p className="fy-check fy-check--none">
-                <span>{t('hideRowNone', { label: t('hidePlatesLabel'), state: t('hideNone') })}</span>
-              </p>
-            )}
+            ) : null}
             {qrCount > 0 ? (
               <label className="fy-check">
                 <input type="checkbox" checked={blurQr} onChange={(event) => setBlurQr(event.target.checked)} />
                 <span>{t('blurQr', { count: qrCount })}</span>
               </label>
-            ) : (
-              <p className="fy-check fy-check--none">
-                <span>{t('hideRowNone', { label: t('hideQrLabel'), state: qrPending ? t('hideScanning') : t('hideNone') })}</span>
-              </p>
-            )}
+            ) : null}
             {documentCount > 0 ? (
               <label className="fy-check">
                 <input type="checkbox" checked={blurDocuments} onChange={(event) => setBlurDocuments(event.target.checked)} />
                 <span>{t('blurDocuments', { count: documentCount })}</span>
               </label>
-            ) : (
-              <p className="fy-check fy-check--none">
-                <span>{t('hideRowNone', { label: t('hideDocumentsLabel'), state: ocrPending ? t('hideScanning') : t('hideNone') })}</span>
-              </p>
-            )}
-            {blurTargetCount === 0 || ocrRegionCount === 0 || plateCount === 0 || qrCount === 0 || documentCount === 0 ? (
-              <p className="fy-hint">{t('hideNoneHint')}</p>
             ) : null}
+            {/* One line per state instead of five «не обнаружено» rows under one another. */}
+            {emptyTargetLines.map((line) => (
+              <p key={line.state} className="fy-check fy-check--none">
+                <span>{t('hideRowNone', { label: line.labels, state: line.state })}</span>
+              </p>
+            ))}
+            {emptyTargetLines.length > 0 ? <p className="fy-hint">{t('hideNoneHint')}</p> : null}
             <label className="fy-check">
               <input type="checkbox" checked={manualMaskMode} onChange={(event) => setManualMaskMode(event.target.checked)} />
               <span>{t('manualMaskToggle')}</span>
@@ -880,6 +890,13 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     </section>
   );
 };
+
+/** Lowercases a label's first letter unless it opens an acronym («QR-коды» stays as it is). */
+function uncapitalizeWord(label: string): string {
+  const second = label[1] ?? '';
+  if (second && second === second.toLocaleUpperCase() && second !== second.toLocaleLowerCase()) return label;
+  return label.charAt(0).toLocaleLowerCase() + label.slice(1);
+}
 
 export const CleanupDownloadBlock = React.memo(CleanupDownloadBlockInner);
 CleanupDownloadBlock.displayName = 'CleanupDownloadBlock';

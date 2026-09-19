@@ -4,8 +4,7 @@ import {
   formatCoords,
   formatDistance,
   dedupeByNameAndDistance,
-  localizeCategoryKey
-} from '../insightsCompact';
+  localizeCategoryKey, withoutPlaceEchoes } from '../insightsCompact';
 
 describe('formatCoords', () => {
   it('formats coordinates', () => {
@@ -148,5 +147,27 @@ describe('localizeCategoryKey', () => {
 
   it('returns whatever the translator returns', () => {
     expect(localizeCategoryKey('cafe', () => 'Кафе')).toBe('Кафе');
+  });
+});
+
+describe('withoutPlaceEchoes', () => {
+  const poi = (name: string, distance = 85) => ({ name, category: 'place', distance });
+
+  it('drops a «place nearby» that only repeats the address line above it', () => {
+    const items = [poi('Tashmehleshoz'), poi('Чайхана «Пскент»', 320)];
+    const kept = withoutPlaceEchoes(items, { city: 'Tashmehleshoz', district: 'Piskent Tumani', country: 'O‘zbekiston' });
+    expect(kept.map((item) => item.name)).toEqual(['Чайхана «Пскент»']);
+  });
+
+  it('matches regardless of case and padding, and keeps everything else', () => {
+    const items = [poi('  piskent tumani  '), poi('Аптека')];
+    const kept = withoutPlaceEchoes(items, { district: 'Piskent Tumani', country: '' });
+    expect(kept.map((item) => item.name)).toEqual(['Аптека']);
+  });
+
+  it('returns the list untouched when there is no address to compare with', () => {
+    const items = [poi('Tashmehleshoz')];
+    expect(withoutPlaceEchoes(items, null)).toEqual(items);
+    expect(withoutPlaceEchoes(items, { country: '' })).toEqual(items);
   });
 });

@@ -128,6 +128,31 @@ function depthFromSize(size: SizeClass): Depth {
   return 'background';
 }
 
+const DEPTH_ORDER: Depth[] = ['foreground', 'midground', 'background'];
+
+/** The further of two readings: a lone distant car is «background» however big it is for its kind. */
+function furtherOf(a: Depth, b: Depth): Depth {
+  return DEPTH_ORDER[Math.max(DEPTH_ORDER.indexOf(a), DEPTH_ORDER.indexOf(b))];
+}
+
+/**
+ * Depth against the nearest object of the same kind, which is what tells a back row from a front
+ * one. The share of the picture alone cannot: in a five-person group shot the two people standing
+ * behind still fill 15 % of the frame each — over the 8 % «large» bar — and the sentence put all
+ * five in the foreground. Measured against the nearest person they come out at about half, and
+ * half is what standing behind looks like.
+ */
+function depthAgainstKind(area: number, largestOfKind: number): Depth {
+  const ratio = largestOfKind > 0 ? area / largestOfKind : 1;
+  if (ratio >= 0.7) return 'foreground';
+  if (ratio >= 0.35) return 'midground';
+  return 'background';
+}
+
+function areaShare(box: BoundingBox, imgW: number, imgH: number): number {
+  return (box.width * box.height) / ((imgW * imgH) || 1);
+}
+
 /* ── grouping ────────────────────────────────────────────── */
 
 interface DetectionItem {
@@ -252,12 +277,19 @@ export function generateSceneNarrative(input: NarrativeInput): string {
       : 'No objects detected.';
   }
 
+  // The biggest box of every kind is the yardstick for the rest of that kind.
+  const largestOfKind = new Map<string, number>();
+  for (const d of confident) {
+    const area = areaShare(d, imgW, imgH);
+    largestOfKind.set(d.label, Math.max(largestOfKind.get(d.label) ?? 0, area));
+  }
+
   const items: DetectionItem[] = confident.map((d) => {
-    const size = sizeClass(d, imgW, imgH);
+    const area = areaShare(d, imgW, imgH);
     return {
       label: d.label,
       zone: horizontalZone(d, imgW),
-      depth: depthFromSize(size),
+      depth: furtherOf(depthFromSize(sizeClass(d, imgW, imgH)), depthAgainstKind(area, largestOfKind.get(d.label) ?? area)),
       score: d.score,
     };
   });

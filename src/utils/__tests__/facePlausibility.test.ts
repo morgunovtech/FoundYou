@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { faceAnomalies, isPlausibleFace, type FaceCandidate, type Point, type Rect } from '../facePlausibility';
+import { faceAnomalies, isPlausibleFace, overlapRatio, pickDistinctFaces, type FaceCandidate, type Point, type Rect } from '../facePlausibility';
 
 // Keypoints measured with BlazeFace short-range on public/test/face.jpg (the ESA astronaut
 // portrait) at the 640×800 analysis size: the real face and the golden helmet visor.
@@ -42,6 +42,44 @@ function rotate(points: Point[], centre: Point, degrees: number): Point[] {
 function mirror(points: Point[], width: number): Point[] {
   return points.map((p) => ({ x: width - p.x, y: p.y }));
 }
+
+describe('overlapRatio / pickDistinctFaces', () => {
+  const box = (x: number, y: number, size: number) => ({ x, y, width: size, height: size });
+
+  it('measures overlap as intersection over union', () => {
+    expect(overlapRatio(box(0, 0, 10), box(0, 0, 10))).toBe(1);
+    expect(overlapRatio(box(0, 0, 10), box(20, 20, 10))).toBe(0);
+    // Half of each box overlaps: 50 / 150.
+    expect(overlapRatio(box(0, 0, 10), box(5, 0, 10))).toBeCloseTo(1 / 3, 5);
+  });
+
+  it('keeps one box per face when the two passes both found it, preferring the surer one', () => {
+    const candidates = [
+      { box: box(100, 100, 60), score: 0.7 }, // full range
+      { box: box(104, 98, 62), score: 0.9 }, // short range, same face
+      { box: box(400, 300, 50), score: 0.6 } // a second face only one pass saw
+    ];
+    const kept = pickDistinctFaces(candidates);
+    expect(kept).toEqual([1, 2]);
+  });
+
+  it('keeps faces that merely stand next to each other', () => {
+    const candidates = [
+      { box: box(100, 100, 60), score: 0.8 },
+      { box: box(165, 100, 60), score: 0.8 }
+    ];
+    expect(pickDistinctFaces(candidates)).toEqual([0, 1]);
+  });
+
+  it('returns indices in input order so the detections stay paired with their keypoints', () => {
+    const candidates = [
+      { box: box(0, 0, 40), score: 0.5 },
+      { box: box(200, 0, 40), score: 0.95 },
+      { box: box(400, 0, 40), score: 0.7 }
+    ];
+    expect(pickDistinctFaces(candidates)).toEqual([0, 1, 2]);
+  });
+});
 
 describe('faceAnomalies', () => {
   it('finds nothing wrong with the astronaut face', () => {

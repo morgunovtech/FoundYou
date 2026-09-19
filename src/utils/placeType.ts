@@ -7,6 +7,27 @@ export interface PlaceTypeLabel {
   params?: Record<string, string | number>;
 }
 
+/**
+ * Past this distance the matched object is not «what is here» any more. Nominatim answers with
+ * the nearest addressable thing, so a point in a field, a marsh or a forest resolves to the road
+ * that runs past it — the page said «Что здесь: улица» about a marsh. The request is rounded to
+ * four decimals (≈11 m), so the bar sits well above that slack.
+ */
+export const HERE_RADIUS_METERS = 60;
+
+/**
+ * Whether the matched object can be called «what is here». A road never can: a point on it would
+ * be the road itself, and everywhere else it is merely the nearest line on the map. Anything
+ * further than {@link HERE_RADIUS_METERS} cannot either, whatever it is.
+ */
+export function isAtThePoint(
+  result: Pick<ReverseGeocodeResult, 'category' | 'distanceMeters'> | null | undefined
+): boolean {
+  if (!result) return false;
+  if (result.category?.toLowerCase() === 'highway') return false;
+  return result.distanceMeters == null || result.distanceMeters <= HERE_RADIUS_METERS;
+}
+
 const HOUSE = new Set(['house', 'detached', 'semidetached_house', 'terrace', 'bungalow', 'villa', 'cabin', 'farm']);
 const APARTMENTS = new Set(['apartments', 'residential', 'dormitory']);
 const COMMERCIAL = new Set(['office', 'commercial', 'retail', 'supermarket', 'kiosk', 'shop']);

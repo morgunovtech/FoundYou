@@ -21,6 +21,29 @@ describe('generateSceneNarrative', () => {
     expect(result).toBe('No objects detected.');
   });
 
+  it('puts a back row behind the front row instead of calling everyone foreground', () => {
+    // The five person boxes MediaPipe returned for a group photo of five, at their measured
+    // shares of the frame: 28 %, 25 %, 20 % for the front row and 15 % each for the two standing
+    // behind. The absolute bar calls every one of them «large» and put all five in the foreground.
+    const dets = [
+      box('person', 30, 175, 500, 450), // front left, nearest — 28 %
+      box('person', 420, 120, 360, 562), // front centre — 25 %
+      box('person', 700, 150, 300, 528), // front right — 20 %
+      box('person', 250, 30, 290, 419), // back left — 15 %
+      box('person', 560, 30, 290, 419) // back right — 15 %
+    ];
+    const result = generateSceneNarrative({ detections: dets, imageWidth: 1000, imageHeight: 800, lang: 'ru' });
+    expect(result.match(/переднем плане/gi)?.length).toBe(3);
+    // The two behind are not lumped into one «3 человека» group with the person in front of them.
+    expect(result).not.toMatch(/переднем плане в центре — 3/i);
+  });
+
+  it('keeps a lone distant object in the background although it is the biggest of its kind', () => {
+    const dets = [box('person', 400, 300, 300, 400), box('car', 900, 380, 60, 30)];
+    const result = generateSceneNarrative({ detections: dets, imageWidth: 1000, imageHeight: 800, lang: 'ru' });
+    expect(result).toMatch(/заднем плане справа — автомобиль/i);
+  });
+
   it('describes a single person in center', () => {
     const dets = [box('person', 350, 100, 300, 500)]; // large, center
     const result = generateSceneNarrative({ detections: dets, imageWidth: IMG_W, imageHeight: IMG_H, lang: 'en' });

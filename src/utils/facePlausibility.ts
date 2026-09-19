@@ -103,6 +103,36 @@ export function faceAnomalies(candidate: FaceCandidate): FaceAnomaly[] {
   return anomalies;
 }
 
+/** Intersection over union of two boxes; 0 when they do not overlap. */
+export function overlapRatio(a: Rect, b: Rect): number {
+  const x = Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x));
+  const y = Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+  const intersection = x * y;
+  const union = a.width * a.height + b.width * b.height - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
+/**
+ * Which of several BlazeFace candidates to keep when two passes looked at the same frame.
+ *
+ * The two models are blind to each other's case, measured on a five-person group photo and on a
+ * crop of one face from it: short range finds 2 of the 5 faces in the group and the close-up at
+ * 0.83, full range finds all 5 in the group (0.70–0.96) and the close-up not at all — it is
+ * trained for faces that are small in the frame, the other for faces that fill it. So both run
+ * and the lists are merged here: the higher score wins wherever two boxes describe one face.
+ */
+export function pickDistinctFaces(candidates: readonly { box: Rect; score: number }[], maxOverlap = 0.4): number[] {
+  const order = candidates
+    .map((candidate, index) => ({ candidate, index }))
+    .sort((a, b) => b.candidate.score - a.candidate.score);
+  const kept: number[] = [];
+  for (const { candidate, index } of order) {
+    if (kept.some((other) => overlapRatio(candidate.box, candidates[other].box) > maxOverlap)) continue;
+    kept.push(index);
+  }
+  return kept.sort((a, b) => a - b);
+}
+
 function centreInside(box: Rect, container: Rect): boolean {
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
