@@ -10,13 +10,22 @@ import {
   type DetectionSummary
 } from '../types/detection';
 import type { BasicFileInfo } from '../types/metadata';
-import { isPlausibleFace, PERSON_CONTEXT_SCORE, type Rect } from '../utils/facePlausibility';
+import { isPlausibleFace, pickDistinctFaces, PERSON_CONTEXT_SCORE, type Rect } from '../utils/facePlausibility';
 
 /* ── self-hosted MediaPipe assets (see scripts/prepare-assets.mjs) ── */
 
 /** Directory with `vision_wasm[_nosimd]_internal.{js,wasm}`; FilesetResolver picks the SIMD variant itself. */
 const WASM_BASE_PATH = '/mediapipe/wasm';
+/*
+ * Two BlazeFace models, because each is blind to the other's case. Measured on a five-person
+ * group photo and on a crop of one face from it: short range finds 2 of the 5 faces in the group
+ * (the two nearest) and the close-up at 0.83; full range finds all 5 in the group (0.70–0.96)
+ * and the close-up not at all. Short range is trained for a face that fills the frame, full range
+ * for faces that are small in it, so both run and `pickDistinctFaces` merges the two lists.
+ * Neither invented a face on the negatives (a car and rocks, an empty hillside, a screenshot).
+ */
 const FACE_MODEL_URL = '/mediapipe/models/blaze_face_short_range.tflite';
+const FACE_FAR_MODEL_URL = '/mediapipe/models/blaze_face_full_range.tflite';
 /** Lite2 instead of Lite0: better recall on small and partly hidden objects for a 12 MB model (see prepare-assets). */
 const OBJECT_MODEL_URL = '/mediapipe/models/efficientdet_lite2.tflite';
 
@@ -38,6 +47,8 @@ type Delegate = 'GPU' | 'CPU';
 interface Detectors {
   objects: ObjectDetector;
   faces: FaceDetector;
+  /** The full-range pass; see FACE_FAR_MODEL_URL. */
+  farFaces: FaceDetector;
   delegate: Delegate;
 }
 
@@ -101,17 +112,23 @@ async function createDetectors(mp: MediaPipe, fileset: WasmFileset, delegate: De
       baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate },
       runningMode: 'IMAGE',
       minDetectionConfidence: FACE_MIN_CONFIDENCE
+    }),
+    mp.FaceDetector.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: FACE_FAR_MODEL_URL, delegate },
+      runningMode: 'IMAGE',
+      minDetectionConfidence: FACE_MIN_CONFIDENCE
     })
   ]);
-  const [objects, faces] = results;
-  if (objects.status === 'fulfilled' && faces.status === 'fulfilled') {
-    return { objects: objects.value, faces: faces.value, delegate };
+  const [objects, faces, farFaces] = results;
+  if (objects.status === 'fulfilled' && faces.status === 'fulfilled' && farFaces.status === 'fulfilled') {
+    return { objects: objects.value, faces: faces.value, farFaces: farFaces.value, delegate };
   }
   // Do not leak a WASM instance when only one of the two models failed.
   for (const result of results) {
     if (result.status === 'fulfilled') result.value.close();
   }
-  throw objects.status === 'rejected' ? objects.reason : (faces as PromiseRejectedResult).reason;
+  const failed = results.find((result) => result.status === 'rejected') as PromiseRejectedResult;
+  throw failed.reason;
 }
 
 /** Closes the current detectors and recreates them on the CPU delegate (used when GPU inference itself throws). */
@@ -119,6 +136,7 @@ function recreateOnCpu(current: Detectors): Promise<Detectors> {
   try {
     current.objects.close();
     current.faces.close();
+    current.farFaces.close();
   } catch (err) {
     console.warn('mediapipe-close', err);
   }
@@ -138,7 +156,7 @@ function recreateOnCpu(current: Detectors): Promise<Detectors> {
 function detectWith(detectors: Detectors, image: HTMLCanvasElement): DetectionResults {
   return {
     objects: detectors.objects.detect(image).detections,
-    faces: detectors.faces.detect(image).detections,
+    faces: [...detectors.faces.detect(image).detections, ...detectors.farFaces.detect(image).detections],
     delegate: detectors.delegate
   };
 }
@@ -374,7 +392,20 @@ function plausibleFaces(results: DetectionResults, canvas: { width: number; heig
     if (!bb || top?.categoryName !== PERSON_LABEL || (top.score ?? 0) < PERSON_CONTEXT_SCORE) continue;
     persons.push({ x: bb.originX, y: bb.originY, width: bb.width, height: bb.height });
   }
-  return results.faces.filter((det) => {
+  // The two passes see the same faces from different sides, so one face can arrive twice.
+  const boxed = results.faces.filter((det) => det.boundingBox);
+  const distinct = pickDistinctFaces(
+    boxed.map((det) => ({
+      box: {
+        x: det.boundingBox!.originX,
+        y: det.boundingBox!.originY,
+        width: det.boundingBox!.width,
+        height: det.boundingBox!.height
+      },
+      score: det.categories[0]?.score ?? 0
+    }))
+  ).map((index) => boxed[index]);
+  return distinct.filter((det) => {
     const bb = det.boundingBox;
     if (!bb) return false;
     return isPlausibleFace(

@@ -5,6 +5,7 @@ import { hammingDistance, phashFromBlob } from './utils/phash';
 import { usePrefersReducedMotion } from './hooks/usePrefersReducedMotion';
 import { extensionForMime } from './utils/format';
 import { countMetadataFields } from './utils/metadataFields';
+import { extrapolateSize, sampleWindows } from './utils/sizeEstimate';
 import { InfoBlock } from './components/InfoBlock';
 import { SiteHeader } from './components/SiteHeader';
 import { SiteFooter } from './components/SiteFooter';
@@ -96,6 +97,9 @@ async function loadImageElement(src: string): Promise<HTMLImageElement> {
 
 const blurDefault = 28;
 const PREVIEW_MAX_DIMENSION = 2400;
+/** Size-estimate sampling: four windows of 1024 px, measured against a full encode in `sizeEstimate.ts`. */
+const SIZE_SAMPLE_SIDE = 1024;
+const SIZE_SAMPLE_GRID = 2;
 
 /** Pipeline stage ids from the analysis hooks → progress labels shown by PreviewViewer / OCRBlock. */
 const DETECTION_STAGE_KEYS: Record<DetectionStage, MessageKey> = {
@@ -794,6 +798,44 @@ const App: React.FC = () => {
 
   const shareSupported = useMemo(() => canShareFiles(), []);
 
+  /**
+   * Bytes per pixel measured where they will apply: `SIZE_SAMPLE_GRID`² windows of the picture,
+   * drawn straight from the source at the scale the export will use and encoded with the export
+   * settings. The cleanup ops are not applied to the windows — a blurred face costs a little
+   * less, the anti-search noise a little more, both far below the error this replaces
+   * (see `utils/sizeEstimate.ts`). Returns null when it cannot sample; the caller falls back.
+   */
+  const sampledExportSize = useCallback(
+    async (
+      finalWidth: number,
+      finalHeight: number,
+      exportScale: number,
+      mime: string,
+      quality: number | undefined
+    ): Promise<number | null> => {
+      if (!fileInfo || exportScale <= 0) return null;
+      const side = Math.min(SIZE_SAMPLE_SIDE, finalWidth, finalHeight);
+      if (side < 64) return null;
+      const sourceSide = Math.min(fileInfo.width, fileInfo.height, Math.max(1, Math.round(side / exportScale)));
+      const image = await getSourceImage(fileInfo);
+      const canvas = document.createElement('canvas');
+      canvas.width = side;
+      canvas.height = side;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      const windows = sampleWindows(fileInfo.width, fileInfo.height, sourceSide, SIZE_SAMPLE_GRID);
+      let bytes = 0;
+      for (const { sx, sy } of windows) {
+        ctx.drawImage(image, sx, sy, sourceSide, sourceSide, 0, 0, side, side);
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, mime, quality));
+        if (!blob) return null;
+        bytes += blob.size;
+      }
+      return extrapolateSize(bytes, windows.length * side * side, finalWidth * finalHeight);
+    },
+    [fileInfo, getSourceImage]
+  );
+
   useEffect(() => {
     if (!fileInfo) {
       setPreviewLoading(false);
@@ -833,12 +875,24 @@ const App: React.FC = () => {
             const ratio = exportScale / scale;
             const finalWidth = Math.max(1, Math.round(canvas.width * ratio));
             const finalHeight = Math.max(1, Math.round(canvas.height * ratio));
-            const areaRatio = (finalWidth * finalHeight) / Math.max(1, canvas.width * canvas.height);
             replacePreviewUrl(URL.createObjectURL(blob));
-            setEstimatedSize(Math.round(blob.size * areaRatio));
             setPreviewDimensions({ width: finalWidth, height: finalHeight });
             setPlatformCapped(result.platformCapped);
             setPreviewLoading(false);
+            if (ratio <= 1.001) {
+              // The preview is the export: its own size is the answer, nothing to extrapolate.
+              setEstimatedSize(blob.size);
+              return;
+            }
+            const areaFallback = Math.round(blob.size * ratio * ratio);
+            sampledExportSize(finalWidth, finalHeight, exportScale, mime, quality)
+              .then((size) => {
+                if (!cancelled) setEstimatedSize(size ?? areaFallback);
+              })
+              .catch((err: unknown) => {
+                console.warn('size-estimate', err);
+                if (!cancelled) setEstimatedSize(areaFallback);
+              });
           }, mime, quality);
         })
         .catch(fail);
@@ -848,7 +902,7 @@ const App: React.FC = () => {
       cancelled = true;
       clearTimeout(debounceTimer);
     };
-  }, [fileInfo, createProcessedCanvas, qualityMode, outputFormat, replacePreviewUrl, t]);
+  }, [fileInfo, createProcessedCanvas, qualityMode, outputFormat, replacePreviewUrl, sampledExportSize, t]);
 
   const handleManualMaskAdd = useCallback((mask: Omit<ManualMask, 'id'>) => {
     setManualMasks((current) => {
