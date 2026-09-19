@@ -32,9 +32,9 @@ const NOT_STRIPPED: StrippedAnalysis = { stripped: false, strippedBy: null, conf
 const STRIPPED_TELEGRAM: StrippedAnalysis = { stripped: true, strippedBy: 'Telegram', confidence: 0.85, evidence: ['sign-1', 'sign-2'] };
 const STRIPPED_UNKNOWN: StrippedAnalysis = { stripped: true, strippedBy: null, confidence: 0.6, evidence: ['sign-1'] };
 
-const NOT_EDITED: EditingAnalysis = { edited: false, software: [], editingLevel: 'none', hints: [], isAiGenerated: false, aiTool: null, aiDetails: null };
-const PHOTOSHOP: EditingAnalysis = { edited: true, software: ['Adobe Photoshop'], editingLevel: 'professional', hints: ['pro-hint'], isAiGenerated: false, aiTool: null, aiDetails: null };
-const AI_MIDJOURNEY: EditingAnalysis = { edited: true, software: ['Midjourney'], editingLevel: 'none', hints: [], isAiGenerated: true, aiTool: 'Midjourney', aiDetails: null };
+const NOT_EDITED: EditingAnalysis = { edited: false, software: [], editingLevel: 'none', hints: [], aiScope: 'none', aiTool: null, aiEvidence: null, aiDetails: null };
+const PHOTOSHOP: EditingAnalysis = { edited: true, software: ['Adobe Photoshop'], editingLevel: 'professional', hints: ['pro-hint'], aiScope: 'none', aiTool: null, aiEvidence: null, aiDetails: null };
+const AI_MIDJOURNEY: EditingAnalysis = { edited: true, software: ['Midjourney'], editingLevel: 'none', hints: [], aiScope: 'generated', aiTool: 'Midjourney', aiEvidence: 'XMP', aiDetails: null };
 
 const TEMPORAL_HIGH: TemporalInsight[] = [
   { fact: 'Night photo (2:00)', inference: 'You were awake late at night', severity: 'medium' },
@@ -304,7 +304,7 @@ describe('generateDigitalProfile: individual branches', () => {
     const profile = generateDigitalProfile({ ...base(), editing: AI_MIDJOURNEY });
     const ai = section(profile, 'ai');
     expect(ai).toMatchObject({ text: 'Midjourney', leakPoints: 0, severity: 'medium' });
-    // isAiGenerated without a tool name still gets a label
+    // a generated picture without a tool name still gets a label
     const unknownTool = generateDigitalProfile({ ...base(), editing: { ...AI_MIDJOURNEY, aiTool: null, aiDetails: null } });
     expect(section(unknownTool, 'ai').text).toBe('AI');
   });

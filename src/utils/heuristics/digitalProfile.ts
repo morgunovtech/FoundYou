@@ -101,6 +101,19 @@ const TEXTS: Record<string, Record<Lang, string>> = {
   aiCheckTitle: { ru: 'AI-генерация', en: 'AI check', uz: 'AI-generatsiya' },
   aiNone: { ru: 'Признаков AI-генерации не обнаружено', en: 'No AI generation signs detected', uz: 'AI-generatsiya belgilari topilmadi' },
   aiNoneSigned: { ru: 'Признаков AI нет, происхождение подписано', en: 'No AI signs; provenance is signed', uz: 'AI belgilari yo‘q, kelib chiqishi imzolangan' },
+  aiGeneratedSub: { ru: 'Фото создано нейросетью', en: 'Photo created by AI', uz: 'Surat neyrotarmoq tomonidan yaratilgan' },
+  aiEditTitle: { ru: 'Генеративная правка', en: 'Generative edit', uz: 'Generativ tahrir' },
+  aiEditSub: {
+    ru: 'Снимок с камеры, но часть кадра дорисована или затёрта нейросетью — так файл помечают Clean Up на iPhone, Magic Editor на Pixel и Galaxy AI. Что именно изменили, метка не говорит',
+    en: 'A camera photo, but part of the frame was repainted or erased by a model — Clean Up on the iPhone, Magic Editor on the Pixel and Galaxy AI mark the file this way. The marker does not say what exactly was changed',
+    uz: 'Kamera surati, lekin kadrning bir qismi neyrotarmoq tomonidan qayta chizilgan yoki o‘chirilgan — iPhone’dagi Clean Up, Pixel’dagi Magic Editor va Galaxy AI faylni shunday belgilaydi. Nima o‘zgartirilganini belgi aytmaydi',
+  },
+  aiCompositeTitle: { ru: 'Склейка кадров', en: 'Multi-shot composite', uz: 'Kadrlar birikmasi' },
+  aiCompositeSub: {
+    ru: 'Кадр собран из нескольких снимков, сделанных подряд, без генеративной нейросети (Best Take, Add Me и похожие режимы)',
+    en: 'The frame is blended from several shots taken moments apart, with no generative model (Best Take, Add Me and similar modes)',
+    uz: 'Kadr ketma-ket olingan bir necha suratdan yig‘ilgan, generativ neyrotarmoqsiz (Best Take, Add Me va shunga o‘xshash rejimlar)',
+  },
   credSignedBy: { ru: 'Content Credentials, подпись:', en: 'Content Credentials, signed by', uz: 'Content Credentials, imzo:' },
   credValidSuffix: { ru: ' (проверена)', en: ' (verified)', uz: ' (tasdiqlangan)' },
   credInvalidSuffix: { ru: ' (не прошла проверку)', en: ' (failed validation)', uz: ' (tekshiruvdan o‘tmadi)' },
@@ -354,14 +367,34 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       leakPoints: 0,
       severity: 'medium',
     });
-  } else if (editing.isAiGenerated) {
+  } else if (editing.aiScope === 'generated') {
     sections.push({
       kind: 'ai',
       title: TEXTS.aiTitle[lang],
       text: editing.aiTool ?? 'AI',
-      subtext: lang === 'ru' ? 'Фото создано нейросетью' : 'Photo created by AI',
+      subtext: TEXTS.aiGeneratedSub[lang],
       leakPoints: 0,
       severity: 'medium',
+    });
+  } else if (editing.aiScope === 'edited') {
+    // A photograph with a generative patch in it is not «created by AI»: the file says a model
+    // touched part of the frame, and saying more than that would accuse a real photo of being fake.
+    sections.push({
+      kind: 'ai',
+      title: TEXTS.aiEditTitle[lang],
+      text: editing.aiTool ?? 'AI',
+      subtext: TEXTS.aiEditSub[lang],
+      leakPoints: 0,
+      severity: 'medium',
+    });
+  } else if (editing.aiScope === 'composite') {
+    sections.push({
+      kind: 'ai',
+      title: TEXTS.aiCompositeTitle[lang],
+      text: editing.aiTool ?? TEXTS.aiCompositeTitle[lang],
+      subtext: TEXTS.aiCompositeSub[lang],
+      leakPoints: 0,
+      severity: 'low',
     });
   } else if (cred) {
     sections.push({

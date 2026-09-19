@@ -177,6 +177,8 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
       event.kind === 'resized' ||
       event.kind === 'messenger' ||
       event.kind === 'stripped' ||
+      // A generative patch means the frame was written again after the shutter, whatever the dates say.
+      (event.kind === 'ai' && event.scope === 'edited') ||
       (event.kind === 'thumbnail' && event.same === false)
   );
   const createdText = shot?.at ? formatCompactDate(shot.at, lang) ?? shot.at : t('historyDateUnknown');
@@ -208,6 +210,8 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
         return withEvidence(t('historyMessenger', { platform: event.agent ?? '' }), event.evidence);
       case 'stripped':
         return withEvidence(t('historyStripped'), event.evidence);
+      case 'ai':
+        return t('historyAiEdit', { tool: event.agent ?? 'AI' });
       case 'thumbnail':
         return metadata?.thumbnail
           ? `${t('historyThumbDiffers')}. ${t('historyThumbWhy', { w: metadata.thumbnail.width, h: metadata.thumbnail.height })}`

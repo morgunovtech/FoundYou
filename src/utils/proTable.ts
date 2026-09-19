@@ -145,8 +145,9 @@ export function buildProGroups(
       ['edited', String(ed.edited)],
       ['editingLevel', ed.editingLevel],
       ['software', ed.software.length > 0 ? ed.software.join(', ') : '—'],
-      ['isAiGenerated', String(ed.isAiGenerated)],
-      ['aiTool', ed.aiTool ?? '—']
+      ['aiScope', ed.aiScope],
+      ['aiTool', ed.aiTool ?? '—'],
+      ['aiEvidence', ed.aiEvidence ?? '—']
     ];
     for (let i = 0; i < ed.hints.length; i++) {
       rows.push([`hint[${i}]`, ed.hints[i]]);
