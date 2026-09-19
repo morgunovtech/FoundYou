@@ -1,12 +1,18 @@
 type Lang = 'ru' | 'en' | 'uz';
 
+/** Generative work a file admits to: none, the whole picture, a patch in it, or a plain multi-shot blend. */
+export type AiScope = 'none' | 'generated' | 'edited' | 'composite';
+
 export interface EditingAnalysis {
   edited: boolean;
   software: string[];
   editingLevel: 'none' | 'basic' | 'professional';
   hints: string[];
-  isAiGenerated: boolean;
+  /** What the file's own tags claim about generative work in it. */
+  aiScope: AiScope;
   aiTool: string | null;
+  /** The marker the scope rests on, verbatim: «Credit: …», «DigitalSourceType: …», a PNG chunk. */
+  aiEvidence: string | null;
   /** What the generator left inside the file (PNG text chunks): the model and the start of the prompt. */
   aiDetails: AiDetails | null;
 }
@@ -246,15 +252,112 @@ function collectSoftwareSources(metadata: Record<string, unknown>, xmp: Record<s
 
 /* ── analysis ────────────────────────────────────────────────── */
 
-/** `DigitalSourceType` wherever exifr put it: a top-level key, or nested under `Iptc4xmpExt` / `iptcExt`. */
-function digitalSourceTypeOf(xmp: Record<string, unknown>): string | null {
-  const direct = xmp.DigitalSourceType ?? xmp.digitalSourceType ?? xmp['Iptc4xmpExt:DigitalSourceType'];
-  if (typeof direct === 'string') return direct;
-  for (const key of ['Iptc4xmpExt', 'iptcExt', 'iptc']) {
-    const nested = xmp[key];
-    if (nested && typeof nested === 'object') {
-      const value = (nested as Record<string, unknown>).DigitalSourceType ?? (nested as Record<string, unknown>).digitalSourceType;
-      if (typeof value === 'string') return value;
+/* ── generative work ─────────────────────────────────────────────────────────
+ *
+ * Three claims a file can make about itself, and they must not be collapsed into one:
+ * a picture a model drew end to end (`generated`), a photograph with a model-drawn patch
+ * in it (`edited` — iOS Clean Up, Google Magic Editor, Galaxy AI), and a frame stitched
+ * from several real shots with no model at all (`composite` — Best Take, Add Me).
+ * Reporting the second as «created by AI» calls a real photograph fake, which is worse
+ * than missing it; reporting the third as AI is simply wrong.
+ */
+
+/**
+ * IPTC `DigitalSourceType` → what it claims. The value is a vocabulary URI
+ * (`http://cv.iptc.org/newscodes/digitalsourcetype/<term>`), so only the last segment is
+ * compared — a substring match would read `compositeWithTrainedAlgorithmicMedia` as
+ * `trainedAlgorithmicMedia`. Terms not listed here (`digitalCapture`, `minorHumanEdits`,
+ * film and print scans) are an ordinary photograph.
+ */
+const DIGITAL_SOURCE_SCOPES: Record<string, AiScope> = {
+  trainedalgorithmicmedia: 'generated',
+  algorithmicmedia: 'generated',
+  digitalart: 'generated',
+  virtualrecording: 'generated',
+  compositewithtrainedalgorithmicmedia: 'edited',
+  compositesynthetic: 'edited',
+  algorithmicallyenhanced: 'edited',
+  compositecapture: 'composite',
+  composite: 'composite',
+};
+
+interface CreditMarker {
+  pattern: RegExp;
+  tool: string;
+  /** Matches only when EXIF `Make` is Apple: the pattern alone is too common to trust. */
+  appleOnly?: boolean;
+}
+
+/**
+ * What the phone's own generative editor writes into the credit line. Apple puts
+ * «Apple Photos Clean Up» in IPTC `Credit`; Google marks Magic Editor / Magic Eraser /
+ * Zoom Enhance the same way. The exact strings are vendor-specific and change between
+ * releases, so `aiEvidence` always carries the value verbatim — the label here is only a
+ * name for it, and an unmatched credit still shows up in the raw table.
+ */
+const GENERATIVE_EDITORS: CreditMarker[] = [
+  { pattern: /apple\s+photos?\s+clean\s?up/i, tool: 'Apple Photos Clean Up' },
+  // Apple files also carry a bare «Clean Up»; on anyone else's file that is a photo agency's
+  // name, not a tool, so the maker has to agree before it counts.
+  { pattern: /^clean\s?up$/i, tool: 'Apple Photos Clean Up', appleOnly: true },
+  { pattern: /edited\s+with\s+google\s+ai|magic\s?(editor|eraser)|zoom\s?enhance|\bgoogle\s+ai\b/i, tool: 'Google AI' },
+  { pattern: /\bgalaxy\s+ai\b|samsung\s+generative/i, tool: 'Galaxy AI' },
+];
+
+/**
+ * The same credit line, but for features that blend several real frames without a model.
+ * Anchored: the exact strings are unverified, and «Best Take Studio» in a credit is a name.
+ */
+const COMPOSITE_CREDITS: CreditMarker[] = [
+  { pattern: /^best\s?take$/i, tool: 'Best Take' },
+  { pattern: /^add\s?me$/i, tool: 'Add Me' },
+];
+
+/** The first marker whose pattern matches one whole credit line. */
+function matchCredit(table: CreditMarker[], credits: string[], isApple: boolean): CreditMarker | null {
+  for (const marker of table) {
+    if (marker.appleOnly && !isApple) continue;
+    if (credits.some((credit) => marker.pattern.test(credit.trim()))) return marker;
+  }
+  return null;
+}
+
+/** Credit lines wherever exifr filed them: IPTC-IIM 2:110, XMP `photoshop:Credit`, merged keys. */
+function collectCredits(iptc: Record<string, unknown>, xmp: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  for (const key of ['Credit', 'credit']) {
+    pushText(out, iptc[key]);
+    pushText(out, xmp[key]);
+  }
+  pushText(out, xmp['photoshop:Credit']);
+  const photoshop = xmp.photoshop;
+  if (photoshop && typeof photoshop === 'object') {
+    pushText(out, (photoshop as Record<string, unknown>).Credit);
+  }
+  return out;
+}
+
+/** The scope a `DigitalSourceType` value claims; null when the term is not about generative work. */
+export function digitalSourceScope(value: string | null): AiScope | null {
+  if (!value) return null;
+  const term = value.trim().split(/[/#]/).pop() ?? '';
+  return DIGITAL_SOURCE_SCOPES[term.toLowerCase()] ?? null;
+}
+
+/**
+ * `DigitalSourceType` wherever exifr put it: a top-level key, nested under `Iptc4xmpExt` /
+ * `iptcExt`, or in the IPTC group of its own.
+ */
+function digitalSourceTypeOf(xmp: Record<string, unknown>, iptc: Record<string, unknown> | null): string | null {
+  for (const source of [xmp, iptc ?? {}]) {
+    const direct = source.DigitalSourceType ?? source.digitalSourceType ?? source['Iptc4xmpExt:DigitalSourceType'];
+    if (typeof direct === 'string') return direct;
+    for (const key of ['Iptc4xmpExt', 'iptcExt', 'iptc']) {
+      const nested = source[key];
+      if (nested && typeof nested === 'object') {
+        const value = (nested as Record<string, unknown>).DigitalSourceType ?? (nested as Record<string, unknown>).digitalSourceType;
+        if (typeof value === 'string') return value;
+      }
     }
   }
   return null;
@@ -265,7 +368,9 @@ export function analyzeEditingHistory(
   xmp: Record<string, unknown>,
   lang: Lang,
   /** PNG header + text chunks (`groups.png`), where the generators leave their settings. */
-  png?: Record<string, unknown> | null
+  png?: Record<string, unknown> | null,
+  /** IPTC-IIM fields (`groups.iptc`): the credit line the phone editors write. */
+  iptc?: Record<string, unknown> | null
 ): EditingAnalysis {
   const softwareSources = collectSoftwareSources(metadata, xmp);
   const allText = softwareSources.join(' ');
@@ -295,41 +400,57 @@ export function analyzeEditingHistory(
     }
   }
 
-  // AI generation detection
-  let isAiGenerated = false;
-  let aiTool: string | null = null;
-
+  /* ── Generative work ──────────────────────────────────────────────────────
+   * Strongest evidence first: the generator's own settings in a PNG chunk, then its name in
+   * the software tags, then the IPTC `DigitalSourceType` standard, then the credit line the
+   * phone editors write, and only then the loose XMP guesses.
+   */
+  const pngMarkers = png ? findPngAiMarkers(png) : null;
   const xmpStr = JSON.stringify(xmp).toLowerCase();
   const searchText = [...softwareSources, xmpStr].join(' ');
-  for (const marker of AI_MARKERS) {
-    if (marker.pattern.test(searchText)) {
-      isAiGenerated = true;
-      aiTool = marker.tool;
-      break;
-    }
-  }
+  const namedGenerator = AI_MARKERS.find((marker) => marker.pattern.test(searchText)) ?? null;
 
-  // IPTC DigitalSourceType (Iptc4xmpExt): the one industry standard the generators themselves write —
-  // OpenAI, Adobe, Google and Microsoft mark their output as trainedAlgorithmicMedia (or a composite of it).
-  const digitalSourceType = digitalSourceTypeOf(xmp);
-  if (!isAiGenerated && digitalSourceType && /trainedalgorithmicmedia|algorithmicmedia/i.test(digitalSourceType)) {
-    isAiGenerated = true;
-    aiTool = softwareSources.find((sw) => !isCameraFirmware(sw)) ?? (/composite/i.test(digitalSourceType) ? 'AI (composite, IPTC DigitalSourceType)' : 'AI (IPTC DigitalSourceType)');
-  }
+  const digitalSourceType = digitalSourceTypeOf(xmp, iptc ?? null);
+  const sourceScope = digitalSourceScope(digitalSourceType);
+  const credits = collectCredits(iptc ?? {}, xmp);
+  const creditText = credits.join('; ');
+  const isApple = /apple/i.test(String(metadata.Make ?? metadata.make ?? ''));
+  const editorHit = matchCredit(GENERATIVE_EDITORS, credits, isApple);
+  const compositeHit = matchCredit(COMPOSITE_CREDITS, credits, isApple);
+  const namedSoftware = softwareSources.find((sw) => !isCameraFirmware(sw)) ?? null;
 
-  // Check XMP for explicit AI markers
-  if (!isAiGenerated && (xmpStr.includes('"ai_type"') || xmpStr.includes('"source":"ai"') || xmpStr.includes('generative'))) {
-    isAiGenerated = true;
-    aiTool = 'AI (unknown)';
-  }
-
-  // PNG text chunks: the generator's own settings beat every guess above.
+  let aiScope: AiScope = 'none';
+  let aiTool: string | null = null;
+  let aiEvidence: string | null = null;
   let aiDetails: AiDetails | null = null;
-  const pngMarkers = png ? findPngAiMarkers(png) : null;
+
   if (pngMarkers) {
-    isAiGenerated = true;
+    aiScope = 'generated';
     aiTool = pngMarkers.tool;
+    aiEvidence = `PNG ${pngMarkers.details.chunk}`;
     aiDetails = pngMarkers.details;
+  } else if (namedGenerator) {
+    aiScope = 'generated';
+    aiTool = namedGenerator.tool;
+    aiEvidence = namedSoftware ? `Software: ${namedSoftware}` : 'XMP';
+  } else if (sourceScope) {
+    // The one industry standard the tools write themselves: OpenAI, Adobe, Google, Microsoft
+    // and Apple all mark their output here, and the term says whether it is the whole picture.
+    aiScope = sourceScope;
+    aiTool = editorHit?.tool ?? compositeHit?.tool ?? namedSoftware ?? 'AI (IPTC DigitalSourceType)';
+    aiEvidence = `DigitalSourceType: ${digitalSourceType}`;
+  } else if (editorHit) {
+    aiScope = 'edited';
+    aiTool = editorHit.tool;
+    aiEvidence = `Credit: ${creditText}`;
+  } else if (compositeHit) {
+    aiScope = 'composite';
+    aiTool = compositeHit.tool;
+    aiEvidence = `Credit: ${creditText}`;
+  } else if (xmpStr.includes('"ai_type"') || xmpStr.includes('"source":"ai"') || xmpStr.includes('generative')) {
+    aiScope = 'generated';
+    aiTool = 'AI (unknown)';
+    aiEvidence = 'XMP';
   }
 
   return {
@@ -337,8 +458,9 @@ export function analyzeEditingHistory(
     software: foundSoftware,
     editingLevel: maxLevel,
     hints,
-    isAiGenerated,
+    aiScope,
     aiTool,
+    aiEvidence,
     aiDetails,
   };
 }

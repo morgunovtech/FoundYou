@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { BasicFileInfo } from '../../types/metadata';
 import type { JpegSignals } from '../../utils/jpegQuant';
 import { useT } from '../../i18n';
+import { Explainer } from '../Explainer';
 import { FactRow } from './FactRow';
 import { FRAME_STEP_KEYS } from './storyKeys';
 import {
@@ -64,6 +65,33 @@ const GhostChart: React.FC<{ ghosts: GhostResult; label: string }> = ({ ghosts, 
   );
 };
 
+type Translate = ReturnType<typeof useT>;
+
+/**
+ * The one sentence under «История сжатия». Every verdict has its own key, because «no dip»
+ * means three different things: nothing was found in a file where a dip would have shown
+ * (`none`), the file is not a JPEG at all (`not-applicable`), or it is a JPEG written above
+ * the quality where the curve flattens out and no dip could show (`insensitive`).
+ */
+function ghostText(ghosts: GhostResult, t: Translate): string {
+  switch (ghosts.verdict) {
+    case 'double':
+      return t('frameGhostDouble', { first: ghosts.dips[0], current: ghosts.currentQuality ?? '' });
+    case 'single':
+      return t('frameGhostSingle', { first: ghosts.dips[0] });
+    case 'jpeg-inside':
+      return t('frameGhostInside', { first: ghosts.dips[0] });
+    case 'unreliable':
+      return t('frameGhostUnreliable');
+    case 'not-applicable':
+      return t('frameGhostNotApplicable');
+    case 'insensitive':
+      return t('frameGhostInsensitive', { current: ghosts.currentQuality ?? '' });
+    default:
+      return t('frameGhostNone');
+  }
+}
+
 /**
  * «Проверка кадра»: the three pixel checks behind a button (they re-encode the picture up to
  * 32 times, so nothing runs by itself). Each result says in plain words what was done, what
@@ -112,6 +140,9 @@ export const FrameChecksCard: React.FC<FrameChecksCardProps> = ({ fileInfo, jpeg
   return (
     <FactRow title={t('frameChecksTitle')} severity="low" value={null} sub={t('frameChecksIntro')}>
       <div className="fy-fact-details fy-frame">
+        <Explainer title={t('frameChecksLimitTitle')}>
+          <p>{t('frameChecksLimit')}</p>
+        </Explainer>
         {state.status === 'error' ? (
           <p className="fy-hint" role="alert">
             {t('frameChecksError')}
@@ -154,20 +185,7 @@ export const FrameChecksCard: React.FC<FrameChecksCardProps> = ({ fileInfo, jpeg
             <section className="fy-frame-check">
               <h4 className="v4-h3">{t('frameGhostTitle')}</h4>
               <p className="fy-frame-how">{`${t('frameGhostWhat')} ${t('frameGhostLook')}`}</p>
-              <p className="fy-frame-result">
-                {state.results.ghosts.verdict === 'double'
-                  ? t('frameGhostDouble', {
-                      first: state.results.ghosts.dips[0],
-                      current: state.results.ghosts.currentQuality ?? ''
-                    })
-                  : state.results.ghosts.verdict === 'single'
-                    ? t('frameGhostSingle', { first: state.results.ghosts.dips[0] })
-                    : state.results.ghosts.verdict === 'jpeg-inside'
-                      ? t('frameGhostInside', { first: state.results.ghosts.dips[0] })
-                      : state.results.ghosts.verdict === 'unreliable'
-                        ? t('frameGhostUnreliable')
-                        : t('frameGhostNone')}
-              </p>
+              <p className="fy-frame-result">{ghostText(state.results.ghosts, t)}</p>
               <GhostChart ghosts={state.results.ghosts} label={t('frameGhostAlt')} />
               <p className="fy-muted">{t('frameGhostCaveat')}</p>
             </section>

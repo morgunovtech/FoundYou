@@ -1,5 +1,5 @@
 import type { StructuredMetadata } from '../types/metadata';
-import type { EditingAnalysis } from './heuristics/editingHistory';
+import type { AiScope, EditingAnalysis } from './heuristics/editingHistory';
 import type { StrippedAnalysis } from './heuristics/strippedDetector';
 import type { ContentCredentials } from './contentCredentials';
 import { formatWallClock, parseWallClock, wallClockAsUtcDate } from './format';
@@ -32,6 +32,8 @@ export interface FileEvent {
   distance?: number | null;
   /** «stripped»: the first sign the detector quoted. */
   evidence?: string | null;
+  /** «ai»: whether the file claims a generated picture or a generative patch inside a photo. */
+  scope?: AiScope;
 }
 
 export interface EmbeddedThumbnail {
@@ -148,8 +150,8 @@ export function buildFileHistory(input: FileHistoryInput): FileEvent[] {
       events.push({ kind: 'ai', at: credentials.signedAt ?? null, agent: credentials.generativeAgents[0] ?? credentials.generator ?? signer });
     }
     events.push({ kind: 'signed', at: credentials.signedAt ?? null, agent: signer });
-  } else if (editing?.isAiGenerated) {
-    events.push({ kind: 'ai', at: null, agent: editing.aiTool ?? 'AI' });
+  } else if (editing && (editing.aiScope === 'generated' || editing.aiScope === 'edited')) {
+    events.push({ kind: 'ai', at: null, agent: editing.aiTool ?? 'AI', scope: editing.aiScope });
   }
 
   // 6. On disk: the OS modification time, when it is not simply the capture moment.

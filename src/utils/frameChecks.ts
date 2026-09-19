@@ -44,10 +44,13 @@ export interface GhostResult {
   /**
    * `single`: one save, at `dips[0]` (≈ the file's own quality); `double`: a dip below the
    * current quality, so the picture was a JPEG before this save; `jpeg-inside`: a dip inside a
-   * PNG / HEIC / WebP; `none`: no dip; `unreliable`: no grain at all (graphics), the curve
-   * means nothing there.
+   * PNG / HEIC / WebP; `none`: a JPEG of a quality this method can see through, and no dip;
+   * `not-applicable`: the file is not a JPEG and carries no JPEG past, so there is nothing for
+   * the curve to find; `insensitive`: a JPEG written above `GHOST_BLIND_QUALITY`, where no dip
+   * can clear the 30 % rule and «no dip» therefore says nothing; `unreliable`: no grain at all
+   * (graphics), the curve means nothing there.
    */
-  verdict: 'none' | 'single' | 'double' | 'jpeg-inside' | 'unreliable';
+  verdict: 'none' | 'single' | 'double' | 'jpeg-inside' | 'unreliable' | 'not-applicable' | 'insensitive';
   cropped: boolean;
 }
 
@@ -270,6 +273,15 @@ export function findDips(curve: GhostPoint[]): number[] {
   return dips;
 }
 
+/**
+ * Above this quality a single save leaves no dip `findDips` can see: near 100 the curve is so
+ * flat that a real minimum stays well inside the 30 % rule. Measured on one photo saved once
+ * and re-measured over 40…100: at quality 75 the dip is found at 74, at 85, 92 and 95 nothing
+ * is found at all — although the curve's own minimum sits at 92 in the third case. Apple's
+ * ImageIO hands the browser roughly 92…95, so this is the range of every iPhone upload.
+ */
+export const GHOST_BLIND_QUALITY = 85;
+
 export interface GhostContext {
   /** Exact or estimated quality from the file's own tables; null for PNG / HEIC / WebP. */
   currentQuality: number | null;
@@ -281,9 +293,15 @@ export interface GhostContext {
 
 export function judgeGhosts(dips: number[], context: GhostContext): GhostResult['verdict'] {
   if (!context.hasGrain) return 'unreliable';
-  if (dips.length === 0) return 'none';
-  if (!context.isJpeg) return 'jpeg-inside';
   const current = context.currentQuality;
+  if (dips.length === 0) {
+    // «No dip» is only an answer when the method could have seen one: not in a file that never
+    // was a JPEG, and not above the quality where the curve flattens out.
+    if (!context.isJpeg) return 'not-applicable';
+    if (current != null && current >= GHOST_BLIND_QUALITY) return 'insensitive';
+    return 'none';
+  }
+  if (!context.isJpeg) return 'jpeg-inside';
   if (current != null && dips.some((quality) => quality <= current - 4)) return 'double';
   return 'single';
 }
@@ -474,6 +492,8 @@ export async function frameBlockData(bitmap: ImageBitmap): Promise<{
   elaTexture: number[];
   noise: number[];
   noiseTexture: number[];
+  /** Grid of the noise blocks, so a caller can put them back in place without guessing. */
+  noiseGrid: { cols: number; rows: number; block: number };
   curve: GhostPoint[];
 }> {
   const { canvas, ctx } = centreCrop(bitmap, ELA_MAX_SIDE);
@@ -498,6 +518,11 @@ export async function frameBlockData(bitmap: ImageBitmap): Promise<{
     elaTexture,
     noise: blocks.map((b) => b.noise),
     noiseTexture: blocks.map((b) => b.texture),
+    noiseGrid: {
+      cols: Math.ceil(scaled.canvas.width / BLOCK),
+      rows: Math.ceil(scaled.canvas.height / BLOCK),
+      block: BLOCK
+    },
     curve: ghosts.curve
   };
 }

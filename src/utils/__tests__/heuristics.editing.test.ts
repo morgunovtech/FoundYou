@@ -7,7 +7,7 @@ const LANGS: Lang[] = ['ru', 'en', 'uz'];
 const analyze = (metadata: Record<string, unknown>, xmp: Record<string, unknown> = {}, lang: Lang = 'en') =>
   analyzeEditingHistory(metadata, xmp, lang);
 
-const UNTOUCHED = { edited: false, software: [], editingLevel: 'none', hints: [], isAiGenerated: false, aiTool: null, aiDetails: null };
+const UNTOUCHED = { edited: false, software: [], editingLevel: 'none', hints: [], aiScope: 'none', aiTool: null, aiEvidence: null, aiDetails: null };
 
 describe('analyzeEditingHistory: software profiles', () => {
   it('Adobe Photoshop → professional edit', () => {
@@ -16,7 +16,7 @@ describe('analyzeEditingHistory: software profiles', () => {
     expect(result.software).toContain('Adobe Photoshop');
     expect(result.editingLevel).toBe('professional');
     expect(result.hints.length).toBeGreaterThan(0);
-    expect(result.isAiGenerated).toBe(false);
+    expect(result.aiScope).toBe('none');
     expect(result.aiTool).toBeNull();
   });
 
@@ -159,7 +159,7 @@ describe('analyzeEditingHistory: clean camera EXIF', () => {
 
   it('ordinary XMP fields do not trigger AI detection', () => {
     const result = analyze({}, { description: 'Sunset over the river', Rating: 5, parameters: 'Steps: 20, Sampler: Euler a' });
-    expect(result.isAiGenerated).toBe(false);
+    expect(result.aiScope).toBe('none');
     expect(result.aiTool).toBeNull();
   });
 });
@@ -167,7 +167,7 @@ describe('analyzeEditingHistory: clean camera EXIF', () => {
 describe('analyzeEditingHistory: AI generation', () => {
   it('Stable Diffusion in the XMP creator tool → AI, and the tool is listed as software', () => {
     const result = analyze({}, { CreatorTool: 'Stable Diffusion' });
-    expect(result.isAiGenerated).toBe(true);
+    expect(result.aiScope).toBe('generated');
     expect(result.aiTool).toBe('Stable Diffusion');
     expect(result.edited).toBe(true);
     expect(result.software).toContain('Stable Diffusion');
@@ -190,13 +190,13 @@ describe('analyzeEditingHistory: AI generation', () => {
     ['stable-diffusion-xl', 'Stable Diffusion']
   ])('marker %j anywhere in XMP → %s', (text, tool) => {
     const result = analyze({}, { description: text });
-    expect(result.isAiGenerated).toBe(true);
+    expect(result.aiScope).toBe('generated');
     expect(result.aiTool).toBe(tool);
   });
 
   it('the word boundary on "flux" avoids false positives', () => {
-    expect(analyze({}, { description: 'influx of tourists' }).isAiGenerated).toBe(false);
-    expect(analyze({}, { description: 'reflux' }).isAiGenerated).toBe(false);
+    expect(analyze({}, { description: 'influx of tourists' }).aiScope).toBe('none');
+    expect(analyze({}, { description: 'reflux' }).aiScope).toBe('none');
   });
 
   it('the first marker in the list wins when several match', () => {
@@ -206,7 +206,7 @@ describe('analyzeEditingHistory: AI generation', () => {
 
   it('an AI marker in EXIF Software is detected as well', () => {
     const result = analyze({ Software: 'Midjourney' });
-    expect(result.isAiGenerated).toBe(true);
+    expect(result.aiScope).toBe('generated');
     expect(result.aiTool).toBe('Midjourney');
     expect(result.software).toEqual(['Midjourney']);
   });
@@ -218,14 +218,14 @@ describe('analyzeEditingHistory: AI generation', () => {
     [{ history: [{ action: 'generative expand' }] }]
   ])('explicit XMP marker %j → AI (unknown)', (xmp) => {
     const result = analyze({}, xmp);
-    expect(result.isAiGenerated).toBe(true);
+    expect(result.aiScope).toBe('generated');
     expect(result.aiTool).toBe('AI (unknown)');
   });
 
   it('a real editor plus an AI marker keeps both facts', () => {
     const result = analyze({ Software: 'Adobe Photoshop 25.0' }, { description: 'Adobe Firefly generative fill' });
     expect(result.editingLevel).toBe('professional');
-    expect(result.isAiGenerated).toBe(true);
+    expect(result.aiScope).toBe('generated');
     expect(result.aiTool).toBe('Adobe Firefly');
   });
 });
@@ -246,18 +246,100 @@ describe('analyzeEditingHistory: languages', () => {
 describe('analyzeEditingHistory: IPTC DigitalSourceType', () => {
   it('reads the standard AI marker the generators write, top-level or nested', () => {
     const top = analyzeEditingHistory({}, { DigitalSourceType: 'http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia' }, 'en');
-    expect(top.isAiGenerated).toBe(true);
+    expect(top.aiScope).toBe('generated');
     expect(top.aiTool).toBe('AI (IPTC DigitalSourceType)');
     const nested = analyzeEditingHistory(
       { Software: 'Imagen 3' },
       { Iptc4xmpExt: { DigitalSourceType: 'http://cv.iptc.org/newscodes/digitalsourcetype/compositeWithTrainedAlgorithmicMedia' } },
       'en'
     );
-    expect(nested.isAiGenerated).toBe(true);
+    expect(nested.aiScope).toBe('edited');
     expect(nested.aiTool).toBe('Imagen 3');
+    expect(nested.aiEvidence).toContain('compositeWithTrainedAlgorithmicMedia');
     // A camera photo carries digitalCapture and is not AI.
     const capture = analyzeEditingHistory({}, { DigitalSourceType: 'http://cv.iptc.org/newscodes/digitalsourcetype/digitalCapture' }, 'en');
-    expect(capture.isAiGenerated).toBe(false);
+    expect(capture.aiScope).toBe('none');
+  });
+});
+
+describe('analyzeEditingHistory: on-device generative editors', () => {
+  const iptc = (credit: string, make = 'Apple') =>
+    analyzeEditingHistory({ Make: make }, {}, 'en', null, { Credit: credit });
+
+  it('reads the IPTC credit line iOS Clean Up writes as an edit, not as a generated picture', () => {
+    const result = iptc('Apple Photos Clean Up');
+    expect(result.aiScope).toBe('edited');
+    expect(result.aiTool).toBe('Apple Photos Clean Up');
+    expect(result.aiEvidence).toBe('Credit: Apple Photos Clean Up');
+  });
+
+  it('takes a bare «Clean Up» only on an Apple file: elsewhere it is somebody\'s name', () => {
+    expect(iptc('Clean Up').aiScope).toBe('edited');
+    expect(iptc('Clean Up', 'Canon').aiScope).toBe('none');
+    // A whole credit line that merely contains the words is never an Apple marker.
+    expect(iptc('Cleanup Crew Magazine').aiScope).toBe('none');
+  });
+
+  it('reads the Google and Samsung markers, and leaves an ordinary press credit alone', () => {
+    expect(iptc('Edited with Google AI', 'Google').aiTool).toBe('Google AI');
+    expect(iptc('Magic Eraser', 'Google').aiScope).toBe('edited');
+    expect(iptc('Galaxy AI', 'samsung').aiTool).toBe('Galaxy AI');
+    expect(iptc('Reuters / Ilya Naymushin', 'Canon').aiScope).toBe('none');
+  });
+
+  it('a multi-frame blend is a composite, not AI', () => {
+    const result = iptc('Best Take', 'Google');
+    expect(result.aiScope).toBe('composite');
+    expect(result.aiTool).toBe('Best Take');
+  });
+
+  it('finds the credit in XMP photoshop:Credit too, nested or flat', () => {
+    expect(analyzeEditingHistory({ Make: 'Apple' }, { photoshop: { Credit: 'Apple Photos Clean Up' } }, 'en').aiScope).toBe('edited');
+    expect(analyzeEditingHistory({ Make: 'Apple' }, { 'photoshop:Credit': 'Apple Photos Clean Up' }, 'en').aiScope).toBe('edited');
+  });
+});
+
+describe('analyzeEditingHistory: DigitalSourceType scopes', () => {
+  const dst = (term: string, extra: Record<string, unknown> = {}) =>
+    analyzeEditingHistory(extra, { DigitalSourceType: `http://cv.iptc.org/newscodes/digitalsourcetype/${term}` }, 'en');
+
+  it.each([
+    ['trainedAlgorithmicMedia', 'generated'],
+    ['algorithmicMedia', 'generated'],
+    ['digitalArt', 'generated'],
+    ['compositeWithTrainedAlgorithmicMedia', 'edited'],
+    ['compositeSynthetic', 'edited'],
+    ['algorithmicallyEnhanced', 'edited'],
+    ['compositeCapture', 'composite'],
+    ['digitalCapture', 'none'],
+    ['minorHumanEdits', 'none']
+  ])('%s → %s', (term, scope) => {
+    expect(dst(term).aiScope).toBe(scope);
+  });
+
+  it('matches the term, not a substring: the composite term is not read as the generated one', () => {
+    // «compositeWithTrainedAlgorithmicMedia» ends with «trainedAlgorithmicMedia».
+    expect(dst('compositeWithTrainedAlgorithmicMedia').aiScope).not.toBe('generated');
+  });
+
+  it('reads the tag from the IPTC group as well, and names the editor from the credit', () => {
+    const result = analyzeEditingHistory(
+      { Make: 'Apple' },
+      {},
+      'en',
+      null,
+      {
+        Credit: 'Apple Photos Clean Up',
+        DigitalSourceType: 'http://cv.iptc.org/newscodes/digitalsourcetype/compositeWithTrainedAlgorithmicMedia'
+      }
+    );
+    expect(result.aiScope).toBe('edited');
+    expect(result.aiTool).toBe('Apple Photos Clean Up');
+    expect(result.aiEvidence).toContain('DigitalSourceType');
+  });
+
+  it('a named generator outranks the tag', () => {
+    expect(dst('digitalCapture', { Software: 'Midjourney' }).aiScope).toBe('generated');
   });
 });
 
@@ -267,7 +349,7 @@ describe('PNG text chunks of AI generators', () => {
 
   it('reads the Automatic1111 «parameters» block: tool, model and the first prompt line', () => {
     const result = analyzeEditingHistory({}, {}, 'ru', { parameters });
-    expect(result.isAiGenerated).toBe(true);
+    expect(result.aiScope).toBe('generated');
     expect(result.aiTool).toBe('Stable Diffusion');
     expect(result.aiDetails).toEqual({
       model: 'juggernautXL_v9',
@@ -306,7 +388,7 @@ describe('PNG text chunks of AI generators', () => {
 
   it('leaves an ordinary PNG alone', () => {
     const result = analyzeEditingHistory({}, {}, 'en', { Software: 'GIMP 2.10', Comment: 'Created with GIMP', ImageWidth: 800 });
-    expect(result.isAiGenerated).toBe(false);
+    expect(result.aiScope).toBe('none');
     expect(result.aiDetails).toBeNull();
     expect(analyzeEditingHistory({}, {}, 'en').aiDetails).toBeNull();
   });
