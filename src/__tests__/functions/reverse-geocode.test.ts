@@ -240,3 +240,31 @@ describe('reverse-geocode: place type', () => {
     expect(blank.body.data?.name).toBeUndefined();
   });
 });
+
+describe('reverse-geocode: distance to the matched object', () => {
+  it('measures how far the answer is from the point asked about', async () => {
+    // The match sits 0.0030° north and 0.0020° east of the rounded request point:
+    // ≈333 m north, ≈168 m east at this latitude → ≈373 m.
+    mockFetch(async () =>
+      jsonResponse({ ...nominatim, lat: '41.3141', lon: '69.2817', category: 'highway', type: 'residential' })
+    );
+    const { body } = await callJson<ApiResponse<ReverseGeocodeResult>>(onRequest, urlOf(PATH, TASHKENT));
+    expect(body.ok).toBe(true);
+    expect(body.data!.distanceMeters).toBeGreaterThan(330);
+    expect(body.data!.distanceMeters).toBeLessThan(420);
+  });
+
+  it('leaves the distance out when the upstream gave no coordinates', async () => {
+    mockFetch(async () => jsonResponse(nominatim));
+    const { body } = await callJson<ApiResponse<ReverseGeocodeResult>>(onRequest, urlOf(PATH, TASHKENT));
+    expect(body.ok).toBe(true);
+    expect(body.data!.distanceMeters).toBeUndefined();
+  });
+
+  it('answers 0 for a match on the rounded point itself', async () => {
+    mockFetch(async () => jsonResponse({ ...nominatim, lat: '41.3112', lon: '69.2797' }));
+    const { body } = await callJson<ApiResponse<ReverseGeocodeResult>>(onRequest, urlOf(PATH, TASHKENT));
+    expect(body.ok).toBe(true);
+    expect(body.data!.distanceMeters).toBe(0);
+  });
+});

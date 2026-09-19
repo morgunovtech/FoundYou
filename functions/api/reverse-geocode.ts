@@ -43,6 +43,10 @@ export const onRequest = defineHandler(async ({ url, context }) => {
       addressType: asString(result?.addresstype),
       name: asString(result?.name),
       precisionMeters: estimatePrecision(boundingBox),
+      // How far the matched object is from the point asked about. Nominatim answers with the
+      // nearest addressable thing, which in open country is a road a few hundred metres away —
+      // without this the page would present it as «what is here».
+      distanceMeters: distanceTo(rlat, rlon, Number(result?.lat), Number(result?.lon)),
       // The answer is shared by every request that rounds to the same cell,
       // so it must describe the rounded point, not the caller's exact one.
       lat: rlat,
@@ -55,6 +59,16 @@ export const onRequest = defineHandler(async ({ url, context }) => {
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+}
+
+/** Great-circle distance in metres; undefined when the upstream gave no usable coordinates. */
+function distanceTo(lat: number, lon: number, targetLat: number, targetLon: number): number | undefined {
+  if (!Number.isFinite(targetLat) || !Number.isFinite(targetLon)) return undefined;
+  const toRad = Math.PI / 180;
+  const meanLat = ((lat + targetLat) / 2) * toRad;
+  const dLat = (targetLat - lat) * toRad * 6_371_000;
+  const dLon = (targetLon - lon) * toRad * 6_371_000 * Math.cos(meanLat);
+  return Math.round(Math.hypot(dLat, dLon));
 }
 
 function estimatePrecision(boundingBox: number[]): number | undefined {

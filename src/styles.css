@@ -1127,6 +1127,19 @@
 }
 
 /* «Проверка кадра»: three results, each a heading, how / what, the verdict, the map or chart, a caveat. */
+/* Section number at the heading's size: the DS label size (11px) reads as a stray caption
+   next to a 22px title. The vendored DS file stays untouched; this is the page layer. */
+.fy-section-num {
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+@media (max-width: 640px) {
+  .fy-section-num {
+    font-size: 18px;
+  }
+}
+
 /* --- Educational insert (Explainer) ------------------------------------- */
 
 .fy-explainer {

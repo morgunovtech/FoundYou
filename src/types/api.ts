@@ -19,6 +19,8 @@ export interface ReverseGeocodeResult {
   addressType?: string;
   name?: string;
   precisionMeters?: number;
+  /** Distance from the point asked about to the matched object; absent when upstream gave none. */
+  distanceMeters?: number;
   lat: number;
   lon: number;
 }
