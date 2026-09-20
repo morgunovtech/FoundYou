@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.0.1",
+    "@photostructure/tz-lookup": "^11.7.0",
     "c2pa": "^0.30.17",
     "clsx": "^2.1.0",
     "exifr": "^7.1.3",

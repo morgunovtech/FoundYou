@@ -28,6 +28,7 @@ import { timeHeadline } from './story/timeHeadline';
 import { Explainer } from './Explainer';
 import { findAuthorship, type AuthorshipKind } from '../utils/authorship';
 import { findWrittenPlace } from '../utils/placeFromMetadata';
+import { usePlaceTimezone } from '../hooks/usePlaceTimezone';
 import { useContainerSignals } from '../hooks/useContainerSignals';
 import { useFrameStats } from '../hooks/useFrameStats';
 
@@ -83,17 +84,27 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   const accuracyLabel = geo.accuracyMeters != null ? formatDistance(geo.accuracyMeters, lang) : null;
 
   // «How the photo was taken»: derived from GPS, time and camera tags; the place zone and the
+  /*
+   * The zone of the place, worked out on the device from the coordinates. It used to come only
+   * from the weather answer (`timezone=auto`), which made «камера стояла на час впереди места»
+   * depend on a network call to a weather endpoint succeeding. The offline lookup answers from
+   * the file alone; the weather field stays as the fallback for the points it declines (open
+   * water, where it returns an `Etc/GMT` placeholder rather than a place).
+   */
+  const offlineZone = usePlaceTimezone(metadata?.gps?.lat, metadata?.gps?.lon);
+  const placeTimezone = offlineZone ?? (remote ? geo.weather.data?.timezone ?? null : null);
+
   // terrain height come from the lookups when they are allowed and have answered.
   const stance = useMemo(
     () =>
       metadata?.gps
         ? buildStance({
             metadata,
-            placeTimezone: remote ? geo.weather.data?.timezone ?? null : null,
+            placeTimezone,
             terrainElevation: remote ? geo.elevation.data?.elevation ?? null : null
           })
         : null,
-    [metadata, remote, geo.weather.data?.timezone, geo.elevation.data?.elevation]
+    [metadata, placeTimezone, remote, geo.elevation.data?.elevation]
   );
 
   // «When the photo was taken»: the camera clock read together with the place zone and the holidays.
@@ -101,10 +112,10 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     () =>
       buildTimeProfile({
         metadata,
-        placeTimezone: remote ? geo.weather.data?.timezone ?? null : null,
+        placeTimezone,
         holiday: remote ? geo.holidays.data : null
       }),
-    [metadata, remote, geo.weather.data?.timezone, geo.holidays.data]
+    [metadata, placeTimezone, remote, geo.holidays.data]
   );
 
   // «Device»: maker, marketing name, system, age of the model, camera module, shot counter.
