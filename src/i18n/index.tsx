@@ -318,6 +318,48 @@ const messages = {
     homeExplainWhy:
       'Это единственный вопрос, ради которого чужой человек вообще открывает координаты из чужого снимка. Если ответ вам не нравится — координаты удаляются в разделе 03 вместе со всеми метаданными.',
     qrFormat: 'Формат кода: {format} — не QR, его читают те же сканеры',
+    profileDeviceTitle: 'Устройство',
+    profileDeviceFromExif: 'Определено из метаданных камеры',
+    profileDeviceIndirect: 'Определено по косвенным признакам',
+    profileLocationTitle: 'Где сделан снимок',
+    profileLocationAccuracy: 'Точность: ±{meters} м',
+    profileTimeNone: 'Дата/время съёмки не найдены',
+    profileTimeNoneSub: 'Временные метаданные отсутствуют или были удалены',
+    profilePeopleTitle: 'Люди на фото',
+    profilePeopleSub: 'Лица могут быть найдены через сервисы поиска по изображениям',
+    profileTextTitle: 'Текст на фото',
+    profileTextFragments: '{count} фрагментов текста',
+    profileEditingTitle: 'Обработка',
+    profileEditingNone: 'Следов редактирования не обнаружено',
+    profileOriginTitle: 'Происхождение',
+    profileOriginMessenger: 'Прошло через {platform}',
+    profileOriginStripped: 'Метаданные были удалены',
+    profileContentTitle: 'Тип контента',
+    profileSerialTitle: 'Серийные номера',
+    profileHashTitle: 'Цифровой отпечаток',
+    temporalNight: 'Ночное фото ({hour}:00)',
+    temporalEarlyMorning: 'Раннее утро ({hour}:00)',
+    temporalLunch: 'Обеденное время',
+    temporalWeekend: 'Выходной день',
+    temporalWorkingHours: 'Будний день, рабочие часы',
+    temporalFuture: 'Дата в будущем',
+    temporalFutureWhy: 'Часы на устройстве были настроены неправильно',
+    temporalToday: 'Фото сделано сегодня',
+    temporalYesterday: 'Фото сделано вчера',
+    temporalFresh: 'Свежее фото — геолокация актуальна',
+    temporalYearsAgo: 'Фото сделано ~{age} назад',
+    temporalOld: 'Старое фото — но метаданные всё ещё содержат информацию',
+    temporalMonthsAgo: 'Фото сделано ~{months} мес. назад',
+    temporalYearsUnit: '{years} г.',
+    sceneZone_left: 'слева',
+    sceneZone_center: 'в центре',
+    sceneZone_right: 'справа',
+    sceneDepth_foreground: 'на переднем плане',
+    sceneDepth_midground: '',
+    sceneDepth_background: 'на заднем плане',
+    sceneMaybe: 'возможно, ',
+    sceneNoObjects: 'Объекты не обнаружены.',
+    sceneTotal: ' Всего обнаружено {total} объектов.',
     mapGateTitle: 'Карта загружается со стороннего сервера',
     mapGateBody:
       'Всё на этой странице посчитано на вашем устройстве, и наружу ушли только округлённые координаты — на наш сервер. Карта устроена иначе: её квадратики браузер скачивает напрямую у OpenStreetMap, мимо нас. Поэтому она за отдельной кнопкой, а не грузится сама.',
@@ -1075,6 +1117,48 @@ const messages = {
     homeExplainWhy:
       'It is the one question for which a stranger opens the coordinates of someone else\u2019s photo at all. If you do not like the answer, section 03 removes the coordinates along with every other piece of metadata.',
     qrFormat: 'Code format: {format} — not a QR; the same scanners read it',
+    profileDeviceTitle: 'Device',
+    profileDeviceFromExif: 'Identified from camera metadata',
+    profileDeviceIndirect: 'Identified by indirect signs',
+    profileLocationTitle: 'Where the photo was taken',
+    profileLocationAccuracy: 'Accuracy: ±{meters} m',
+    profileTimeNone: 'Shot date/time not found',
+    profileTimeNoneSub: 'Temporal metadata is missing or was stripped',
+    profilePeopleTitle: 'People in photo',
+    profilePeopleSub: 'Faces can be found via image search services',
+    profileTextTitle: 'Text in photo',
+    profileTextFragments: '{count} text fragments',
+    profileEditingTitle: 'Editing',
+    profileEditingNone: 'No editing traces detected',
+    profileOriginTitle: 'Origin',
+    profileOriginMessenger: 'Passed through {platform}',
+    profileOriginStripped: 'Metadata was stripped',
+    profileContentTitle: 'Content type',
+    profileSerialTitle: 'Serial numbers',
+    profileHashTitle: 'Digital fingerprint',
+    temporalNight: 'Night photo ({hour}:00)',
+    temporalEarlyMorning: 'Early morning ({hour}:00)',
+    temporalLunch: 'Lunchtime',
+    temporalWeekend: 'Weekend',
+    temporalWorkingHours: 'Weekday, working hours',
+    temporalFuture: 'Future date',
+    temporalFutureWhy: 'Device clock was set incorrectly',
+    temporalToday: 'Photo taken today',
+    temporalYesterday: 'Photo taken yesterday',
+    temporalFresh: 'Fresh photo — geolocation is current',
+    temporalYearsAgo: 'Photo taken ~{age} ago',
+    temporalOld: 'Old photo — but metadata still contains information',
+    temporalMonthsAgo: 'Photo taken ~{months} months ago',
+    temporalYearsUnit: '{years} years',
+    sceneZone_left: 'on the left',
+    sceneZone_center: 'in the center',
+    sceneZone_right: 'on the right',
+    sceneDepth_foreground: 'in the foreground',
+    sceneDepth_midground: '',
+    sceneDepth_background: 'in the background',
+    sceneMaybe: 'possibly ',
+    sceneNoObjects: 'No objects detected.',
+    sceneTotal: ' {total} objects detected in total.',
     mapGateTitle: 'The map loads from a third-party server',
     mapGateBody:
       'Everything on this page was computed on your device, and the only thing that left it were rounded coordinates, sent to our server. The map works differently: the browser downloads its tiles straight from OpenStreetMap, bypassing us. That is why it sits behind a button instead of loading on its own.',
@@ -1833,6 +1917,48 @@ const messages = {
     homeExplainWhy:
       'Begona odam o‘zganing suratidagi koordinatalarni umuman shuning uchun ochadi. Javob yoqmasa — 03-bo‘limda koordinatalar qolgan metadata bilan birga o‘chiriladi.',
     qrFormat: 'Kod formati: {format} — bu QR emas, uni ham o‘sha skanerlar o‘qiydi',
+    profileDeviceTitle: 'Qurilma',
+    profileDeviceFromExif: 'Kamera metadatalaridan aniqlangan',
+    profileDeviceIndirect: 'Bilvosita belgilar bo‘yicha aniqlangan',
+    profileLocationTitle: 'Surat qayerda olingan',
+    profileLocationAccuracy: 'Aniqlik: ±{meters} m',
+    profileTimeNone: 'Suratga olish sanasi/vaqti topilmadi',
+    profileTimeNoneSub: 'Vaqt metadatalari yo‘q yoki o‘chirilgan',
+    profilePeopleTitle: 'Fotodagi odamlar',
+    profilePeopleSub: 'Yuzlar rasm qidiruv xizmatlari orqali topilishi mumkin',
+    profileTextTitle: 'Fotodagi matn',
+    profileTextFragments: '{count} ta matn parchasi',
+    profileEditingTitle: 'Tahrirlash',
+    profileEditingNone: 'Tahrirlash izlari topilmadi',
+    profileOriginTitle: 'Kelib chiqishi',
+    profileOriginMessenger: '{platform} orqali o‘tgan',
+    profileOriginStripped: 'Metadata o‘chirilgan',
+    profileContentTitle: 'Kontent turi',
+    profileSerialTitle: 'Seriya raqamlari',
+    profileHashTitle: 'Raqamli barmoq izi',
+    temporalNight: 'Tungi foto ({hour}:00)',
+    temporalEarlyMorning: 'Erta tong ({hour}:00)',
+    temporalLunch: 'Tushlik vaqti',
+    temporalWeekend: 'Dam olish kuni',
+    temporalWorkingHours: 'Ish kuni, ish soatlari',
+    temporalFuture: 'Kelajakdagi sana',
+    temporalFutureWhy: 'Qurilma soati noto‘g‘ri sozlangan',
+    temporalToday: 'Foto bugun olingan',
+    temporalYesterday: 'Foto kecha olingan',
+    temporalFresh: 'Yangi foto — geolokatsiya dolzarb',
+    temporalYearsAgo: 'Foto ~{age} oldin olingan',
+    temporalOld: 'Eski foto — lekin metadata hali ham ma’lumot saqlaydi',
+    temporalMonthsAgo: 'Foto ~{months} oy oldin olingan',
+    temporalYearsUnit: '{years} yil',
+    sceneZone_left: 'chapda',
+    sceneZone_center: 'markazda',
+    sceneZone_right: 'o‘ngda',
+    sceneDepth_foreground: 'old planda',
+    sceneDepth_midground: '',
+    sceneDepth_background: 'orqa planda',
+    sceneMaybe: 'ehtimol, ',
+    sceneNoObjects: 'Obyektlar aniqlanmadi.',
+    sceneTotal: ' Jami {total} ta obyekt aniqlandi.',
     mapGateTitle: 'Xarita uchinchi tomon serveridan yuklanadi',
     mapGateBody:
       'Bu sahifadagi hamma narsa sizning qurilmangizda hisoblandi, tashqariga faqat yaxlitlangan koordinatalar — bizning serverimizga — chiqdi. Xarita boshqacha: uning kataklarini brauzer to‘g‘ridan-to‘g‘ri OpenStreetMap’dan, bizni chetlab o‘tib yuklaydi. Shuning uchun u o‘zi yuklanmaydi, alohida tugma ortida turadi.',
@@ -2336,25 +2462,27 @@ export const useI18n = () => {
 
 export type MessageKey = keyof typeof messages.ru;
 
-export const useT = () => {
-  const { messages: dict } = useI18n();
-  return useCallback(
-    (key: MessageKey, params?: Record<string, string | number>): string => {
-      const template = dict[key];
-      // Only a missing key falls back to its name; an empty string is a valid value.
-      if (template === undefined) {
-        return key;
-      }
-      if (!params) {
-        return template;
-      }
-      return Object.entries(params).reduce(
-        (acc, [paramKey, paramValue]) => acc.replace(`{${paramKey}}`, String(paramValue)),
-        template
-      );
-    },
-    [dict]
+/**
+ * The same lookup `useT` performs, for the pure utilities that take a `lang` rather than a hook:
+ * `heuristics/digitalProfile.ts`, `heuristics/temporalAnalyzer.ts`, `sceneNarrative.ts`. They used
+ * to carry their own `lang === 'ru' ? … : …` chains, which is how several of their strings ended
+ * up with no Uzbek at all — the third branch quietly served English. One implementation means one
+ * place where a missing key is caught by `MessageKey`.
+ */
+export function formatMessage(lang: Language, key: MessageKey, params?: Record<string, string | number>): string {
+  const template = messages[lang][key];
+  // Only a missing key falls back to its name; an empty string is a valid value.
+  if (template === undefined) return key;
+  if (!params) return template;
+  return Object.entries(params).reduce(
+    (acc, [paramKey, paramValue]) => acc.replace(`{${paramKey}}`, String(paramValue)),
+    template
   );
+}
+
+export const useT = () => {
+  const { lang } = useI18n();
+  return useCallback((key: MessageKey, params?: Record<string, string | number>): string => formatMessage(lang, key, params), [lang]);
 };
 
 export type MessagesMap = typeof messages;

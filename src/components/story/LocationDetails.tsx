@@ -51,7 +51,8 @@ function landuseLabel(value: string, t: (key: MessageKey, params?: Record<string
 
 /** Thousands separated, so «2 900 000» does not read as a phone number. */
 function formatPopulation(count: number, lang: string): string {
-  return new Intl.NumberFormat(lang === 'ru' ? 'ru-RU' : lang === 'uz' ? 'uz-UZ' : 'en-US').format(count);
+  // `Intl` takes the BCP-47 tag directly; the dictionary's two-letter codes are valid ones.
+  return new Intl.NumberFormat(lang).format(count);
 }
 
 interface LocationDetailsProps {

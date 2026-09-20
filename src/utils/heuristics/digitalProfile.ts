@@ -5,7 +5,7 @@ import type { PiiFinding, PiiKind } from '../pii';
 import type { ContentCredentials } from '../contentCredentials';
 import type { CredentialsStatus } from '../../hooks/useContentCredentials';
 import type { BoundingBox } from '../../types/detection';
-import { messages, type MessageKey } from '../../i18n';
+import { formatMessage, messages, type MessageKey } from '../../i18n';
 import type { OCRResult } from '../../hooks/useOCR';
 import type { FilenameAnalysis } from './filenameAnalyzer';
 import type { ResolutionAnalysis } from './resolutionAnalyzer';
@@ -224,6 +224,13 @@ export interface ProfileInput {
 
 export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   const { filename, resolution, stripped, editing, hash, temporal, metadata, detections, ocrResult, lang } = input;
+  /*
+   * The dictionary, reached the same way `useT` reaches it. These sections used to carry their
+   * own `lang === 'ru' ? … : …` chains, which is how six of their strings ended up with no Uzbek
+   * branch at all: the third case quietly served English in the middle of a Russian-or-Uzbek
+   * card. A key is checked by `MessageKey`, so the next one cannot go missing silently.
+   */
+  const t = (key: MessageKey, params?: Record<string, string | number>) => formatMessage(lang, key, params);
   const sections: ProfileSection[] = [];
   const exif = metadata?.groups?.exif ?? {};
 
@@ -234,11 +241,9 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     const fromExif = !!metadata?.cameraModel;
     sections.push({
       kind: 'device',
-      title: lang === 'ru' ? 'Устройство' : lang === 'uz' ? 'Qurilma' : 'Device',
+      title: t('profileDeviceTitle'),
       text: device + (metadata?.cameraMake ? ` (${metadata.cameraMake})` : ''),
-      subtext: fromExif
-        ? (lang === 'ru' ? 'Определено из метаданных камеры' : lang === 'uz' ? 'Kamera metadatalaridan aniqlangan' : 'Identified from camera metadata')
-        : (lang === 'ru' ? 'Определено по косвенным признакам' : lang === 'uz' ? 'Bilvosita belgilar bo\'yicha aniqlangan' : 'Identified by indirect signs'),
+      subtext: t(fromExif ? 'profileDeviceFromExif' : 'profileDeviceIndirect'),
       leakPoints: fromExif ? 15 : 8,
       severity: fromExif ? 'high' : 'medium',
     });
@@ -248,11 +253,9 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   if (metadata?.gps) {
     sections.push({
       kind: 'location',
-      title: lang === 'ru' ? 'Где сделан снимок' : lang === 'uz' ? 'Surat qayerda olingan' : 'Where the photo was taken',
+      title: t('profileLocationTitle'),
       text: `${metadata.gps.lat.toFixed(5)}, ${metadata.gps.lon.toFixed(5)}` + (metadata.gps.altitude != null ? ` (${Math.round(metadata.gps.altitude)}m)` : ''),
-      subtext: metadata.gps.accuracy != null
-        ? (lang === 'ru' ? `Точность: ±${Math.round(metadata.gps.accuracy)}м` : `Accuracy: ±${Math.round(metadata.gps.accuracy)}m`)
-        : null,
+      subtext: metadata.gps.accuracy != null ? t('profileLocationAccuracy', { meters: Math.round(metadata.gps.accuracy) }) : null,
       leakPoints: 25,
       severity: 'high',
     });
@@ -280,8 +283,8 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     sections.push({
       kind: 'time',
       title: TEXTS.timeTitle[lang],
-      text: lang === 'ru' ? 'Дата/время съёмки не найдены' : lang === 'uz' ? 'Suratga olish sanasi/vaqti topilmadi' : 'Shot date/time not found',
-      subtext: lang === 'ru' ? 'Временные метаданные отсутствуют или были удалены' : 'Temporal metadata is missing or was stripped',
+      text: t('profileTimeNone'),
+      subtext: t('profileTimeNoneSub'),
       leakPoints: 0,
       severity: 'low',
     });
@@ -300,13 +303,9 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       .replace('{faces}', String(faces));
     sections.push({
       kind: 'people',
-      title: lang === 'ru' ? 'Люди на фото' : lang === 'uz' ? 'Fotodagi odamlar' : 'People in photo',
+      title: t('profilePeopleTitle'),
       text,
-      subtext: lang === 'ru'
-        ? 'Лица могут быть найдены через сервисы поиска по изображениям'
-        : lang === 'uz'
-        ? 'Yuzlar rasm qidiruv xizmatlari orqali topilishi mumkin'
-        : 'Faces can be found via image search services',
+      subtext: t('profilePeopleSub'),
       leakPoints: 20,
       severity: 'high',
     });
@@ -317,10 +316,8 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   if (ocrResult && ocrResult.regions.length >= 2 && ocrResult.fullText.length > 3) {
     sections.push({
       kind: 'text',
-      title: lang === 'ru' ? 'Текст на фото' : lang === 'uz' ? 'Fotodagi matn' : 'Text in photo',
-      text: lang === 'ru'
-        ? `${ocrResult.regions.length} фрагментов текста`
-        : `${ocrResult.regions.length} text fragments`,
+      title: t('profileTextTitle'),
+      text: t('profileTextFragments', { count: ocrResult.regions.length }),
       subtext: null,
       leakPoints: 10,
       severity: 'medium',
@@ -442,7 +439,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   if (editing.edited) {
     sections.push({
       kind: 'editing',
-      title: lang === 'ru' ? 'Обработка' : lang === 'uz' ? 'Tahrirlash' : 'Editing',
+      title: t('profileEditingTitle'),
       text: editing.software.join(', '),
       subtext: editing.hints[0] ?? null,
       leakPoints: 5,
@@ -451,8 +448,8 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   } else {
     sections.push({
       kind: 'editing',
-      title: lang === 'ru' ? 'Обработка' : lang === 'uz' ? 'Tahrirlash' : 'Editing',
-      text: lang === 'ru' ? 'Следов редактирования не обнаружено' : lang === 'uz' ? 'Tahrirlash izlari topilmadi' : 'No editing traces detected',
+      title: t('profileEditingTitle'),
+      text: t('profileEditingNone'),
       subtext: null,
       leakPoints: 0,
       severity: 'low',
@@ -463,10 +460,10 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   if (stripped.stripped) {
     sections.push({
       kind: 'origin',
-      title: lang === 'ru' ? 'Происхождение' : lang === 'uz' ? 'Kelib chiqishi' : 'Origin',
+      title: t('profileOriginTitle'),
       text: stripped.strippedBy
-        ? (lang === 'ru' ? `Прошло через ${stripped.strippedBy}` : `Passed through ${stripped.strippedBy}`)
-        : (lang === 'ru' ? 'Метаданные были удалены' : 'Metadata was stripped'),
+        ? t('profileOriginMessenger', { platform: stripped.strippedBy })
+        : t('profileOriginStripped'),
       subtext: stripped.evidence[0] ?? null,
       leakPoints: 5,
       severity: 'medium',
@@ -497,7 +494,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   if (resolution.contentHint) {
     sections.push({
       kind: 'content',
-      title: lang === 'ru' ? 'Тип контента' : lang === 'uz' ? 'Kontent turi' : 'Content type',
+      title: t('profileContentTitle'),
       text: resolution.contentHint,
       subtext: null,
       leakPoints: 0,
@@ -510,7 +507,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   if (serials.length > 0) {
     sections.push({
       kind: 'serial',
-      title: lang === 'ru' ? 'Серийные номера' : lang === 'uz' ? 'Seriya raqamlari' : 'Serial numbers',
+      title: t('profileSerialTitle'),
       text: serials.join('; '),
       subtext: null,
       leakPoints: 10,
@@ -522,7 +519,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   if (hash) {
     sections.push({
       kind: 'hash',
-      title: lang === 'ru' ? 'Цифровой отпечаток' : lang === 'uz' ? 'Raqamli barmoq izi' : 'Digital fingerprint',
+      title: t('profileHashTitle'),
       text: hash.phash ? `pHash ${hash.phash} · SHA-256 ${hash.sha256.substring(0, 16)}…` : `SHA-256: ${hash.sha256.substring(0, 16)}...`,
       subtext: TEXTS.hashSub[lang],
       leakPoints: 5,
