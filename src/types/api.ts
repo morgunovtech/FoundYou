@@ -11,6 +11,18 @@ export interface ReverseGeocodeResult {
   city?: string;
   state?: string;
   district?: string;
+  /**
+   * The finest administrative level OSM records for the point — `neighbourhood`, `quarter`,
+   * `residential` or `city_block`. In Tashkent that is the mahalla, a far smaller circle around
+   * someone than the district, which is why it is worth its own field.
+   */
+  neighbourhood?: string;
+  /** Nominatim's own `place_rank`: roughly 4 (continent) to 30 (a single building). */
+  placeRank?: number;
+  /** `building:levels` from the matched object's OSM tags. */
+  buildingLevels?: number;
+  /** The object's name in the country's own language, when OSM holds one and it differs. */
+  localName?: string;
   road?: string;
   houseNumber?: string;
   /** Nominatim `category` / `type` / `addresstype` / `name` of the matched object (e.g. tourism / hotel / tourism / «Lotus Hotel»). */
@@ -48,6 +60,12 @@ export interface HolidayEntry {
   localName: string;
   name: string;
   global: boolean;
+  /**
+   * True when the date was computed from the lunar calendar rather than taken from an official
+   * announcement (Ramazon hayit, Qurbon hayit outside the years already announced). The card says
+   * so: the day is set by the Muslim Board, and the tabular calendar is good to about a day.
+   */
+  approximate?: boolean;
 }
 
 export interface HolidaysResult {

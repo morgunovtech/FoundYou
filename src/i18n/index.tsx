@@ -213,6 +213,12 @@ const messages = {
       'Выключенные геометки убирают координаты, но не трогают текстовые поля о месте: город, район, страну. Их заполняют редакторы, агентские рабочие процессы и функция «добавить место» в телефоне. Совет «выключи геолокацию» на них не действует.',
     writtenPlaceNotGeocoded:
       'Мы не превращаем этот текст в координаты и никуда его не отправляем: это строка из вашего файла, и она остаётся в браузере.',
+    holidayApproximate: '— дата лунного праздника посчитана по календарю; официально её объявляет Управление мусульман, и она может отличаться на день.',
+    insightCompactNeighbourhood: 'Микрорайон / махалля',
+    neighbourhoodHint: 'Самый мелкий уровень, который знает OpenStreetMap для этой точки',
+    insightCompactBuildingLevels: 'Этажность здания',
+    buildingLevelsValue: '{levels} эт. по данным OpenStreetMap',
+    insightCompactLocalName: 'Местное название',
     mapGateTitle: 'Карта загружается со стороннего сервера',
     mapGateBody:
       'Всё на этой странице посчитано на вашем устройстве, и наружу ушли только округлённые координаты — на наш сервер. Карта устроена иначе: её квадратики браузер скачивает напрямую у OpenStreetMap, мимо нас. Поэтому она за отдельной кнопкой, а не грузится сама.',
@@ -866,6 +872,12 @@ const messages = {
       'Turning geotagging off removes the coordinates and leaves the text fields about the place alone: city, sub-location, country. Editors, agency workflows and the «add location» feature on a phone all fill them in. The advice «switch off location» does not touch them.',
     writtenPlaceNotGeocoded:
       'We do not turn this text into coordinates and we do not send it anywhere: it is a line out of your file, and it stays in the browser.',
+    holidayApproximate: '— the date of this lunar holiday was computed from the calendar; the Muslim Board announces it officially and it may differ by a day.',
+    insightCompactNeighbourhood: 'Neighbourhood / mahalla',
+    neighbourhoodHint: 'The finest level OpenStreetMap records for this point',
+    insightCompactBuildingLevels: 'Storeys in the building',
+    buildingLevelsValue: '{levels} according to OpenStreetMap',
+    insightCompactLocalName: 'Local name',
     mapGateTitle: 'The map loads from a third-party server',
     mapGateBody:
       'Everything on this page was computed on your device, and the only thing that left it were rounded coordinates, sent to our server. The map works differently: the browser downloads its tiles straight from OpenStreetMap, bypassing us. That is why it sits behind a button instead of loading on its own.',
@@ -1520,6 +1532,12 @@ const messages = {
       'Geoteglarni o‘chirish koordinatalarni olib tashlaydi, lekin joy haqidagi matn maydonlariga tegmaydi: shahar, tuman, mamlakat. Ularni muharrirlar, agentlik jarayonlari va telefondagi «joy qo‘shish» funksiyasi to‘ldiradi. «Geolokatsiyani o‘chir» maslahati ularga ta’sir qilmaydi.',
     writtenPlaceNotGeocoded:
       'Biz bu matnni koordinatalarga aylantirmaymiz va hech qayerga yubormaymiz: bu sizning faylingizdagi satr va u brauzerda qoladi.',
+    holidayApproximate: '— bu oy taqvimi bo‘yicha hisoblangan sana; uni rasman Musulmonlar idorasi e’lon qiladi va bir kunga farq qilishi mumkin.',
+    insightCompactNeighbourhood: 'Mahalla',
+    neighbourhoodHint: 'OpenStreetMap shu nuqta uchun biladigan eng mayda daraja',
+    insightCompactBuildingLevels: 'Binoning qavatlari',
+    buildingLevelsValue: 'OpenStreetMap ma’lumotiga ko‘ra {levels} qavat',
+    insightCompactLocalName: 'Mahalliy nomi',
     mapGateTitle: 'Xarita uchinchi tomon serveridan yuklanadi',
     mapGateBody:
       'Bu sahifadagi hamma narsa sizning qurilmangizda hisoblandi, tashqariga faqat yaxlitlangan koordinatalar — bizning serverimizga — chiqdi. Xarita boshqacha: uning kataklarini brauzer to‘g‘ridan-to‘g‘ri OpenStreetMap’dan, bizni chetlab o‘tib yuklaydi. Shuning uchun u o‘zi yuklanmaydi, alohida tugma ortida turadi.',

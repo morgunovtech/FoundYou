@@ -14,7 +14,10 @@ export const onRequest = defineHandler(async ({ url, context }) => {
 
   return withCache(context, cacheKey('reverse-geocode', lat4, lon4), TTL, async () => {
     const upstream = await fetchUpstream(
-      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat4}&lon=${lon4}`
+      // `extratags` carries the building's own tags (storeys, operator, opening hours);
+      // `namedetails` carries the local-language names. Both are the same request to the same
+      // upstream with the same rounded coordinates — only the answer is richer.
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&extratags=1&namedetails=1&lat=${lat4}&lon=${lon4}`
     );
     if (!upstream.ok) return upstream.error;
 
@@ -35,6 +38,16 @@ export const onRequest = defineHandler(async ({ url, context }) => {
       city: address.city ?? address.town ?? address.village,
       state: address.state,
       district: address.suburb ?? address.county ?? address.state_district,
+      // The finest administrative level OSM has for the point. In Tashkent that is the mahalla,
+      // which is a far smaller circle around someone than «Чиланзарский район».
+      neighbourhood: asString(address.neighbourhood ?? address.quarter ?? address.residential ?? address.city_block),
+      // How specific Nominatim itself considers the match (30 = country … 30+ = house). A high
+      // rank with a small distance is «this exact building»; a low one is «somewhere in this city».
+      placeRank: Number.isFinite(Number(result?.place_rank)) ? Number(result.place_rank) : undefined,
+      // Storeys of the building the point falls in, when OSM records them.
+      buildingLevels: levelsOf(result?.extratags),
+      // The name in the local language, when it differs from the one Nominatim chose.
+      localName: localNameOf(result?.namedetails, countryCode),
       road: address.road ?? address.pedestrian ?? address.footway,
       houseNumber: address.house_number,
       // What the point resolved to (hotel, house, road…): the sensitivity of an address depends on it.
@@ -56,6 +69,43 @@ export const onRequest = defineHandler(async ({ url, context }) => {
     return json({ ok: true, data }, 200, undefined, TTL);
   });
 });
+
+/** `building:levels` from the object's own OSM tags, when it is a plain number of storeys. */
+function levelsOf(extratags: unknown): number | undefined {
+  if (!extratags || typeof extratags !== 'object') return undefined;
+  const raw = (extratags as Record<string, unknown>)['building:levels'];
+  // An empty or blank tag is not «0 storeys»: `Number('')` is 0, and printing that as a fact
+  // would invent a value OSM does not hold. Caught by the endpoint's own test.
+  const text = typeof raw === 'string' ? raw.trim() : raw;
+  if (text === '' || text == null) return undefined;
+  const levels = Number(text);
+  // 0 is a legal OSM value for a structure with no storeys, and above ~200 it is vandalism.
+  return Number.isFinite(levels) && levels >= 0 && levels <= 200 ? levels : undefined;
+}
+
+/**
+ * The name written in the language of the country the point is in — `name:uz` in Uzbekistan,
+ * `name:ru` where Russian is official — when it differs from the name Nominatim returned.
+ * Only names OSM already holds; nothing is translated and nothing extra is requested.
+ */
+const LOCAL_NAME_KEYS: Record<string, string[]> = {
+  UZ: ['name:uz', 'name:ru'],
+  KZ: ['name:kk', 'name:ru'],
+  KG: ['name:ky', 'name:ru'],
+  TJ: ['name:tg', 'name:ru'],
+  RU: ['name:ru']
+};
+
+function localNameOf(namedetails: unknown, countryCode: string | undefined): string | undefined {
+  if (!namedetails || typeof namedetails !== 'object' || !countryCode) return undefined;
+  const names = namedetails as Record<string, unknown>;
+  const base = asString(names.name);
+  for (const key of LOCAL_NAME_KEYS[countryCode] ?? []) {
+    const value = asString(names[key]);
+    if (value && value !== base) return value;
+  }
+  return undefined;
+}
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;

@@ -48,6 +48,11 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
     const names = Array.from(new Set(geo.holidays.data.holidays.map((h) => h.localName || h.name).filter(Boolean)));
     return names.length > 0 ? names.join(', ') : null;
   }, [remote, geo.holidays.data]);
+  // A lunar holiday whose day was computed rather than announced must not read as a fact.
+  const holidayApproximate = useMemo(
+    () => Boolean(remote && geo.holidays.data?.holidays.some((h) => h.approximate)),
+    [remote, geo.holidays.data]
+  );
   const placeType = useMemo(() => (remote ? placeTypeLabel(geo.reverse.data) : null), [remote, geo.reverse.data]);
   // A road, or anything far enough away, is the nearest object on the map — not what is here.
   const placeIsHere = useMemo(() => isAtThePoint(geo.reverse.data), [geo.reverse.data]);
@@ -171,6 +176,31 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
               </dd>
             </>
           ) : null}
+          {remote && geo.reverse.data?.neighbourhood ? (
+            <>
+              <dt>{t('insightCompactNeighbourhood')}</dt>
+              <dd>
+                <span>{geo.reverse.data.neighbourhood}</span>
+                <span className="fy-muted">{t('neighbourhoodHint')}</span>
+              </dd>
+            </>
+          ) : null}
+          {remote && geo.reverse.data?.buildingLevels != null ? (
+            <>
+              <dt>{t('insightCompactBuildingLevels')}</dt>
+              <dd>
+                <span>{t('buildingLevelsValue', { levels: geo.reverse.data.buildingLevels })}</span>
+              </dd>
+            </>
+          ) : null}
+          {remote && geo.reverse.data?.localName ? (
+            <>
+              <dt>{t('insightCompactLocalName')}</dt>
+              <dd>
+                <span>{geo.reverse.data.localName}</span>
+              </dd>
+            </>
+          ) : null}
           <dt>{t('insightCompactCoordinates')}</dt>
           <dd>
             <span className="fy-mono">{formatCoords(coords.lat, coords.lon)}</span>
@@ -215,7 +245,10 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
               {holidayNames ? (
                 <>
                   <dt>{t('insightCompactHoliday')}</dt>
-                  <dd>{holidayNames}</dd>
+                  <dd>
+                    {holidayNames}
+                    {holidayApproximate ? <span className="fy-hint"> {t('holidayApproximate')}</span> : null}
+                  </dd>
                 </>
               ) : null}
             </>
