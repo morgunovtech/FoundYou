@@ -835,6 +835,12 @@
   overflow: hidden;
 }
 
+.fy-map-gate {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
 .fy-map-actions {
   display: grid;
   gap: 8px;

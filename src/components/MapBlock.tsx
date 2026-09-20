@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type * as maplibregl from 'maplibre-gl';
 import type { FeatureCollection, Polygon } from 'geojson';
 import { useT } from '../i18n';
+import { Explainer } from './Explainer';
 
 interface MapBlockProps {
   lat: number;
@@ -30,7 +31,11 @@ function hasWebGl2(): boolean {
   }
 }
 
-export const MapBlock: React.FC<MapBlockProps> = ({ lat, lon, accuracy }) => {
+/**
+ * The map itself. Mounted only once the reader has pressed the button in `MapBlock`, because
+ * mounting it is what fetches the tiles.
+ */
+const MapCanvas: React.FC<MapBlockProps> = ({ lat, lon, accuracy }) => {
   const t = useT();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -154,6 +159,37 @@ export const MapBlock: React.FC<MapBlockProps> = ({ lat, lon, accuracy }) => {
   }
 
   return <div ref={containerRef} className="fy-map" role="application" aria-label={t('mapLabel')} />;
+};
+
+/**
+ * The map behind a button, with the reason for the button next to it.
+ *
+ * Every other number on the page is computed on the device, and the only thing that leaves it
+ * is a pair of coordinates rounded to four decimals, sent to this project's own Functions. The
+ * map is the one exception: maplibre fetches raster tiles straight from tile.openstreetmap.org,
+ * so OSM sees the reader's IP address and which tiles they asked for — that is roughly the place
+ * the photo was taken, unrounded, and it is a third party learning it, not us. Loading that
+ * automatically would quietly undo the promise the rest of the page keeps, so the reader decides.
+ *
+ * The state is per mount: a new photo means a new decision, because it is a new place.
+ */
+export const MapBlock: React.FC<MapBlockProps> = ({ lat, lon, accuracy }) => {
+  const t = useT();
+  const [shown, setShown] = useState(false);
+
+  if (shown) return <MapCanvas lat={lat} lon={lon} accuracy={accuracy} />;
+
+  return (
+    <div className="fy-map-gate">
+      <Explainer title={t('mapGateTitle')}>
+        <p>{t('mapGateBody')}</p>
+        <p>{t('mapGateRisk')}</p>
+      </Explainer>
+      <button type="button" className="v4-btn fy-btn-sm" onClick={() => setShown(true)}>
+        {t('mapGateButton')}
+      </button>
+    </div>
+  );
 };
 
 const ACCURACY_SOURCE = 'accuracy-circle';

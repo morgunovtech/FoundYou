@@ -191,6 +191,12 @@ const messages = {
     insightSurveillanceEmpty: 'Данных о камерах рядом не нашли.',
     insightCompactHoliday: 'Праздник',
     mapUnavailable: 'Карта недоступна: браузер не поддерживает WebGL.',
+    mapGateTitle: 'Карта загружается со стороннего сервера',
+    mapGateBody:
+      'Всё на этой странице посчитано на вашем устройстве, и наружу ушли только округлённые координаты — на наш сервер. Карта устроена иначе: её квадратики браузер скачивает напрямую у OpenStreetMap, мимо нас. Поэтому она за отдельной кнопкой, а не грузится сама.',
+    mapGateRisk:
+      'Что узнает OpenStreetMap, если нажать: ваш IP-адрес и какие участки карты вы запросили, то есть примерно место съёмки. Само фото не отправляется и в этом случае. Кнопку можно не нажимать — координаты и всё остальное уже показаны выше.',
+    mapGateButton: 'Показать карту',
     insightSurveillanceError: 'Не удалось получить данные о возможных камерах.',
     retry: 'Повторить',
     contentUnavailable: 'Ваше устройство не поддерживает анализ содержимого. Метаданные доступны полностью.',
@@ -816,6 +822,12 @@ const messages = {
     insightSurveillanceEmpty: 'No data about cameras nearby.',
     insightCompactHoliday: 'Holiday',
     mapUnavailable: 'Map unavailable: this browser has no WebGL support.',
+    mapGateTitle: 'The map loads from a third-party server',
+    mapGateBody:
+      'Everything on this page was computed on your device, and the only thing that left it were rounded coordinates, sent to our server. The map works differently: the browser downloads its tiles straight from OpenStreetMap, bypassing us. That is why it sits behind a button instead of loading on its own.',
+    mapGateRisk:
+      'What OpenStreetMap learns if you press it: your IP address and which map tiles you asked for — roughly where the photo was taken. The photo itself is still never sent. You can leave the button alone: the coordinates and everything else are already shown above.',
+    mapGateButton: 'Show the map',
     insightSurveillanceError: 'Could not load possible camera locations.',
     retry: 'Retry',
     contentUnavailable: 'Your device cannot run the model. Metadata tools remain available.',
@@ -1442,6 +1454,12 @@ const messages = {
     insightSurveillanceEmpty: 'Yaqin atrofdagi kameralar haqida ma’lumot topilmadi.',
     insightCompactHoliday: 'Bayram',
     mapUnavailable: 'Xarita mavjud emas: brauzer WebGL’ni qo‘llab-quvvatlamaydi.',
+    mapGateTitle: 'Xarita uchinchi tomon serveridan yuklanadi',
+    mapGateBody:
+      'Bu sahifadagi hamma narsa sizning qurilmangizda hisoblandi, tashqariga faqat yaxlitlangan koordinatalar — bizning serverimizga — chiqdi. Xarita boshqacha: uning kataklarini brauzer to‘g‘ridan-to‘g‘ri OpenStreetMap’dan, bizni chetlab o‘tib yuklaydi. Shuning uchun u o‘zi yuklanmaydi, alohida tugma ortida turadi.',
+    mapGateRisk:
+      'Bossangiz, OpenStreetMap nimani biladi: IP-manzilingizni va qaysi xarita kataklarini so‘raganingizni, ya’ni suratga olingan joyni taxminan. Suratning o‘zi bu holatda ham hech qayerga yuborilmaydi. Tugmani bosmasangiz ham bo‘ladi: koordinatalar va qolgan hammasi yuqorida ko‘rsatilgan.',
+    mapGateButton: 'Xaritani ko‘rsatish',
     insightSurveillanceError: 'Ehtimoliy kameralar haqidagi maʼlumot olinmadi.',
     retry: 'Qayta urinish',
     contentUnavailable: 'Qurilmangiz modelni ishga tushira olmaydi. Metamaʼlumotlar baribir mavjud.',
