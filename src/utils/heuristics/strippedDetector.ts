@@ -17,8 +17,17 @@ interface StrippedInput {
   height: number;
   hasExif: boolean;
   hasSoftwareTag: boolean;
+  /** Anything else the container carries: PNG text chunks, XMP, IPTC. A file with those was not stripped. */
+  hasOtherMetadata?: boolean;
   lang: Lang;
 }
+
+/**
+ * Formats a camera writes EXIF into. Everything else — PNG, GIF, BMP, WebP — has nothing to
+ * strip, so «метаданные были удалены» about one of them is simply wrong: a drawing, a chart or a
+ * screenshot saved as PNG never had EXIF to lose.
+ */
+const EXIF_BEARING = /(jpeg|jpg|heic|heif|avif|tiff)/i;
 
 const EVIDENCE: Record<string, Record<Lang, string>> = {
   jpeg_no_exif: {
@@ -65,8 +74,12 @@ export function detectStrippedMetadata(input: StrippedInput): StrippedAnalysis {
   const { filename, filenameAnalysis, mimeType, width, height, hasExif, hasSoftwareTag, lang } = input;
   const evidence: string[] = [];
 
-  // If it has EXIF or a Software tag, it's not stripped
-  if (hasExif || hasSoftwareTag) {
+  // Metadata of any kind — EXIF, a Software tag, PNG text chunks, XMP, IPTC — means nothing was stripped.
+  if (hasExif || hasSoftwareTag || input.hasOtherMetadata) {
+    return { stripped: false, strippedBy: null, confidence: 0, evidence: [] };
+  }
+  // A format that never carries EXIF cannot have had it removed.
+  if (!EXIF_BEARING.test(mimeType)) {
     return { stripped: false, strippedBy: null, confidence: 0, evidence: [] };
   }
 

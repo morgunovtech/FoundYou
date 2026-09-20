@@ -109,6 +109,23 @@ const TEXTS: Record<string, Record<Lang, string>> = {
     uz: 'Kamera surati, lekin kadrning bir qismi neyrotarmoq tomonidan qayta chizilgan yoki o‘chirilgan — iPhone’dagi Clean Up, Pixel’dagi Magic Editor va Galaxy AI faylni shunday belgilaydi. Nima o‘zgartirilganini belgi aytmaydi',
   },
   aiCompositeTitle: { ru: 'Склейка кадров', en: 'Multi-shot composite', uz: 'Kadrlar birikmasi' },
+  originTitle: { ru: 'Происхождение', en: 'Origin', uz: 'Kelib chiqishi' },
+  originCamera: {
+    ru: 'Оригинальный файл (не из мессенджера)',
+    en: 'Original file (not from a messenger)',
+    uz: 'Original fayl (messenjerdan emas)',
+  },
+  originCameraSub: {
+    ru: 'Метаданные сохранены — файл не проходил через сервисы сжатия',
+    en: 'Metadata preserved — file was not re-compressed by a service',
+    uz: 'Metadata saqlangan — fayl siqish xizmatlaridan o‘tmagan',
+  },
+  originScreenshot: { ru: 'Снимок экрана, не фото с камеры', en: 'A screen capture, not a camera photo', uz: 'Ekran surati, kamera surati emas' },
+  originScreenshotSub: {
+    ru: 'У снимка экрана нет EXIF камеры — но на нём может быть видно то, что было открыто на экране',
+    en: 'A screen capture carries no camera EXIF — but it can show whatever was open on the screen',
+    uz: 'Ekran suratida kamera EXIF’i yo‘q — lekin unda ekranda ochiq bo‘lgan narsa ko‘rinishi mumkin',
+  },
   aiCompositeSub: {
     ru: 'Кадр собран из нескольких снимков, сделанных подряд, без генеративной нейросети (Best Take, Add Me и похожие режимы)',
     en: 'The frame is blended from several shots taken moments apart, with no generative model (Best Take, Add Me and similar modes)',
@@ -454,12 +471,23 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       leakPoints: 5,
       severity: 'medium',
     });
+  } else if (input.filename.isScreenshot || input.resolution.isScreenshot) {
+    // «Оригинальный файл» next to a «Скриншот: похоже (80 %)» row read as a contradiction: the
+    // headline answers what the file is, and a screen capture is not a camera original.
+    sections.push({
+      kind: 'origin',
+      title: TEXTS.originTitle[lang],
+      text: TEXTS.originScreenshot[lang],
+      subtext: TEXTS.originScreenshotSub[lang],
+      leakPoints: 0,
+      severity: 'low',
+    });
   } else {
     sections.push({
       kind: 'origin',
-      title: lang === 'ru' ? 'Происхождение' : lang === 'uz' ? 'Kelib chiqishi' : 'Origin',
-      text: lang === 'ru' ? 'Оригинальный файл (не из мессенджера)' : lang === 'uz' ? 'Original fayl (messenjerdan emas)' : 'Original file (not from a messenger)',
-      subtext: lang === 'ru' ? 'Метаданные сохранены — файл не проходил через сервисы сжатия' : 'Metadata preserved — file was not re-compressed by a service',
+      title: TEXTS.originTitle[lang],
+      text: TEXTS.originCamera[lang],
+      subtext: TEXTS.originCameraSub[lang],
       leakPoints: 0,
       severity: 'low',
     });
