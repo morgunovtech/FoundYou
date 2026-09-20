@@ -544,9 +544,34 @@ function toBoundingBoxes(
     const x1 = clamp((bb.originX + bb.width + padX) * frame.scaleX, 0, frame.width);
     const y1 = clamp((bb.originY + bb.height + padY) * frame.scaleY, 0, frame.height);
     if (x1 - x0 < 1 || y1 - y0 < 1) continue;
-    boxes.push({ x: x0, y: y0, width: x1 - x0, height: y1 - y0, score: top?.score ?? 0, label });
+    boxes.push({
+      x: x0,
+      y: y0,
+      width: x1 - x0,
+      height: y1 - y0,
+      score: top?.score ?? 0,
+      label,
+      ...(label === FACE_LABEL ? { iedPx: eyeDistance(det, frame) } : {})
+    });
   }
   return boxes;
+}
+
+/**
+ * Distance between the two eye keypoints, in original-image pixels.
+ *
+ * BlazeFace returns its six keypoints normalised to the frame it was given, and the rotated pass
+ * maps them back into upright normalised space, so multiplying by the original size is all that
+ * is needed — no canvas dimensions and no scale factors. `undefined` when the model gave fewer
+ * than two keypoints, which is «cannot say», not «zero».
+ */
+function eyeDistance(det: Detection, frame: Frame): number | undefined {
+  const [right, left] = det.keypoints ?? [];
+  if (!right || !left) return undefined;
+  const dx = (right.x - left.x) * frame.width;
+  const dy = (right.y - left.y) * frame.height;
+  const distance = Math.hypot(dx, dy);
+  return Number.isFinite(distance) && distance > 0 ? distance : undefined;
 }
 
 /* ── decode / scale helpers ────────────────────────────────── */

@@ -962,6 +962,7 @@ const App: React.FC = () => {
                 fileInfo={fileInfo}
                 detections={detections}
                 sceneDescription={sceneDescription}
+                focalLength35mm={metadata?.focalLength35mm}
                 detectionProgress={
                   analysisLoading && detectionStatus
                     ? { label: t(DETECTION_STAGE_KEYS[detectionStatus.stage]), value: detectionStatus.progress }

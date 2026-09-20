@@ -282,6 +282,16 @@ const messages = {
     stanceInFrameHint: 'Объекты OpenStreetMap внутри угла обзора по направлению камеры. Это расчёт по направлению и углу, а не распознавание: объект мог быть закрыт зданием, деревом или спиной человека.',
     insightCompactLandmarks: 'Известные места рядом',
     landmarksHint: 'У этой точки есть статьи в Википедии. Это скорее хорошо: координаты у достопримечательности говорят, что человек был там, где бывают тысячи людей, а координаты в жилом квартале — что он там, скорее всего, живёт. На наш сервер ушли те же округлённые координаты, сам запрос к Википедии делает сервер, ваш IP туда не попадает.',
+    faceIedPreferred: 'Лицо снято крупно: {pixels} px между зрачками',
+    faceIedStandard: 'Лицо различимо чётко: {pixels} px между зрачками',
+    faceIedHumanOnly: 'Лицо мелкое: {pixels} px между зрачками',
+    faceIedTooSmall: 'Лицо совсем мелкое: {pixels} px между зрачками',
+    faceDistance: 'Камера была примерно в {distance} м от лица — оценка по фокусному расстоянию и размеру лица в кадре.',
+    faceIedExplainTitle: 'Что значит это число',
+    faceIedExplainBody:
+      'Расстояние между зрачками в пикселях — стандартная мера того, сколько лица реально содержит снимок. Лицо может занимать четверть кадра и остаться пятном, а может быть мелким и чётким. Биометрический стандарт ISO/IEC 39794-5:2019 требует минимум 90 px между центрами глаз, версия 19794-5:2011 предпочитает от 120 px.',
+    faceIedExplainLimits:
+      'Это требования к фотографии для внесения в базу, а не утверждение о том, что может система распознавания в реальных условиях: она вполне может справиться и ниже этой планки. Мы ни с чем лицо не сравниваем и никуда его не отправляем — здесь сказано только, насколько лицо узнаваемо, а не чьё оно.',
     mapGateTitle: 'Карта загружается со стороннего сервера',
     mapGateBody:
       'Всё на этой странице посчитано на вашем устройстве, и наружу ушли только округлённые координаты — на наш сервер. Карта устроена иначе: её квадратики браузер скачивает напрямую у OpenStreetMap, мимо нас. Поэтому она за отдельной кнопкой, а не грузится сама.',
@@ -1003,6 +1013,16 @@ const messages = {
     stanceInFrameHint: 'OpenStreetMap objects inside the lens angle along the camera direction. It is a calculation from the heading and the angle, not recognition: the object may have been hidden by a building, a tree or someone\u2019s back.',
     insightCompactLandmarks: 'Known places here',
     landmarksHint: 'This point has Wikipedia articles about it. That is rather good news: coordinates at a landmark say someone was where thousands of people go, while coordinates in a residential street say they probably live there. The same rounded coordinates went to our own server, which asked Wikipedia — your IP address never reaches it.',
+    faceIedPreferred: 'The face is large in the frame: {pixels} px between the pupils',
+    faceIedStandard: 'The face is clearly readable: {pixels} px between the pupils',
+    faceIedHumanOnly: 'The face is small: {pixels} px between the pupils',
+    faceIedTooSmall: 'The face is very small: {pixels} px between the pupils',
+    faceDistance: 'The camera was about {distance} m from the face — estimated from the focal length and the size of the face in the frame.',
+    faceIedExplainTitle: 'What this number means',
+    faceIedExplainBody:
+      'The distance between the pupils in pixels is the standard measure of how much of a face a picture actually holds. A face can fill a quarter of the frame and still be a smudge, or be small and perfectly sharp. The biometric standard ISO/IEC 39794-5:2019 requires at least 90 px between the eye centres; the 19794-5:2011 version prefers 120 px or more.',
+    faceIedExplainLimits:
+      'Those are requirements for a photograph being entered into a database, not a statement about what a recognition system can do in the wild — it may well manage below that bar. We compare the face with nothing and send it nowhere: this says how identifiable a face is, not whose it is.',
     mapGateTitle: 'The map loads from a third-party server',
     mapGateBody:
       'Everything on this page was computed on your device, and the only thing that left it were rounded coordinates, sent to our server. The map works differently: the browser downloads its tiles straight from OpenStreetMap, bypassing us. That is why it sits behind a button instead of loading on its own.',
@@ -1725,6 +1745,16 @@ const messages = {
     stanceInFrameHint: 'Kamera yo‘nalishi bo‘yicha ko‘rish burchagi ichidagi OpenStreetMap obyektlari. Bu yo‘nalish va burchak bo‘yicha hisob, tanib olish emas: obyekt bino, daraxt yoki odamning orqasi bilan to‘silgan bo‘lishi mumkin.',
     insightCompactLandmarks: 'Yaqin atrofdagi mashhur joylar',
     landmarksHint: 'Bu nuqta haqida Vikipediyada maqolalar bor. Bu ko‘proq yaxshi xabar: diqqatga sazovor joydagi koordinatalar odam minglab kishilar boradigan joyda bo‘lganini bildiradi, turar-joy kvartalidagilari esa u yerda yashashini. Serverimizga o‘sha yaxlitlangan koordinatalar bordi, Vikipediyaga so‘rovni server yuboradi, sizning IP manzilingiz u yerga tushmaydi.',
+    faceIedPreferred: 'Yuz kadrda yirik: qorachiqlar orasi {pixels} px',
+    faceIedStandard: 'Yuz aniq o‘qiladi: qorachiqlar orasi {pixels} px',
+    faceIedHumanOnly: 'Yuz mayda: qorachiqlar orasi {pixels} px',
+    faceIedTooSmall: 'Yuz juda mayda: qorachiqlar orasi {pixels} px',
+    faceDistance: 'Kamera yuzdan taxminan {distance} m masofada bo‘lgan — fokus masofasi va kadrdagi yuz o‘lchamiga ko‘ra baho.',
+    faceIedExplainTitle: 'Bu son nimani bildiradi',
+    faceIedExplainBody:
+      'Qorachiqlar orasidagi masofa piksellarda — suratda yuz haqida qancha ma’lumot borligining standart o‘lchovi. Yuz kadrning chorak qismini egallab ham dog‘ bo‘lib qolishi, mayda bo‘lib ham juda aniq bo‘lishi mumkin. ISO/IEC 39794-5:2019 biometrik standarti ko‘z markazlari orasida kamida 90 px talab qiladi, 19794-5:2011 esa 120 px va undan ko‘pini afzal ko‘radi.',
+    faceIedExplainLimits:
+      'Bular bazaga kiritiladigan surat uchun talablar, real sharoitda tanib olish tizimi nima qila olishi haqidagi da’vo emas: u bu chegaradan pastda ham ishlashi mumkin. Biz yuzni hech narsa bilan solishtirmaymiz va hech qayerga yubormaymiz — bu yerda yuz qanchalik tanib olinadigani aytilgan, kimniki ekani emas.',
     mapGateTitle: 'Xarita uchinchi tomon serveridan yuklanadi',
     mapGateBody:
       'Bu sahifadagi hamma narsa sizning qurilmangizda hisoblandi, tashqariga faqat yaxlitlangan koordinatalar — bizning serverimizga — chiqdi. Xarita boshqacha: uning kataklarini brauzer to‘g‘ridan-to‘g‘ri OpenStreetMap’dan, bizni chetlab o‘tib yuklaydi. Shuning uchun u o‘zi yuklanmaydi, alohida tugma ortida turadi.',
