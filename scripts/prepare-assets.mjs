@@ -6,6 +6,7 @@
  *   public/ocr/                tesseract.js worker + tesseract.js-core wasm builds
  *   public/ocr/lang/           rus / eng traineddata (LSTM "4.0.0_best_int" variant)
  *   public/mediapipe/wasm/     @mediapipe/tasks-vision runtime (SIMD and no-SIMD loader + wasm)
+ *   public/zxing/              zxing-wasm reader (Aztec, PDF417, DataMatrix, Code 128 …)
  *   public/mediapipe/models/   BlazeFace short-range (faces) + EfficientDet-Lite2 (COCO objects)
  *
  * Idempotent: a copy is skipped when the destination already has the source's
@@ -34,6 +35,7 @@ const MEDIAPIPE_DIR = path.join(PUBLIC_DIR, 'mediapipe');
 const MEDIAPIPE_WASM_DIR = path.join(MEDIAPIPE_DIR, 'wasm');
 const MEDIAPIPE_MODEL_DIR = path.join(MEDIAPIPE_DIR, 'models');
 const C2PA_DIR = path.join(PUBLIC_DIR, 'c2pa');
+const ZXING_DIR = path.join(PUBLIC_DIR, 'zxing');
 
 /** Output of the previous detection stack (tfjs COCO-SSD); removed so stale weights never ship. */
 const STALE_OUTPUT_DIRS = [path.join(PUBLIC_DIR, 'models')];
@@ -233,6 +235,18 @@ async function prepareC2pa(summary) {
   await copyIfNeeded(path.join(dist, 'assets', 'wasm', 'toolkit_bg.wasm'), path.join(C2PA_DIR, 'toolkit_bg.wasm'), summary);
 }
 
+/* ── zxing-wasm reader: the barcode formats jsQR cannot read ── */
+
+/**
+ * zxing-wasm fetches its `.wasm` from a CDN unless told otherwise, and this project serves
+ * every runtime asset from its own origin (privacy invariant 3). The file is copied here and
+ * `utils/barcodes.ts` points the module at `/zxing/zxing_reader.wasm`.
+ */
+async function prepareZxing(summary) {
+  const src = path.join(NODE_MODULES, 'zxing-wasm', 'dist', 'reader', 'zxing_reader.wasm');
+  await copyIfNeeded(src, path.join(ZXING_DIR, 'zxing_reader.wasm'), summary);
+}
+
 /* ── main ──────────────────────────────────────────────────── */
 
 async function removeStaleOutputs() {
@@ -279,7 +293,7 @@ async function main() {
   }
   await removeStaleOutputs();
   const summary = [];
-  await Promise.all([prepareTesseract(summary), prepareMediaPipe(summary), prepareC2pa(summary)]);
+  await Promise.all([prepareTesseract(summary), prepareMediaPipe(summary), prepareC2pa(summary), prepareZxing(summary)]);
   printSummary(summary);
 }
 

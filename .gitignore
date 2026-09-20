@@ -143,6 +143,7 @@ public/ocr/*
 !public/ocr/.gitkeep
 public/mediapipe/
 public/c2pa/
+public/zxing/
 
 # Cloudflare (wrangler / Pages Functions local secrets)
 .dev.vars

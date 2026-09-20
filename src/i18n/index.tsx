@@ -317,6 +317,7 @@ const messages = {
       'Это не отдельные данные, а сложение того, что уже показано выше: назначение территории, что именно в этой точке, есть ли рядом известные места, какой был день и час. Каждый признак сам по себе не значит ничего, вместе они обычно значат. Признаки перечислены целиком, и за, и против — чтобы было видно, что это арифметика по обычным фактам, а не предсказание.',
     homeExplainWhy:
       'Это единственный вопрос, ради которого чужой человек вообще открывает координаты из чужого снимка. Если ответ вам не нравится — координаты удаляются в разделе 03 вместе со всеми метаданными.',
+    qrFormat: 'Формат кода: {format} — не QR, его читают те же сканеры',
     mapGateTitle: 'Карта загружается со стороннего сервера',
     mapGateBody:
       'Всё на этой странице посчитано на вашем устройстве, и наружу ушли только округлённые координаты — на наш сервер. Карта устроена иначе: её квадратики браузер скачивает напрямую у OpenStreetMap, мимо нас. Поэтому она за отдельной кнопкой, а не грузится сама.',
@@ -1073,6 +1074,7 @@ const messages = {
       'This is not separate data but a sum of what is already shown above: what the land is used for, what is at the point, whether anything known is nearby, which day and hour it was. No single signal means anything; together they usually do. Every signal is listed, for and against, so it is visible that this is arithmetic over ordinary facts rather than a prediction.',
     homeExplainWhy:
       'It is the one question for which a stranger opens the coordinates of someone else\u2019s photo at all. If you do not like the answer, section 03 removes the coordinates along with every other piece of metadata.',
+    qrFormat: 'Code format: {format} — not a QR; the same scanners read it',
     mapGateTitle: 'The map loads from a third-party server',
     mapGateBody:
       'Everything on this page was computed on your device, and the only thing that left it were rounded coordinates, sent to our server. The map works differently: the browser downloads its tiles straight from OpenStreetMap, bypassing us. That is why it sits behind a button instead of loading on its own.',
@@ -1830,6 +1832,7 @@ const messages = {
       'Bu alohida ma’lumot emas, yuqorida ko‘rsatilganlarning yig‘indisi: hudud vazifasi, nuqtada nima borligi, yaqinda mashhur joylar bor-yo‘qligi, qaysi kun va soat bo‘lgani. Hech bir belgi yakka holda hech nimani anglatmaydi, birgalikda odatda anglatadi. Barcha belgilar — tarafdor ham, qarshi ham — to‘liq sanab o‘tilgan.',
     homeExplainWhy:
       'Begona odam o‘zganing suratidagi koordinatalarni umuman shuning uchun ochadi. Javob yoqmasa — 03-bo‘limda koordinatalar qolgan metadata bilan birga o‘chiriladi.',
+    qrFormat: 'Kod formati: {format} — bu QR emas, uni ham o‘sha skanerlar o‘qiydi',
     mapGateTitle: 'Xarita uchinchi tomon serveridan yuklanadi',
     mapGateBody:
       'Bu sahifadagi hamma narsa sizning qurilmangizda hisoblandi, tashqariga faqat yaxlitlangan koordinatalar — bizning serverimizga — chiqdi. Xarita boshqacha: uning kataklarini brauzer to‘g‘ridan-to‘g‘ri OpenStreetMap’dan, bizni chetlab o‘tib yuklaydi. Shuning uchun u o‘zi yuklanmaydi, alohida tugma ortida turadi.',

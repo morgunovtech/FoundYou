@@ -188,7 +188,11 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
         {qrCodes.map((code, index) => (
           <React.Fragment key={`${code.kind}-${index}`}>
             <dt>{t(QR_KIND_KEYS[code.kind])}</dt>
-            <dd>{code.summary || t('emptyValue')}</dd>
+            <dd>
+              {code.summary || t('emptyValue')}
+              {/* A boarding pass is a PDF417 or an Aztec code, never a QR: say which it was. */}
+              {code.format ? <span className="fy-muted">{t('qrFormat', { format: code.format })}</span> : null}
+            </dd>
           </React.Fragment>
         ))}
       </dl>

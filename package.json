@@ -35,7 +35,8 @@
     "maplibre-gl": "^6.9.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "^7.0.0",
+    "zxing-wasm": "^3.1.4"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
