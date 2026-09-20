@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { BasicFileInfo } from '../types/metadata';
+import { detectSkew, rotateInPlace, unrotateRect, SKEW_WORTH_FIXING_DEGREES, type DrawableSource } from '../utils/ocrDeskew';
 
 export interface OCRRegion {
   text: string;
@@ -216,6 +217,12 @@ interface PreprocessedImage {
   /** Dimensions of `blob` — regions are scaled back to fileInfo.width/height with these. */
   width: number;
   height: number;
+  /**
+   * The same pixels as a canvas, when one was used: the deskew pass rotates this rather than
+   * decoding again. Either kind — Chromium prefers `OffscreenCanvas` here, and excluding it once
+   * meant the straightened pass never ran at all.
+   */
+  canvas?: DrawableSource;
 }
 
 type Canvas2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -290,7 +297,7 @@ async function preprocessImage(file: File, fallbackWidth: number, fallbackHeight
     if (!blob) {
       return { blob: file, width: srcWidth, height: srcHeight };
     }
-    return { blob, width, height };
+    return { blob, width, height, canvas };
   } catch (err) {
     console.warn('ocr-preprocess', err);
     return { blob: file, width: srcWidth, height: srcHeight };
@@ -600,7 +607,57 @@ async function runOCR(fileInfo: BasicFileInfo, session: OCRSession, set: OCRStat
     // the canvas size itself drives the relative speck / whole-image box checks.
     const scaleX = fileInfo.width / pre.width;
     const scaleY = fileInfo.height / pre.height;
-    set.setResult(buildResult(data, scaleX, scaleY, { width: pre.width, height: pre.height }));
+    const canvasSize = { width: pre.width, height: pre.height };
+    let result = buildResult(data, scaleX, scaleY, canvasSize);
+
+    /*
+     * Nothing survived, and the picture may simply be crooked. Tesseract reads level lines: the
+     * same label at 20° gives confidence 26 and no words where upright gives 92 and all of them.
+     * A second pass on a straightened copy is worth roughly 2.2 s here (7–10 s on a phone), so it
+     * is spent only when the first pass came back empty — a screenshot or a document, which is
+     * where the time would be noticed, never reaches this branch.
+     */
+    if (result.regions.length === 0 && pre.canvas) {
+      const measuring = performance.now();
+      const skew = detectSkew(pre.canvas);
+      if (session.cancelled) return;
+      if (Math.abs(skew.angle) >= SKEW_WORTH_FIXING_DEGREES) {
+        if (import.meta.env.DEV) {
+          console.info('[ocr] nothing found upright; trying a straightened pass', {
+            angle: skew.angle,
+            measuredInMs: Math.round(performance.now() - measuring)
+          });
+        }
+        report({ stage: 'recognize', value: 0.55 });
+        const straightened = rotateInPlace(pre.canvas, skew.angle);
+        const rotatedBlob = await new Promise<Blob | null>((resolve) => straightened.toBlob(resolve, 'image/png'));
+        if (session.cancelled) return;
+        if (rotatedBlob) {
+          const second = await recognizeImage(rotatedBlob, sink, () => session.cancelled);
+          if (session.cancelled) return;
+          if (second) {
+            // Built in the rotated frame first, then every box is carried back so the blur in
+            // section 03 lands on the words as they actually sit in the photo.
+            const rotatedResult = buildResult(second, scaleX, scaleY, canvasSize);
+            if (rotatedResult.regions.length > 0) {
+              const original = { width: fileInfo.width, height: fileInfo.height };
+              result = {
+                ...rotatedResult,
+                regions: rotatedResult.regions.map((region) => ({
+                  ...region,
+                  ...unrotateRect(region, skew.angle, original)
+                }))
+              };
+              if (import.meta.env.DEV) {
+                console.info('[ocr] straightened pass found text', { words: result.regions.length });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    set.setResult(result);
     report({ stage: 'done', value: 1 });
   } catch (err) {
     if (session.cancelled) return;
