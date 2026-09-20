@@ -73,6 +73,26 @@ export interface HolidaysResult {
   holidays: HolidayEntry[];
 }
 
+export interface PlaceContextItem {
+  /** OSM value that made it interesting: `school`, `hospital`, `military`, `railway:station`… */
+  kind: string;
+  name: string;
+  distance: number;
+}
+
+export interface PlaceContextResult {
+  /** OSM `landuse` at the point: residential, industrial, farmland, forest… */
+  landuse?: string;
+  /** Neighbours that say something about a person whether or not they went in. */
+  sensitive: PlaceContextItem[];
+  /** What explains a stranger being at the point: a station, a stop, an airport. */
+  transport: PlaceContextItem[];
+  placeName?: string;
+  placeKind?: string;
+  /** Population of the nearest settlement that records one, from OSM's own `population` tag. */
+  population?: number;
+}
+
 export interface PoiResult {
   name: string;
   category: string;

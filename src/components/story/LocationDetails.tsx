@@ -15,6 +15,35 @@ import { MapBlock } from '../MapBlock';
 import { RetryButton } from './RetryButton';
 import { SCENE_MATCH_KEYS } from './storyKeys';
 
+/**
+ * Above this many people a point says little about anyone in particular; below it, the
+ * coordinates narrow the circle down to a handful of households. The number is a threshold for
+ * wording, not a claim of anonymity, which is why both sentences are about degree.
+ */
+const CROWD_THRESHOLD = 100_000;
+
+/**
+ * OSM values → dictionary keys. A value with no key of its own is printed verbatim rather than
+ * dropped: OSM has hundreds of `landuse` values and an unknown one still tells the reader
+ * something, as long as it is marked as OSM's own word for it.
+ */
+function kindLabel(prefix: string, kind: string, t: (key: MessageKey, params?: Record<string, string | number>) => string): string {
+  const key = `${prefix}${kind}` as MessageKey;
+  const label = t(key);
+  return label === key ? kind : label;
+}
+
+function landuseLabel(value: string, t: (key: MessageKey, params?: Record<string, string | number>) => string): string {
+  const key = `landuse_${value}` as MessageKey;
+  const label = t(key);
+  return label === key ? t('landuse_other', { value }) : label;
+}
+
+/** Thousands separated, so «2 900 000» does not read as a phone number. */
+function formatPopulation(count: number, lang: string): string {
+  return new Intl.NumberFormat(lang === 'ru' ? 'ru-RU' : lang === 'uz' ? 'uz-UZ' : 'en-US').format(count);
+}
+
 interface LocationDetailsProps {
   geo: GeoContext;
   metadata: StructuredMetadata | null;
@@ -48,6 +77,7 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
     const names = Array.from(new Set(geo.holidays.data.holidays.map((h) => h.localName || h.name).filter(Boolean)));
     return names.length > 0 ? names.join(', ') : null;
   }, [remote, geo.holidays.data]);
+  const placeCtx = remote ? geo.placeContext.data : null;
   // A lunar holiday whose day was computed rather than announced must not read as a fact.
   const holidayApproximate = useMemo(
     () => Boolean(remote && geo.holidays.data?.holidays.some((h) => h.approximate)),
@@ -198,6 +228,51 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
               <dt>{t('insightCompactLocalName')}</dt>
               <dd>
                 <span>{geo.reverse.data.localName}</span>
+              </dd>
+            </>
+          ) : null}
+          {placeCtx?.landuse ? (
+            <>
+              <dt>{t('insightCompactLanduse')}</dt>
+              <dd>
+                <span>{landuseLabel(placeCtx.landuse, t)}</span>
+              </dd>
+            </>
+          ) : null}
+          {placeCtx && placeCtx.sensitive.length > 0 ? (
+            <>
+              <dt>{t('insightCompactSensitive')}</dt>
+              <dd>
+                <span>
+                  {placeCtx.sensitive
+                    .map((item) => `${kindLabel('sensitive_', item.kind, t)}${item.name ? ` «${item.name}»` : ''} — ${formatPoiDistance(item.distance)}`)
+                    .join('; ')}
+                </span>
+                <span className="fy-muted">{t('sensitiveHint')}</span>
+              </dd>
+            </>
+          ) : null}
+          {placeCtx && placeCtx.transport.length > 0 ? (
+            <>
+              <dt>{t('insightCompactTransport')}</dt>
+              <dd>
+                <span>
+                  {placeCtx.transport
+                    .map((item) => `${kindLabel('transport_', item.kind, t)}${item.name ? ` «${item.name}»` : ''} — ${formatPoiDistance(item.distance)}`)
+                    .join('; ')}
+                </span>
+                <span className="fy-muted">{t('transportHint')}</span>
+              </dd>
+            </>
+          ) : null}
+          {placeCtx?.population != null ? (
+            <>
+              <dt>{t('insightCompactPopulation')}</dt>
+              <dd>
+                <span>{t('populationValue', { name: placeCtx.placeName || t('emptyValue'), count: formatPopulation(placeCtx.population, lang) })}</span>
+                <span className="fy-muted">
+                  {placeCtx.population >= CROWD_THRESHOLD ? t('populationCrowd') : t('populationSparse')}
+                </span>
               </dd>
             </>
           ) : null}

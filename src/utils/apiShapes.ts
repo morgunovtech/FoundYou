@@ -31,6 +31,19 @@ export function isPoiList(data: unknown): boolean {
   return Array.isArray(data) && data.every(isPoi);
 }
 
+/**
+ * Deliberately loose, like the others: only the fields the card reads. `landuse`, the place name
+ * and the population are all optional — OSM has them for some points and not for others, and a
+ * missing one must not throw the whole usable answer away as `invalid-shape`.
+ */
+export function isPlaceContext(data: unknown): boolean {
+  if (!isRecord(data)) return false;
+  if (!Array.isArray(data.sensitive) || !Array.isArray(data.transport)) return false;
+  const isItem = (item: unknown) =>
+    isRecord(item) && typeof item.kind === 'string' && typeof item.name === 'string' && isFiniteNumber(item.distance);
+  return data.sensitive.every(isItem) && data.transport.every(isItem);
+}
+
 export function isReverseGeocode(data: unknown): boolean {
   if (!isRecord(data)) return false;
   if (!isFiniteNumber(data.lat) || !isFiniteNumber(data.lon)) return false;

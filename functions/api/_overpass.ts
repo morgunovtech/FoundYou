@@ -15,6 +15,8 @@ export interface OverpassElement {
 export interface OverpassSets {
   poi: OverpassElement[];
   surveillance: OverpassElement[];
+  /** What kind of place this is: land use at the point, sensitive neighbours, transport. */
+  context: OverpassElement[];
 }
 
 export type OverpassResult =
@@ -22,14 +24,22 @@ export type OverpassResult =
   | { ok: false; error: Response };
 
 /**
- * One query for both endpoints, as two named sets; `.poi out count;` emits a
- * single `{type:"count"}` element that we use as the separator between the
- * sets in the output stream.
+ * One query for all three endpoints, as three named sets; each `out count;` emits a single
+ * `{type:"count"}` element that we use as the separator between the sets in the output stream.
  *
  * `.poi`: venues (amenity, shop) within 250 m, where density is high; sights,
  * history and parks within 0.5–1 km; named natural features (peaks, springs,
  * waterfalls, caves) and settlements within 1.5 km, so a photo in the hills
  * still gets a landmark. Ways and relations come with `out center`.
+ *
+ * `.ctx`: what kind of place this is rather than what is nearby. Land use at the point
+ * (residential, industrial, farmland — the difference between «дома» and «на работе»); the
+ * neighbours that say something about a person whether or not they went in (a school or a
+ * kindergarten means a child, a hospital or a clinic means treatment, a place of worship means
+ * faith, a police station or a prison means something else again); and the transport that
+ * explains a stranger being at the point at all. Radii are deliberately tight — the query
+ * shares one `[timeout:6]` with the other two sets, and Overpass is a public server that
+ * already refuses work in dense centres.
  */
 export function buildQuery(lat: string, lon: string): string {
   const at = (radius: number) => `(around:${radius},${lat},${lon})`;
@@ -56,9 +66,20 @@ export function buildQuery(lat: string, lon: string): string {
   way["amenity"~"bank|atm"]${at(300)};
   relation["man_made"="surveillance"]${at(300)};
 )->.cctv;
+(
+  way["landuse"]${at(200)};
+  relation["landuse"]${at(200)};
+  nwr["amenity"~"^(school|kindergarten|college|university|hospital|clinic|doctors|police|prison|place_of_worship)$"]${at(500)};
+  nwr["military"]${at(1000)};
+  nwr["railway"~"^(station|halt)$"]${at(1000)};
+  nwr["aeroway"="aerodrome"]${at(3000)};
+  node["public_transport"="station"]${at(700)};
+)->.ctx;
 .poi out center;
 .poi out count;
-.cctv out center;`;
+.cctv out center;
+.cctv out count;
+.ctx out center;`;
 }
 
 interface Shared {
@@ -73,7 +94,7 @@ const inflight = new Map<string, Promise<Shared>>();
 export async function loadOverpassSets(context: CacheContext, lat: number, lon: number): Promise<OverpassResult> {
   const [lat4, lon4] = coordKey(lat, lon);
   // The version suffix changes whenever the query does, so cells cached under the old query are not served.
-  const key = cacheKey('overpass-v2', lat4, lon4);
+  const key = cacheKey('overpass-v3', lat4, lon4);
 
   let pending = inflight.get(key);
   if (!pending) {
@@ -138,29 +159,43 @@ async function produce(lat4: string, lon4: string): Promise<Response> {
 }
 
 function splitSets(elements: any[]): OverpassSets {
-  const poi: OverpassElement[] = [];
-  const surveillance: OverpassElement[] = [];
-  let separatorSeen = false;
+  // Three sets, separated by the two `out count` markers the query emits between them.
+  const buckets: OverpassElement[][] = [[], [], []];
+  let bucket = 0;
   for (const element of elements) {
     if (element?.type === 'count') {
-      separatorSeen = true;
+      bucket = Math.min(bucket + 1, buckets.length - 1);
       continue;
     }
-    (separatorSeen ? surveillance : poi).push(element);
+    buckets[bucket].push(element);
   }
-  if (separatorSeen) return { poi, surveillance };
+  if (bucket > 0) return { poi: buckets[0], surveillance: buckets[1], context: buckets[2] };
 
   // Defensive fallback for a mirror that does not emit `out count`: split by tags.
   console.warn('overpass-missing-separator');
+  const all = buckets[0];
   return {
-    poi: poi.filter(isPoiCandidate),
-    surveillance: poi.filter(isSurveillanceCandidate)
+    poi: all.filter(isPoiCandidate),
+    surveillance: all.filter(isSurveillanceCandidate),
+    context: all.filter(isContextCandidate)
   };
 }
 
 function isPoiCandidate(element: OverpassElement): boolean {
   const tags = element.tags ?? {};
   return !!(tags.amenity || tags.shop || tags.tourism || tags.historic || tags.leisure || tags.natural || tags.place);
+}
+
+function isContextCandidate(element: OverpassElement): boolean {
+  const tags = element.tags ?? {};
+  return !!(
+    tags.landuse ||
+    tags.military ||
+    tags.railway ||
+    tags.aeroway ||
+    tags.public_transport ||
+    /^(school|kindergarten|college|university|hospital|clinic|doctors|police|prison|place_of_worship)$/.test(tags.amenity ?? '')
+  );
 }
 
 function isSurveillanceCandidate(element: OverpassElement): boolean {

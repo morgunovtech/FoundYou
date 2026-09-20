@@ -1,9 +1,9 @@
 import { useEffect, useMemo } from 'react';
 import type { StructuredMetadata } from '../types/metadata';
-import type { ElevationResult, HistoricalWeatherResult, HolidaysResult, PoiResult, ReverseGeocodeResult } from '../types/api';
+import type { ElevationResult, HistoricalWeatherResult, HolidaysResult, PlaceContextResult, PoiResult, ReverseGeocodeResult } from '../types/api';
 import { useAPIFetch } from './useAPIFetch';
 import { dedupeByNameAndDistance } from '../utils/insightsCompact';
-import { isElevation, isHistoricalWeather, isHolidays, isPoiList, isReverseGeocode } from '../utils/apiShapes';
+import { isElevation, isHistoricalWeather, isHolidays, isPlaceContext, isPoiList, isReverseGeocode } from '../utils/apiShapes';
 
 /** Lifecycle of one server lookup, as exposed by `useAPIFetch`. */
 export interface RemoteStatus {
@@ -23,6 +23,8 @@ export interface GeoContext {
   reverse: { data: ReverseGeocodeResult | null; status: RemoteStatus };
   weather: { data: HistoricalWeatherResult | null; status: RemoteStatus };
   holidays: { data: HolidaysResult | null; status: RemoteStatus };
+  /** What kind of place this is: land use, sensitive neighbours, transport, how many people live here. */
+  placeContext: { data: PlaceContextResult | null; status: RemoteStatus };
   poi: { items: PoiResult[]; status: RemoteStatus };
   surveillance: { items: PoiResult[]; status: RemoteStatus };
   /** Terrain height at the rounded point, to compare with the GPS altitude. */
@@ -61,6 +63,7 @@ export function useGeoContext(metadata: StructuredMetadata | null): GeoContext {
   const holidaysFetch = useAPIFetch<HolidaysResult>(isHolidays);
   const poiFetch = useAPIFetch<PoiResult[]>(isPoiList);
   const surveillanceFetch = useAPIFetch<PoiResult[]>(isPoiList);
+  const placeContextFetch = useAPIFetch<PlaceContextResult>(isPlaceContext);
   const elevationFetch = useAPIFetch<ElevationResult>(isElevation);
 
   const { request: reverseRequest, reset: reverseReset } = reverseFetch;
@@ -68,6 +71,7 @@ export function useGeoContext(metadata: StructuredMetadata | null): GeoContext {
   const { request: holidaysRequest, reset: holidaysReset } = holidaysFetch;
   const { request: poiRequest, reset: poiReset } = poiFetch;
   const { request: surveillanceRequest, reset: surveillanceReset } = surveillanceFetch;
+  const { request: placeContextRequest, reset: placeContextReset } = placeContextFetch;
   const { request: elevationRequest, reset: elevationReset } = elevationFetch;
 
   // The request key: the data that would be sent. A different photo → forget the previous
@@ -79,8 +83,9 @@ export function useGeoContext(metadata: StructuredMetadata | null): GeoContext {
     holidaysReset();
     poiReset();
     surveillanceReset();
+    placeContextReset();
     elevationReset();
-  }, [requestKey, reverseReset, weatherReset, holidaysReset, poiReset, surveillanceReset, elevationReset]);
+  }, [requestKey, reverseReset, weatherReset, holidaysReset, poiReset, surveillanceReset, placeContextReset, elevationReset]);
 
   useEffect(() => {
     if (!requestCoords) return;
@@ -88,8 +93,9 @@ export function useGeoContext(metadata: StructuredMetadata | null): GeoContext {
     void reverseRequest(`/api/reverse-geocode?${params}`);
     void poiRequest(`/api/nearby-poi?${params}`);
     void surveillanceRequest(`/api/surveillance-candidates?${params}`);
+    void placeContextRequest(`/api/place-context?${params}`);
     void elevationRequest(`/api/elevation?${params}`);
-  }, [requestCoords, reverseRequest, poiRequest, surveillanceRequest, elevationRequest]);
+  }, [requestCoords, reverseRequest, poiRequest, surveillanceRequest, placeContextRequest, elevationRequest]);
 
   useEffect(() => {
     if (!requestCoords || !shotDate) return;
@@ -134,6 +140,7 @@ export function useGeoContext(metadata: StructuredMetadata | null): GeoContext {
     holidays: { data: holidaysFetch.data ?? null, status: statusOf(holidaysFetch) },
     poi: { items: poiItems, status: statusOf(poiFetch) },
     surveillance: { items: surveillanceItems, status: statusOf(surveillanceFetch) },
+    placeContext: { data: placeContextFetch.data ?? null, status: statusOf(placeContextFetch) },
     elevation: { data: elevationFetch.data ?? null, status: statusOf(elevationFetch) }
   };
 }
