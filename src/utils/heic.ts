@@ -10,6 +10,12 @@ type RawMetadata = {
   /** PNG only: IHDR header fields + text chunks (tEXt / zTXt / iTXt). */
   pngData: Record<string, unknown> | undefined;
   gpsRaw: Record<string, unknown> | undefined;
+  /**
+   * The date tags as the twenty ASCII characters they are in the file, before exifr revives them
+   * into `Date`s. Reviving hides an impossible value: `2031:02:30 25:61:61` silently becomes
+   * 3 March 2031, 02:02. `exifDateSanity.ts` judges these strings.
+   */
+  rawDates: Record<string, string> | undefined;
 };
 
 /* ── HEIF / ISO-BMFF Exif extraction ─────────────────────────────────────────
@@ -420,6 +426,24 @@ export async function extractMetadataFromOriginal(file: File): Promise<RawMetada
 
   const gpsRaw = await safeExtract(() => (exifr as any).gps(parseSource));
 
+  // A second, deliberately tiny pass: only the date tags, unrevived. It reads the same TIFF
+  // header region that is already in the page cache, so the cost is parsing, not I/O.
+  const rawDates = (await safeExtract(() =>
+    exifr.parse(parseSource, {
+      tiff: true,
+      exif: true,
+      gps: false,
+      xmp: false,
+      iptc: false,
+      icc: false,
+      ihdr: false,
+      translateKeys: true,
+      translateValues: false,
+      reviveValues: false,
+      pick: ['DateTimeOriginal', 'CreateDate', 'DateTimeDigitized', 'ModifyDate']
+    })
+  )) as Record<string, string> | undefined;
+
   // PNG: collect the header + every text chunk separately so they can live in their own group.
   let pngData: Record<string, unknown> | undefined;
   if (await isPngFile(file)) {
@@ -483,6 +507,7 @@ export async function extractMetadataFromOriginal(file: File): Promise<RawMetada
     iccData,
     pngData,
     gpsRaw: (gpsRaw ?? {}) as Record<string, unknown>,
+    rawDates,
   };
 }
 

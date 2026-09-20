@@ -8,6 +8,8 @@ interface UploadZoneProps {
   loading: boolean;
   onFile: (file: File) => void;
   error?: string | null;
+  /** A file that was accepted but has something wrong with it (today: cut short). Never blocks. */
+  warning?: string | null;
   /** Receives the «open the picker» function so a button elsewhere (the sticky corner one) can call it. */
   pickerRef?: React.MutableRefObject<(() => void) | null>;
 }
@@ -24,7 +26,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
 }
 
-export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error, pickerRef }) => {
+export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error, warning, pickerRef }) => {
   const t = useT();
   const uploadInputId = `upload-input-${useId().replace(/[:]/g, '')}`;
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -161,6 +163,11 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error, 
         </p>
       ) : null}
       {bannerMessage ? <ErrorBanner message={bannerMessage} /> : null}
+      {warning && !bannerMessage ? (
+        <p className="fy-notice fy-notice--negative" role="status">
+          {warning}
+        </p>
+      ) : null}
     </section>
   );
 };

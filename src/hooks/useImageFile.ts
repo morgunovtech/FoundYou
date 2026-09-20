@@ -2,11 +2,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useT } from '../i18n';
 import type { BasicFileInfo } from '../types/metadata';
 import { decodeHeicToJpegForPreview } from '../utils/heic';
+import { maxUploadPixels, megapixels } from '../utils/platform';
+import { checkTruncation } from '../utils/truncation';
 
 /** Upload limit in megabytes; the drop zone shows it and `fileTooLarge` quotes it. */
-export const MAX_FILE_SIZE_MB = 20;
+/*
+ * A 50 MP Oppo photo is an ordinary photo now, and it used to be refused twice over: 49.9 MP
+ * against a 40 MP ceiling and 10–25 MB against a 20 MB one. Both ceilings were set to the size
+ * of a canvas the export would need, not to what the browser can open. The export keeps its own,
+ * lower cap (`maxExportPixels`, with the note that says the copy was scaled down); these two are
+ * only about whether the file can be looked at at all.
+ */
+export const MAX_FILE_SIZE_MB = 50;
 const MAX_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
-const MAX_PIXEL_COUNT = 40_000_000; // guard overly large resolution that may crash canvases
 const NATIVE_SUPPORTED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif', 'image/bmp'];
 const HEIC_TYPES = ['image/heic', 'image/heif'];
 const SUPPORTED_TYPES = [...NATIVE_SUPPORTED_TYPES, ...HEIC_TYPES];
@@ -71,6 +79,12 @@ export function useImageFile() {
   const t = useT();
   const [fileInfo, setFileInfo] = useState<BasicFileInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * A second, non-blocking channel. An error means nothing is shown; a warning means the file was
+   * accepted and analysed, and something about it has to be said before the reader trusts the
+   * frame — today that is only «the file is cut short».
+   */
+  const [warning, setWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const objectUrlRef = useRef<string | null>(null);
   // Monotonic counter: a slow earlier file must never overwrite a newer one.
@@ -89,6 +103,7 @@ export function useImageFile() {
     generationRef.current += 1;
     setFileInfo(null);
     setError(null);
+    setWarning(null);
     setLoading(false);
     revokeObjectUrl();
   }, [revokeObjectUrl]);
@@ -99,6 +114,7 @@ export function useImageFile() {
       const isCurrent = () => generationRef.current === generation;
       setLoading(true);
       setError(null);
+      setWarning(null);
       if (import.meta.env.DEV) {
         console.info('[pipeline] upload:start', { name: file.name, type: file.type, size: file.size });
       }
@@ -138,10 +154,13 @@ export function useImageFile() {
           return;
         }
         const pixelCount = width * height;
-        if (pixelCount > MAX_PIXEL_COUNT) {
+        if (pixelCount > maxUploadPixels()) {
           URL.revokeObjectURL(pendingObjectUrl);
           pendingObjectUrl = null;
-          setError(t('fileTooLargeResolution'));
+          // Name both numbers: «слишком высокое» alone leaves no idea by how much or what to do.
+          setError(
+            t('fileTooLargeResolution', { actual: megapixels(pixelCount), limit: megapixels(maxUploadPixels()) })
+          );
           return;
         }
         const info: BasicFileInfo = {
@@ -162,6 +181,17 @@ export function useImageFile() {
           processedSizeBytes: workingFile.size,
           wasConverted: needsHeicConversion
         };
+        // The end-marker check runs on the bytes as they arrived, before any HEIC conversion, and
+        // never blocks: a cut file still carries its metadata and most of its pixels.
+        const truncation = await checkTruncation(sourceFile);
+        if (!isCurrent()) {
+          URL.revokeObjectURL(pendingObjectUrl);
+          pendingObjectUrl = null;
+          return;
+        }
+        if (truncation === 'jpeg-truncated') setWarning(t('truncatedJpeg'));
+        else if (truncation === 'png-truncated') setWarning(t('truncatedPng'));
+
         // Commit: the new file passed every check, so the previous one can go.
         revokeObjectUrl();
         objectUrlRef.current = pendingObjectUrl;
@@ -200,6 +230,7 @@ export function useImageFile() {
   return {
     fileInfo,
     error,
+    warning,
     loading,
     processFile,
     reset

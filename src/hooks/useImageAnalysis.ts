@@ -11,6 +11,7 @@ import {
 } from '../types/detection';
 import type { BasicFileInfo } from '../types/metadata';
 import { isPlausibleFace, pickDistinctFaces, PERSON_CONTEXT_SCORE, type Rect } from '../utils/facePlausibility';
+import { rotateCanvas, unrotateBox, unrotatePoint, type Quarter } from '../utils/faceRotation';
 
 /* ── self-hosted MediaPipe assets (see scripts/prepare-assets.mjs) ── */
 
@@ -174,6 +175,56 @@ async function runDetection(image: HTMLCanvasElement): Promise<DetectionResults>
   }
 }
 
+/** Both face models on one frame, with the same GPU→CPU retry as the full pass. */
+async function runFaceDetection(image: HTMLCanvasElement): Promise<Detection[]> {
+  const detectors = await getDetectors();
+  const faces = (d: Detectors) => [...d.faces.detect(image).detections, ...d.farFaces.detect(image).detections];
+  try {
+    return faces(detectors);
+  } catch (err) {
+    if (detectors.delegate !== 'GPU') throw err;
+    console.warn('mediapipe-gpu-detect-rotated', err);
+    return faces(await recreateOnCpu(detectors));
+  }
+}
+
+/**
+ * The second look: the same frame turned 90° each way, with every box and keypoint mapped back
+ * into upright-canvas coordinates so the caller can merge the three lists as one.
+ *
+ * A failure here is never fatal — the upright result stands on its own — so a pass that throws is
+ * logged and dropped.
+ */
+async function detectRotatedFaces(image: HTMLCanvasElement): Promise<Detection[]> {
+  const out: Detection[] = [];
+  const upright = { width: image.width, height: image.height };
+  for (const quarter of ['cw', 'ccw'] as Quarter[]) {
+    const rotated = rotateCanvas(image, quarter);
+    if (!rotated) continue;
+    let found: Detection[];
+    try {
+      found = await runFaceDetection(rotated);
+    } catch (err) {
+      console.warn('rotated-face-pass', err);
+      continue;
+    }
+    for (const det of found) {
+      const bb = det.boundingBox;
+      if (!bb) continue;
+      const box = unrotateBox({ x: bb.originX, y: bb.originY, width: bb.width, height: bb.height }, quarter, upright);
+      out.push({
+        categories: det.categories,
+        boundingBox: { originX: box.x, originY: box.y, width: box.width, height: box.height, angle: 0 },
+        keypoints: (det.keypoints ?? []).map((kp) => {
+          const point = unrotatePoint({ x: kp.x, y: kp.y }, quarter);
+          return { ...kp, x: point.x, y: point.y };
+        })
+      });
+    }
+  }
+  return out;
+}
+
 /** Serialises `detect()` calls: a new file waits for the previous inference to finish. */
 function enqueueDetection<T>(job: () => Promise<T>): Promise<T> {
   const run = detectQueue.then(job, job);
@@ -314,7 +365,38 @@ export function useImageAnalysis(fileInfo: BasicFileInfo | null) {
         }
 
         setStage('process', 0.8);
-        const faces = plausibleFaces(results, scaledForDetection.canvas);
+        const persons = collectPersons(results.objects);
+        let faces = plausibleFaces(results.faces, persons, scaledForDetection.canvas);
+        /*
+         * Then the same frame turned 90° each way, always. The first shape of this gated the extra
+         * passes on «more people than faces», and it never fired on the case it was written for:
+         * measured on a five-person group photo turned on its side, EfficientDet loses the people
+         * along with BlazeFace (5 persons → 2), so the two counts stay equal while three faces go
+         * unfound. The measurements that replaced the gate, all on the CPU delegate at 800 px:
+         *   · group photo upright   — 5 faces before, 5 after, +116 ms (nothing invented)
+         *   · the same turned 90°   — 2 faces before, 4 after, +135 ms
+         *   · tight portrait, both orientations — 1 before, 1 after, +65 ms
+         *   · two screenshots       — 0 raw detections from the rotated passes at all, +73–85 ms
+         * So the cost is 65–135 ms against a ~900 ms detect, no negative gained a face, and the
+         * sideways group photo doubled its recall. `pickDistinctFaces` inside `plausibleFaces`
+         * merges the three lists, so a face seen twice is still one face.
+         */
+        const rotatedStart = performance.now();
+        const rotated = await enqueueDetection(() => detectRotatedFaces(scaledForDetection.canvas));
+        if (cancelled) return;
+        const uprightFaces = faces.length;
+        if (rotated.length > 0) {
+          faces = plausibleFaces([...results.faces, ...rotated], persons, scaledForDetection.canvas);
+        }
+        if (import.meta.env.DEV) {
+          console.info('[analysis] rotated face pass', {
+            ms: Math.round(performance.now() - rotatedStart),
+            persons: persons.length,
+            raw: rotated.length,
+            before: uprightFaces,
+            after: faces.length
+          });
+        }
         const frame: Frame = {
           scaleX: scaledForDetection.scaleX,
           scaleY: scaledForDetection.scaleY,
@@ -331,7 +413,7 @@ export function useImageAnalysis(fileInfo: BasicFileInfo | null) {
           console.info('[pipeline] analyze:done', {
             objects: results.objects.length,
             faces: faces.length,
-            facesDropped: results.faces.length - faces.length
+            persons: persons.length
           });
         }
         setStage('done', 1);
@@ -380,20 +462,29 @@ export function useImageAnalysis(fileInfo: BasicFileInfo | null) {
 
 /* ── result mapping ────────────────────────────────────────── */
 
-/**
- * Keeps only the BlazeFace detections that pass `isPlausibleFace`: keypoints that form a face,
- * plus either a sure score or an EfficientDet person box underneath (frame: the analysis canvas).
- */
-function plausibleFaces(results: DetectionResults, canvas: { width: number; height: number }): Detection[] {
+/** The EfficientDet person boxes solid enough to vouch for a face found on top of them. */
+function collectPersons(objects: Detection[]): Rect[] {
   const persons: Rect[] = [];
-  for (const det of results.objects) {
+  for (const det of objects) {
     const bb = det.boundingBox;
     const top = det.categories[0];
     if (!bb || top?.categoryName !== PERSON_LABEL || (top.score ?? 0) < PERSON_CONTEXT_SCORE) continue;
     persons.push({ x: bb.originX, y: bb.originY, width: bb.width, height: bb.height });
   }
-  // The two passes see the same faces from different sides, so one face can arrive twice.
-  const boxed = results.faces.filter((det) => det.boundingBox);
+  return persons;
+}
+
+/**
+ * Keeps only the BlazeFace detections that pass `isPlausibleFace`: keypoints that form a face,
+ * plus either a sure score or an EfficientDet person box underneath (frame: the analysis canvas).
+ */
+function plausibleFaces(
+  detected: Detection[],
+  persons: Rect[],
+  canvas: { width: number; height: number }
+): Detection[] {
+  // The passes see the same faces from different sides, so one face can arrive several times.
+  const boxed = detected.filter((det) => det.boundingBox);
   const distinct = pickDistinctFaces(
     boxed.map((det) => ({
       box: {
