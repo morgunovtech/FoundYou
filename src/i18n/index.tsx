@@ -196,6 +196,23 @@ const messages = {
     insightSurveillanceEmpty: 'Данных о камерах рядом не нашли.',
     insightCompactHoliday: 'Праздник',
     mapUnavailable: 'Карта недоступна: браузер не поддерживает WebGL.',
+    authorTitle: 'Автор и контакты в метаданных',
+    authorPersonLabel: 'Имя',
+    authorContactLabel: 'Контакт',
+    authorRightsLabel: 'Права',
+    authorExplainTitle: 'Откуда это в файле',
+    authorExplainBody:
+      'Эти поля пишут не камерой, а настройками: Lightroom подставляет имя и копирайт из пресета каталога, зеркалка Canon носит имя владельца из своего меню, Windows записывает автора, если его когда-то вписали в свойствах файла, а контактный блок IPTC — стандартная подпись в редакциях. Поле переживает пересохранение и не имеет отношения к геометкам, поэтому его обычно никто не проверяет.',
+    authorExplainRisk:
+      'Имя и почта в файле связывают снимок лично с вами, даже если координат в нём нет. Очистка метаданных удаляет их вместе со всем остальным.',
+    writtenPlaceTitle: 'Место записано словами',
+    writtenPlaceSub: 'Координат в файле нет, но место названо текстом в полях IPTC/XMP',
+    writtenPlaceTagsLabel: 'Поля',
+    writtenPlaceExplainTitle: 'Почему это важно',
+    writtenPlaceExplainBody:
+      'Выключенные геометки убирают координаты, но не трогают текстовые поля о месте: город, район, страну. Их заполняют редакторы, агентские рабочие процессы и функция «добавить место» в телефоне. Совет «выключи геолокацию» на них не действует.',
+    writtenPlaceNotGeocoded:
+      'Мы не превращаем этот текст в координаты и никуда его не отправляем: это строка из вашего файла, и она остаётся в браузере.',
     mapGateTitle: 'Карта загружается со стороннего сервера',
     mapGateBody:
       'Всё на этой странице посчитано на вашем устройстве, и наружу ушли только округлённые координаты — на наш сервер. Карта устроена иначе: её квадратики браузер скачивает напрямую у OpenStreetMap, мимо нас. Поэтому она за отдельной кнопкой, а не грузится сама.',
@@ -832,6 +849,23 @@ const messages = {
     insightSurveillanceEmpty: 'No data about cameras nearby.',
     insightCompactHoliday: 'Holiday',
     mapUnavailable: 'Map unavailable: this browser has no WebGL support.',
+    authorTitle: 'Author and contacts in the metadata',
+    authorPersonLabel: 'Name',
+    authorContactLabel: 'Contact',
+    authorRightsLabel: 'Rights',
+    authorExplainTitle: 'Where this comes from',
+    authorExplainBody:
+      'These fields are written by settings rather than by the camera: Lightroom fills the name and the copyright line from a catalogue preset, a Canon body carries its owner name from its own menu, Windows writes an author if one was ever typed into the file properties, and the IPTC contact block is the standard newsroom byline. The field survives re-saving and has nothing to do with geotags, which is why nobody checks it.',
+    authorExplainRisk:
+      'A name and an e-mail address in the file tie the picture to you personally even when it carries no coordinates. Cleaning the metadata removes them along with everything else.',
+    writtenPlaceTitle: 'The place is written in words',
+    writtenPlaceSub: 'The file has no coordinates, but it names the place in its IPTC/XMP fields',
+    writtenPlaceTagsLabel: 'Fields',
+    writtenPlaceExplainTitle: 'Why this matters',
+    writtenPlaceExplainBody:
+      'Turning geotagging off removes the coordinates and leaves the text fields about the place alone: city, sub-location, country. Editors, agency workflows and the «add location» feature on a phone all fill them in. The advice «switch off location» does not touch them.',
+    writtenPlaceNotGeocoded:
+      'We do not turn this text into coordinates and we do not send it anywhere: it is a line out of your file, and it stays in the browser.',
     mapGateTitle: 'The map loads from a third-party server',
     mapGateBody:
       'Everything on this page was computed on your device, and the only thing that left it were rounded coordinates, sent to our server. The map works differently: the browser downloads its tiles straight from OpenStreetMap, bypassing us. That is why it sits behind a button instead of loading on its own.',
@@ -1469,6 +1503,23 @@ const messages = {
     insightSurveillanceEmpty: 'Yaqin atrofdagi kameralar haqida ma’lumot topilmadi.',
     insightCompactHoliday: 'Bayram',
     mapUnavailable: 'Xarita mavjud emas: brauzer WebGL’ni qo‘llab-quvvatlamaydi.',
+    authorTitle: 'Metadatadagi muallif va kontaktlar',
+    authorPersonLabel: 'Ism',
+    authorContactLabel: 'Kontakt',
+    authorRightsLabel: 'Huquqlar',
+    authorExplainTitle: 'Bu fayldagi qayerdan',
+    authorExplainBody:
+      'Bu maydonlarni kamera emas, sozlamalar yozadi: Lightroom katalog presetidan ism va mualliflik huquqini qo‘yadi, Canon kamerasi o‘z menyusidan egasining ismini olib yuradi, Windows fayl xossalariga bir marta yozilgan muallifni saqlaydi, IPTC kontakt bloki esa tahririyatlardagi standart imzo. Maydon qayta saqlashdan keyin ham qoladi va geoteglarga aloqasi yo‘q, shuning uchun uni odatda hech kim tekshirmaydi.',
+    authorExplainRisk:
+      'Fayldagi ism va pochta suratni shaxsan siz bilan bog‘laydi, hatto koordinatalar bo‘lmasa ham. Metadatani tozalash ularni qolgan hamma narsa bilan birga o‘chiradi.',
+    writtenPlaceTitle: 'Joy so‘z bilan yozilgan',
+    writtenPlaceSub: 'Faylda koordinatalar yo‘q, ammo joy IPTC/XMP maydonlarida matn bilan nomlangan',
+    writtenPlaceTagsLabel: 'Maydonlar',
+    writtenPlaceExplainTitle: 'Nega bu muhim',
+    writtenPlaceExplainBody:
+      'Geoteglarni o‘chirish koordinatalarni olib tashlaydi, lekin joy haqidagi matn maydonlariga tegmaydi: shahar, tuman, mamlakat. Ularni muharrirlar, agentlik jarayonlari va telefondagi «joy qo‘shish» funksiyasi to‘ldiradi. «Geolokatsiyani o‘chir» maslahati ularga ta’sir qilmaydi.',
+    writtenPlaceNotGeocoded:
+      'Biz bu matnni koordinatalarga aylantirmaymiz va hech qayerga yubormaymiz: bu sizning faylingizdagi satr va u brauzerda qoladi.',
     mapGateTitle: 'Xarita uchinchi tomon serveridan yuklanadi',
     mapGateBody:
       'Bu sahifadagi hamma narsa sizning qurilmangizda hisoblandi, tashqariga faqat yaxlitlangan koordinatalar — bizning serverimizga — chiqdi. Xarita boshqacha: uning kataklarini brauzer to‘g‘ridan-to‘g‘ri OpenStreetMap’dan, bizni chetlab o‘tib yuklaydi. Shuning uchun u o‘zi yuklanmaydi, alohida tugma ortida turadi.',

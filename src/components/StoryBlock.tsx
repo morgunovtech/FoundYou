@@ -26,6 +26,8 @@ import { FrameChecksCard } from './story/FrameChecksCard';
 import { DATE_FAULT_KEYS, PII_KIND_KEYS, QR_KIND_KEYS } from './story/storyKeys';
 import { timeHeadline } from './story/timeHeadline';
 import { Explainer } from './Explainer';
+import { findAuthorship, type AuthorshipKind } from '../utils/authorship';
+import { findWrittenPlace } from '../utils/placeFromMetadata';
 import { useContainerSignals } from '../hooks/useContainerSignals';
 import { useFrameStats } from '../hooks/useFrameStats';
 
@@ -192,6 +194,65 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       </dl>
     ) : null;
 
+  /* ── author, contacts and a place written in words ────── */
+
+  /**
+   * Two facts the file carries that nobody checks, because both survive the advice people are
+   * actually given. The author block is written by settings rather than by the camera and has
+   * nothing to do with geotags; the written place is what is left of the location after the
+   * coordinates are gone. Neither is sent anywhere — the values come out of the groups exifr
+   * already parsed, and the place text is deliberately never geocoded.
+   */
+  const authorship = useMemo(() => findAuthorship(metadata?.groups), [metadata?.groups]);
+  const writtenPlace = useMemo(() => findWrittenPlace(metadata?.groups), [metadata?.groups]);
+
+  const AUTHOR_LABELS: Record<AuthorshipKind, 'authorPersonLabel' | 'authorContactLabel' | 'authorRightsLabel'> = {
+    person: 'authorPersonLabel',
+    contact: 'authorContactLabel',
+    rights: 'authorRightsLabel'
+  };
+
+  const authorCard = authorship ? (
+    <FactRow
+      key="author"
+      title={t('authorTitle')}
+      // A name or a way to reach someone identifies a person; a licence line on its own does not.
+      severity={authorship.people.length > 0 || authorship.contacts.length > 0 ? 'high' : 'low'}
+      value={authorship.people.join(', ') || null}
+      sub={null}
+    >
+      <dl className="fy-spec fy-spec--tight">
+        {authorship.findings.map((finding) => (
+          <React.Fragment key={`${finding.tag}-${finding.value}`}>
+            <dt>{t(AUTHOR_LABELS[finding.kind])}</dt>
+            <dd>
+              {finding.value} <span className="fy-mono">{finding.tag}</span>
+            </dd>
+          </React.Fragment>
+        ))}
+      </dl>
+      <Explainer title={t('authorExplainTitle')}>
+        <p>{t('authorExplainBody')}</p>
+        <p>{t('authorExplainRisk')}</p>
+      </Explainer>
+    </FactRow>
+  ) : null;
+
+  // Only without coordinates: with GPS the location card already answers the question better.
+  const writtenPlaceCard =
+    writtenPlace && !metadata?.gps ? (
+      <FactRow key="written-place" title={t('writtenPlaceTitle')} severity="medium" value={writtenPlace.line} sub={t('writtenPlaceSub')}>
+        <dl className="fy-spec fy-spec--tight">
+          <dt>{t('writtenPlaceTagsLabel')}</dt>
+          <dd className="fy-mono">{writtenPlace.tags.join(', ')}</dd>
+        </dl>
+        <Explainer title={t('writtenPlaceExplainTitle')}>
+          <p>{t('writtenPlaceExplainBody')}</p>
+          <p>{t('writtenPlaceNotGeocoded')}</p>
+        </Explainer>
+      </FactRow>
+    ) : null;
+
   /* ── fact order ───────────────────────────────────────── */
 
   const renderFact = (kind: ProfileSectionKind) => {
@@ -243,7 +304,8 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       ) : null}
 
       <div className="fy-facts">
-        {FACT_ORDER.map((kind) => (kind === 'location' ? [renderFact(kind), stanceRow] : renderFact(kind)))}
+        {FACT_ORDER.map((kind) => (kind === 'location' ? [renderFact(kind), writtenPlaceCard, stanceRow] : renderFact(kind)))}
+        {authorCard}
         {profile ? (
           <OriginCard
             sectionsByKind={sectionsByKind}

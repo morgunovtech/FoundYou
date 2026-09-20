@@ -21,6 +21,9 @@
  * --thumbnail other.jpg (an IFD1 thumbnail; pass a different picture to make it mismatch),
  * --orientation 6 (the IFD0 Orientation tag: 6 = rotate 90° CW, the usual portrait phone photo).
  *
+ * Author block for the «Автор и контакты» card: --artist "Семён Моргунов" (IFD0 Artist, what
+ * Lightroom and a DSLR body write) and --copyright "© 2026 MOR TECH" (IFD0 Copyright).
+ *
  * Samsung layout: --samsung-video-size 300000 (bytes of the MotionPhoto_Data payload; above 256 KB
  * the video starts before the tail window the parser reads) and --samsung-video-last (the small
  * MCC/UTC blocks written before the video instead of after it).
@@ -37,7 +40,7 @@ const args = process.argv.slice(2);
 const [input, output] = args;
 if (!input || !output) {
   console.error(
-    'usage: make-exif-fixture.mjs in.jpg out.jpg [--lat --lon --alt --acc --heading --speed --date --offset --gps-time --make --model --lens --focal35 --software --apple-uptime --samsung-mcc --samsung-video-size --samsung-video-last --modify-date --exif-size --thumbnail --orientation --exposure --fnumber --iso --flash --digitized]'
+    'usage: make-exif-fixture.mjs in.jpg out.jpg [--lat --lon --alt --acc --heading --speed --date --offset --gps-time --make --model --lens --focal35 --software --apple-uptime --samsung-mcc --samsung-video-size --samsung-video-last --modify-date --exif-size --thumbnail --orientation --exposure --fnumber --iso --flash --digitized --artist --copyright]'
   );
   process.exit(1);
 }
@@ -46,6 +49,8 @@ const opt = (name, fallback) => {
   return index === -1 ? fallback : args[index + 1];
 };
 
+const artist = opt('artist', '');
+const copyright = opt('copyright', '');
 const lat = Number(opt('lat', '41.36123'));
 const lon = Number(opt('lon', '69.92395'));
 const alt = Number(opt('alt', '1287'));
@@ -282,6 +287,9 @@ if (heading != null) {
 const ifd0Entries = [
   { tag: 0x010f, type: ASCII, count: make.length + 1, data: ascii(make) },
   { tag: 0x0110, type: ASCII, count: model.length + 1, data: ascii(model) },
+  // The author block of the «Автор и контакты» card: IFD0 Artist and Copyright.
+  ...(artist ? [{ tag: 0x013b, type: ASCII, count: artist.length + 1, data: ascii(artist) }] : []),
+  ...(copyright ? [{ tag: 0x8298, type: ASCII, count: copyright.length + 1, data: ascii(copyright) }] : []),
   ...(software ? [{ tag: 0x0131, type: ASCII, count: software.length + 1, data: ascii(software) }] : []),
   ...(modifyDate ? [{ tag: 0x0132, type: ASCII, count: modifyDate.length + 1, data: ascii(modifyDate) }] : []),
   ...(orientation != null ? [{ tag: 0x0112, type: SHORT, count: 1, data: short(orientation) }] : []),
