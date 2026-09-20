@@ -264,6 +264,20 @@ const messages = {
       'Точка в населённом пункте такого размера сама по себе почти никого не выделяет: рядом живут сотни тысяч людей.',
     populationSparse:
       'Здесь живёт мало людей, поэтому координаты сужают круг очень сильно: в посёлке такого размера точка почти равна конкретному дому.',
+    setting_home: 'Похоже на жильё',
+    setting_workplace: 'Похоже на рабочее место',
+    setting_bathroom: 'Похоже на ванную',
+    setting_kitchen: 'Похоже на кухню',
+    setting_transport: 'Похоже на транспорт',
+    setting_street: 'Похоже на улицу',
+    setting_nature: 'Похоже на природу',
+    settingIndoors: '— в помещении',
+    settingOutdoors: '— на улице',
+    settingEvidence: 'По предметам в кадре: {objects}',
+    settingExplainTitle: 'Почему это важно',
+    settingExplainBody:
+      'Это единственное, что снимок рассказывает даже без метаданных: геометку можно стереть, а кровать в кадре — нет. По предметам обычно понятно, дома человек, на работе или на улице, и этого достаточно, чтобы отделить рабочие снимки от домашних. Модель знает 80 типов предметов и не знает ни одной комнаты, поэтому это вывод из увиденного, а не измерение — и когда предметы противоречат друг другу, строка не показывается вовсе.',
+    historyMessengerSize: 'Длинная сторона ровно {size} px — столько оставляет {platforms}. Совпадение размера, а не доказательство: до этого же числа можно уменьшить фото и руками, а сервисы меняют его от версии к версии.',
     mapGateTitle: 'Карта загружается со стороннего сервера',
     mapGateBody:
       'Всё на этой странице посчитано на вашем устройстве, и наружу ушли только округлённые координаты — на наш сервер. Карта устроена иначе: её квадратики браузер скачивает напрямую у OpenStreetMap, мимо нас. Поэтому она за отдельной кнопкой, а не грузится сама.',
@@ -967,6 +981,20 @@ const messages = {
     populationCrowd: 'In a settlement this size the point on its own singles out almost nobody: hundreds of thousands live around it.',
     populationSparse:
       'Few people live here, so the coordinates narrow things down very sharply: in a settlement this size a point is close to a single house.',
+    setting_home: 'Looks like a home',
+    setting_workplace: 'Looks like a workplace',
+    setting_bathroom: 'Looks like a bathroom',
+    setting_kitchen: 'Looks like a kitchen',
+    setting_transport: 'Looks like transport',
+    setting_street: 'Looks like a street',
+    setting_nature: 'Looks like open country',
+    settingIndoors: '— indoors',
+    settingOutdoors: '— outdoors',
+    settingEvidence: 'From the objects in the frame: {objects}',
+    settingExplainTitle: 'Why this matters',
+    settingExplainBody:
+      'This is the one thing a photograph says even with no metadata at all: a geotag can be erased, a bed in the frame cannot. The objects usually make it clear whether someone is at home, at work or outside, which is enough to sort work pictures from private ones. The model knows 80 kinds of object and no rooms at all, so this is a reading of what it saw rather than a measurement — and when the objects disagree, the line is not shown.',
+    historyMessengerSize: 'The longest side is exactly {size} px — the size {platforms} leaves behind. A match of size, not proof: a picture can be resized to that by hand, and the services change the number between versions.',
     mapGateTitle: 'The map loads from a third-party server',
     mapGateBody:
       'Everything on this page was computed on your device, and the only thing that left it were rounded coordinates, sent to our server. The map works differently: the browser downloads its tiles straight from OpenStreetMap, bypassing us. That is why it sits behind a button instead of loading on its own.',
@@ -1671,6 +1699,20 @@ const messages = {
     populationCrowd: 'Bunday kattalikdagi punktda nuqtaning o‘zi deyarli hech kimni ajratmaydi: atrofda yuz minglab odam yashaydi.',
     populationSparse:
       'Bu yerda kam odam yashaydi, shuning uchun koordinatalar doirani juda toraytiradi: bunday punktda nuqta deyarli aniq uyga teng.',
+    setting_home: 'Uyga o‘xshaydi',
+    setting_workplace: 'Ish joyiga o‘xshaydi',
+    setting_bathroom: 'Hammomga o‘xshaydi',
+    setting_kitchen: 'Oshxonaga o‘xshaydi',
+    setting_transport: 'Transportga o‘xshaydi',
+    setting_street: 'Ko‘chaga o‘xshaydi',
+    setting_nature: 'Tabiatga o‘xshaydi',
+    settingIndoors: '— bino ichida',
+    settingOutdoors: '— ochiq havoda',
+    settingEvidence: 'Kadrdagi buyumlar bo‘yicha: {objects}',
+    settingExplainTitle: 'Nega bu muhim',
+    settingExplainBody:
+      'Bu surat metadatasiz ham aytadigan yagona narsa: geotegni o‘chirish mumkin, kadrdagi karavotni esa yo‘q. Buyumlardan odatda odam uydami, ishdami yoki ko‘chadami ekani ko‘rinadi, bu ish suratlarini shaxsiylaridan ajratishga yetarli. Model 80 turdagi buyumni biladi va birorta xonani bilmaydi, shuning uchun bu o‘lchov emas, ko‘rilgandan chiqarilgan xulosa — buyumlar bir-biriga zid bo‘lsa, satr umuman ko‘rsatilmaydi.',
+    historyMessengerSize: 'Uzun tomoni aynan {size} px — {platforms} shu o‘lchamni qoldiradi. Bu o‘lcham mosligi, dalil emas: suratni shu songacha qo‘lda ham kichraytirish mumkin, xizmatlar esa bu sonni versiyadan versiyaga o‘zgartiradi.',
     mapGateTitle: 'Xarita uchinchi tomon serveridan yuklanadi',
     mapGateBody:
       'Bu sahifadagi hamma narsa sizning qurilmangizda hisoblandi, tashqariga faqat yaxlitlangan koordinatalar — bizning serverimizga — chiqdi. Xarita boshqacha: uning kataklarini brauzer to‘g‘ridan-to‘g‘ri OpenStreetMap’dan, bizni chetlab o‘tib yuklaydi. Shuning uchun u o‘zi yuklanmaydi, alohida tugma ortida turadi.',
