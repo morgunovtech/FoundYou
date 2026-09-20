@@ -202,7 +202,7 @@ export function blurManualMasks(
   const bleed = Math.round(strength) * 3;
 
   masks.forEach((mask) => {
-    if (mask.points.length < MIN_MASK_POINTS) return;
+    if (mask.points.length === 0) return;
 
     const radius = Math.max(mask.radius, MIN_MASK_SIZE / 2);
     let minX = Infinity;
@@ -227,11 +227,22 @@ export function blurManualMasks(
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.moveTo(mask.points[0].x, mask.points[0].y);
-    for (let i = 1; i < mask.points.length; i += 1) {
-      ctx.lineTo(mask.points[i].x, mask.points[i].y);
+    if (mask.points.length < MIN_MASK_POINTS) {
+      /*
+       * A tap, or a stroke too short to make a polygon. It used to be dropped without a word:
+       * a finger that presses and lifts sends pointerdown and pointerup with no pointermove
+       * in between (measured with touch input in Chromium), so tapping a spot to cover it
+       * painted the draft on the overlay and then lost it. A brush dab is a disc.
+       */
+      const centre = mask.points[mask.points.length - 1];
+      ctx.arc(centre.x, centre.y, radius, 0, Math.PI * 2);
+    } else {
+      ctx.moveTo(mask.points[0].x, mask.points[0].y);
+      for (let i = 1; i < mask.points.length; i += 1) {
+        ctx.lineTo(mask.points[i].x, mask.points[i].y);
+      }
+      ctx.closePath();
     }
-    ctx.closePath();
     ctx.clip();
     paintBlurredRegion(ctx, source, bounds, strength);
     ctx.restore();

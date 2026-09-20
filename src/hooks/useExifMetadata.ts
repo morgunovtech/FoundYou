@@ -145,7 +145,8 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
             focalLength,
             gps
           }),
-          orientation: inferOrientation(fileInfo.width, fileInfo.height, orientationTag),
+          // `fileInfo.width/height` are post-decode, so the tag must not be applied again — see orientation.ts.
+          orientation: inferOrientation(fileInfo.width, fileInfo.height),
           apple: apple ?? undefined,
           samsung: samsung ?? undefined,
           thumbnail: (thumbnail as EmbeddedThumbnail | null) ?? undefined

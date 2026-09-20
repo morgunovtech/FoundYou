@@ -174,6 +174,8 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [draftStroke, setDraftStroke] = useState<ManualMask | null>(null);
+  /** The pointer whose capture we hold, so a stray release never throws. */
+  const capturedPointerRef = useRef<number | null>(null);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
   const [overlayRedrawKey, setOverlayRedrawKey] = useState(0);
   const blurMode = useMemo(() => canvasBlurMode(), []);
@@ -416,7 +418,17 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
       }
       const imagePoint = toImagePoint(event);
       if (!imagePoint) return;
-      overlayRef.current.setPointerCapture(event.pointerId);
+      /*
+       * Capture keeps the stroke alive while the finger wanders off the picture. Safari has
+       * been known to refuse it, and a refusal must not cost the stroke — the `pointerup`
+       * listener on the window below closes the gesture either way.
+       */
+      try {
+        overlayRef.current.setPointerCapture(event.pointerId);
+      } catch (error) {
+        console.warn('pointer-capture', error);
+      }
+      capturedPointerRef.current = event.pointerId;
       setDraftStroke({ id: 'draft', points: [imagePoint], radius: getBrushRadius() });
       lastPointRef.current = imagePoint;
       event.preventDefault();
@@ -445,7 +457,9 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
   );
 
   const finalizeMask = useCallback(() => {
-    if (!draftStroke || draftStroke.points.length < 2) {
+    // One point is a dab, not a discard: a finger that presses and lifts sends no pointermove
+    // at all, so the old «fewer than two points» rule threw the whole gesture away.
+    if (!draftStroke || draftStroke.points.length === 0) {
       setDraftStroke(null);
       lastPointRef.current = null;
       return;
@@ -455,20 +469,63 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     lastPointRef.current = null;
   }, [draftStroke, onManualMaskAdd]);
 
+  const releaseCapture = useCallback((pointerId: number | null) => {
+    const overlay = overlayRef.current;
+    if (!overlay || pointerId == null) return;
+    try {
+      if (overlay.hasPointerCapture(pointerId)) overlay.releasePointerCapture(pointerId);
+    } catch (error) {
+      console.warn('pointer-release', error);
+    }
+    capturedPointerRef.current = null;
+  }, []);
+
   const handlePointerUp = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
-      if (overlayRef.current) {
-        overlayRef.current.releasePointerCapture(event.pointerId);
-      }
+      releaseCapture(event.pointerId);
       finalizeMask();
       event.preventDefault();
     },
-    [finalizeMask]
+    [finalizeMask, releaseCapture]
   );
 
-  const handlePointerLeave = useCallback(() => {
-    finalizeMask();
-  }, [finalizeMask]);
+  /*
+   * `pointercancel` — the system took the gesture (a scroll, a call, a second finger). What was
+   * drawn up to that moment is kept rather than thrown away: losing a stroke the user watched
+   * appear is worse than committing a shorter one they can delete.
+   *
+   * `pointerleave` is deliberately NOT wired to this. While a pointer is captured the browser
+   * still emits leave/out — in Chromium it arrives right after `pointerup`, harmlessly, but it
+   * is the browser talking, not the finger, and finalising on it is what turns a stroke into a
+   * lone dot. The gesture ends on up or cancel, nothing else.
+   */
+  const handlePointerCancel = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      releaseCapture(event.pointerId);
+      finalizeMask();
+    },
+    [finalizeMask, releaseCapture]
+  );
+
+  /*
+   * The safety net. If `setPointerCapture` was refused, or the browser retargeted the gesture,
+   * the closing `pointerup` never reaches the overlay and the stroke would hang half-drawn
+   * until the next tap. Listening on the window while a stroke is open closes it wherever the
+   * finger lifts.
+   */
+  useEffect(() => {
+    if (!draftStroke) return undefined;
+    const end = () => {
+      releaseCapture(capturedPointerRef.current);
+      finalizeMask();
+    };
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+    return () => {
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+    };
+  }, [draftStroke, finalizeMask, releaseCapture]);
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
@@ -496,7 +553,19 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
 
     const drawStroke = (mask: ManualMask, color: string) => {
       const mapped = mapStrokeToOverlay(mask);
-      if (!mapped || mapped.points.length < 2) return;
+      if (!mapped || mapped.points.length === 0) return;
+      if (mapped.points.length === 1) {
+        // A dab: what the export paints for a tap, so the preview does not promise something else.
+        const centre = mapped.points[0];
+        ctx.save();
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.arc(centre.x, centre.y, Math.max(mapped.radius, 6), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        return;
+      }
       ctx.save();
       ctx.lineWidth = Math.max(mapped.radius, 6);
       ctx.lineJoin = 'round';
@@ -792,8 +861,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
                   onPointerDown={handlePointerDown}
                   onPointerMove={handlePointerMove}
                   onPointerUp={handlePointerUp}
-                  onPointerCancel={handlePointerLeave}
-                  onPointerLeave={handlePointerLeave}
+                  onPointerCancel={handlePointerCancel}
                   role={manualMaskMode ? 'img' : 'presentation'}
                   aria-label={manualMaskMode ? t('manualMaskDrawingHint') : undefined}
                   style={{ pointerEvents: manualMaskMode ? 'auto' : 'none' }}

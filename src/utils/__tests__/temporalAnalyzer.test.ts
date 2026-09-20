@@ -44,7 +44,7 @@ describe('analyzeDateTime (camera wall-clock)', () => {
     const fiveHoursAhead = new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString().slice(0, 19);
     const result = facts(fiveHoursAhead);
     expect(result).not.toContain('Future date');
-    expect(result).toContain('Photo taken today or yesterday');
+    expect(result).toContain('Photo taken today');
   });
 
   it('flags a date days ahead as future', () => {

@@ -38,30 +38,42 @@ export function isWorkingHour(hour: number): boolean {
 
 export type DayKind = 'weekend' | 'weekday' | 'holiday';
 
-export type AgeKind = 'future' | 'fresh' | 'days' | 'months' | 'years';
+export type AgeKind = 'future' | 'today' | 'yesterday' | 'days' | 'months' | 'years';
 
 export interface PhotoAge {
   kind: AgeKind;
-  /** Days for `future` / `days`, months for `months`, years for `years`; 0 or 1 for `fresh`. */
+  /** Days for `future` / `days`, months for `months`, years for `years`; 0 for `today` / `yesterday`. */
   value: number;
 }
 
 const DAY_MS = 86_400_000;
 
 /**
- * How old the wall-clock is. It is compared as if it were UTC because the real offset may be
- * unknown; that is at most ±14 h off, irrelevant for day/month/year buckets, but it is why a
- * photo from a few hours ago in a UTC+N zone gets one day of grace before it is called «future».
+ * How old the wall-clock is.
+ *
+ * «Today» and «yesterday» are calendar questions, not durations: a photo from 22:36 last night is
+ * yesterday's at 13:59 today, although only fifteen hours have passed, and one from 00:30 this
+ * morning is today's after thirteen. Subtracting timestamps cannot tell those apart, which is why
+ * the card used to hedge with «сегодня или вчера» over a file that names its date to the second.
+ * So the two calendar days are compared directly — the shot's own date digits against the
+ * reader's — and only the coarser buckets are measured in elapsed days.
+ *
+ * The wall-clock is read as if it were UTC because the real offset may be unknown; that is at
+ * most ±14 h off, which is why a date one calendar day ahead still counts as today rather than
+ * «future» — a zone difference, not a broken clock.
  */
 export function photoAge(asUtc: Date, now: Date): PhotoAge {
-  const ageDays = Math.floor((now.getTime() - asUtc.getTime()) / DAY_MS);
-  if (ageDays < -1) return { kind: 'future', value: -ageDays };
-  if (ageDays <= 1) return { kind: 'fresh', value: Math.max(0, ageDays) };
-  const years = Math.floor(ageDays / 365);
+  const shotDay = Date.UTC(asUtc.getUTCFullYear(), asUtc.getUTCMonth(), asUtc.getUTCDate());
+  const readerDay = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const dayDiff = Math.round((readerDay - shotDay) / DAY_MS);
+  if (dayDiff < -1) return { kind: 'future', value: -dayDiff };
+  if (dayDiff <= 0) return { kind: 'today', value: 0 };
+  if (dayDiff === 1) return { kind: 'yesterday', value: 0 };
+  const years = Math.floor(dayDiff / 365);
   if (years > 0) return { kind: 'years', value: years };
-  const months = Math.floor(ageDays / 30);
+  const months = Math.floor(dayDiff / 30);
   if (months > 1) return { kind: 'months', value: months };
-  return { kind: 'days', value: ageDays };
+  return { kind: 'days', value: dayDiff };
 }
 
 export type CameraClockSource = 'exif-offset' | 'gps-time';

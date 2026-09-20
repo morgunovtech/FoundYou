@@ -22,7 +22,7 @@ function profile(overrides: Partial<TimeProfile> = {}): TimeProfile {
     camera: null,
     place: null,
     clock: null,
-    age: { kind: 'fresh', value: 0 },
+    age: { kind: 'yesterday', value: 0 },
     driftSeconds: null,
     ...overrides
   };
@@ -31,7 +31,7 @@ function profile(overrides: Partial<TimeProfile> = {}): TimeProfile {
 describe('timeHeadline', () => {
   it('lines up age, date, weekday, day kind, time of day and the clock to the second', () => {
     expect(timeHeadline(profile(), 'ru', t)).toBe(
-      'AgeFresh(0), 16 сентября 2026 г., среда, dayWeekday, todEvening, 22:06:41'
+      'AgeYesterday(0), 16 сентября 2026 г., среда, dayWeekday, todEvening, 22:06:41'
     );
   });
 

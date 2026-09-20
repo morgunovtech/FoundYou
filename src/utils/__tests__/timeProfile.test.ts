@@ -24,16 +24,32 @@ describe('timeOfDay / isWeekend / isWorkingHour', () => {
 });
 
 describe('photoAge', () => {
+  /** A wall-clock, read as UTC exactly as `wallClockAsUtcDate` hands it over. */
   const at = (iso: string) => new Date(iso);
-  it('grants a day of grace before calling the date future', () => {
-    expect(photoAge(at('2026-09-17T06:00:00Z'), NOW)).toEqual({ kind: 'fresh', value: 0 });
-    expect(photoAge(at('2026-09-19T12:00:00Z'), NOW)).toEqual({ kind: 'future', value: 3 });
+  /*
+   * «Now» is the reader's clock, so it is built from local components: the function compares the
+   * reader's calendar day, and the test must say the same thing in every time zone.
+   */
+  const READER_NOON = new Date(2026, 8, 16, 12, 0, 0); // 16 September 2026, local noon
+
+  it('names the calendar day instead of hedging between two', () => {
+    // 15 hours earlier, and still yesterday — the case the «сегодня или вчера» line got wrong.
+    expect(photoAge(at('2026-09-15T22:36:00Z'), READER_NOON)).toEqual({ kind: 'yesterday', value: 0 });
+    // 12 hours earlier, and still today.
+    expect(photoAge(at('2026-09-16T00:30:00Z'), READER_NOON)).toEqual({ kind: 'today', value: 0 });
+    expect(photoAge(at('2026-09-16T23:59:59Z'), READER_NOON)).toEqual({ kind: 'today', value: 0 });
   });
+
+  it('grants a calendar day of grace before calling the date future', () => {
+    // One day ahead is a time-zone difference, not a broken clock.
+    expect(photoAge(at('2026-09-17T06:00:00Z'), READER_NOON)).toEqual({ kind: 'today', value: 0 });
+    expect(photoAge(at('2026-09-19T12:00:00Z'), READER_NOON)).toEqual({ kind: 'future', value: 3 });
+  });
+
   it('buckets days, months and years', () => {
-    expect(photoAge(at('2026-09-16T00:00:00Z'), NOW)).toEqual({ kind: 'fresh', value: 0 });
-    expect(photoAge(at('2026-09-01T12:00:00Z'), NOW)).toEqual({ kind: 'days', value: 15 });
-    expect(photoAge(at('2026-06-14T18:30:00Z'), NOW)).toEqual({ kind: 'months', value: 3 });
-    expect(photoAge(at('2023-09-16T12:00:00Z'), NOW)).toEqual({ kind: 'years', value: 3 });
+    expect(photoAge(at('2026-09-01T12:00:00Z'), READER_NOON)).toEqual({ kind: 'days', value: 15 });
+    expect(photoAge(at('2026-06-14T18:30:00Z'), READER_NOON)).toEqual({ kind: 'months', value: 3 });
+    expect(photoAge(at('2023-09-16T12:00:00Z'), READER_NOON)).toEqual({ kind: 'years', value: 3 });
   });
 });
 
