@@ -153,6 +153,30 @@ function areaShare(box: BoundingBox, imgW: number, imgH: number): number {
   return (box.width * box.height) / ((imgW * imgH) || 1);
 }
 
+/** How far down the frame an object reaches, 0 at the top edge and 1 at the bottom. */
+const bottomShare = (box: BoundingBox, imgH: number): number => (box.y + box.height) / (imgH || 1);
+
+/**
+ * Depth from where the object stops, which is the one reading that works when there is nothing to
+ * compare it with.
+ *
+ * A photograph taken by a person holding a camera has its near things at the bottom: the hand,
+ * the table, the thing being shown. Something that ends in the upper half of the frame is across
+ * the room, whatever share of the picture it happens to fill.
+ *
+ * This exists because the other two readings cannot answer for a lone object. Reported from a
+ * phone: a hand holding a box with an armchair behind it, where the chair was the only thing
+ * EfficientDet could name (a box of pills is not among COCO's 80 classes) and the sentence read
+ * «На переднем плане в центре — стул». The chair fills a tenth of the frame, which clears the 8 %
+ * «large» bar, and comparing a lone chair against the largest chair compares it with itself and
+ * always scores 1. Both said foreground; neither could have said anything else.
+ */
+function depthFromBottom(bottom: number): Depth {
+  if (bottom >= 0.75) return 'foreground';
+  if (bottom >= 0.55) return 'midground';
+  return 'background';
+}
+
 /* ── grouping ────────────────────────────────────────────── */
 
 interface DetectionItem {
@@ -289,7 +313,13 @@ export function generateSceneNarrative(input: NarrativeInput): string {
     return {
       label: d.label,
       zone: horizontalZone(d, imgW),
-      depth: furtherOf(depthFromSize(sizeClass(d, imgW, imgH)), depthAgainstKind(area, largestOfKind.get(d.label) ?? area)),
+      // The furthest of the three readings: its share of the frame, its size against the nearest
+      // of its own kind, and how far down the frame it reaches. Any one of them saying «further»
+      // is enough, because each is blind to a case the others catch.
+      depth: furtherOf(
+        furtherOf(depthFromSize(sizeClass(d, imgW, imgH)), depthAgainstKind(area, largestOfKind.get(d.label) ?? area)),
+        depthFromBottom(bottomShare(d, imgH))
+      ),
       score: d.score,
     };
   });
