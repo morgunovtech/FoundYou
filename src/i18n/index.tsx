@@ -25,13 +25,14 @@ const messages = {
     introPoint1:
       'Сервис наглядно показывает, что снимок может рассказать о вас, включая местоположение, погоду и даже то, где вы стояли и как держали телефон в момент съёмки.',
     introPoint2:
-      'В один клик удалите всю чувствительную информацию и сделайте фото невозможным для распознавания в поисковиках.',
+      'В один клик удалите всю чувствительную информацию и усложните поиск по картинке.',
     introPoint3: 'Автоматически скрывайте лица, тексты и номера машин.',
     introPoint4: 'Узнайте историю редактирования изображения и проверьте на использование AI.',
     introAction:
       'Фотография остаётся в вашем браузере и не передаётся в сторонние сервисы. Использование бесплатно и без ограничений.',
     uploadButton: 'Выбрать фото',
     newPhotoLabel: 'Загрузить новое фото',
+    toCleanupLabel: 'К очистке',
     scrollTopLabel: 'Наверх',
     orDrop: 'или перетащите сюда, или вставьте из буфера обмена (Ctrl/Cmd+V)',
     uploadFormats: 'JPEG, PNG, WebP, HEIC, AVIF, GIF, BMP · до {limit} МБ',
@@ -219,7 +220,7 @@ const messages = {
     antiSearchActiveHint: 'Включено: копия чуть изменится, цель — сдвинуть отпечаток картинки минимум на {bits} бит из 64.',
     antiSearchActiveMeasured: 'Включено: цель {bits} бит из 64, по предпросмотру отпечаток сдвинут на {distance}.',
     antiSearchOffHint: 'Выключено: пиксели остаются как в оригинале, поиск по картинке найдёт копию.',
-    antiSearchWhat: 'Что входит: лёгкая обрезка и наклон кадра, мелкий шум, плавные перепады освещённости и сдвиг цвета на доли процента; результат сверяется с отпечатком оригинала, и сила подбирается, пока поиск по картинке не перестанет связывать копию с ним. Зеркало добавляет ещё один барьер.',
+    antiSearchWhat: 'Что входит: лёгкая обрезка и наклон кадра, мелкий шум и плавные перепады освещённости; цвета не трогаются — отпечаток картинки читается по яркости, и сдвиг цвета его почти не двигал, зато был заметен глазу. Результат сверяется с отпечатком оригинала, и сила подбирается, пока поиск по картинке не перестанет связывать копию с ним. Зеркало добавляет ещё один барьер.',
     hideFacesLabel: 'Лица',
     hideTextLabel: 'Текст',
     hidePlatesLabel: 'Номера машин',
@@ -649,13 +650,14 @@ const messages = {
     introPoint1:
       'The service shows what a photo can reveal about you: your location, the weather, even where you stood and how you held the phone at the moment of the shot.',
     introPoint2:
-      'Remove all sensitive information in one click and make the photo unrecognisable to search engines.',
+      'Remove all sensitive information in one click and make the photo harder to find by reverse image search.',
     introPoint3: 'Hide faces, text and licence plates automatically.',
     introPoint4: 'See the editing history of the image and check whether AI was used.',
     introAction:
       'The photo stays in your browser and is never sent to third-party services. Free to use, with no limits.',
     uploadButton: 'Choose photo',
     newPhotoLabel: 'Load a new photo',
+    toCleanupLabel: 'To cleanup',
     scrollTopLabel: 'Back to top',
     orDrop: 'or drag it here, or paste from the clipboard (Ctrl/Cmd+V)',
     uploadFormats: 'JPEG, PNG, WebP, HEIC, AVIF, GIF, BMP · up to {limit} MB',
@@ -843,7 +845,7 @@ const messages = {
     antiSearchActiveHint: 'On: the copy changes slightly; the goal is to move the picture fingerprint by at least {bits} of 64 bits.',
     antiSearchActiveMeasured: 'On: target {bits} of 64 bits, the preview moved the fingerprint by {distance}.',
     antiSearchOffHint: 'Off: the pixels stay as in the original, reverse image search will find the copy.',
-    antiSearchWhat: 'What it does: a slight crop and tilt, fine noise, smooth lighting gradients and a colour shift of a fraction of a percent; the result is checked against the original\'s fingerprint and the strength grows until reverse image search stops linking the copy. Mirroring adds one more barrier.',
+    antiSearchWhat: 'What it does: a slight crop and tilt, fine noise and smooth lighting gradients; colours are left alone — the picture fingerprint is read from luminance, so a colour shift barely moved it while being plainly visible. The result is checked against the original\'s fingerprint and the strength grows until reverse image search stops linking the copy. Mirroring adds one more barrier.',
     hideFacesLabel: 'Faces',
     hideTextLabel: 'Text',
     hidePlatesLabel: 'Licence plates',
@@ -1274,13 +1276,14 @@ const messages = {
     introPoint1:
       'Xizmat surat siz haqingizda nimani aytishi mumkinligini ko‘rsatadi: joylashuv, ob-havo va hatto suratga olish paytida qayerda turganingiz va telefonni qanday ushlaganingiz.',
     introPoint2:
-      'Bir bosishda barcha maxfiy maʼlumotlarni o‘chiring va fotoni qidiruv tizimlari uchun tanib bo‘lmas qiling.',
+      'Bir bosishda barcha maxfiy maʼlumotlarni o‘chiring va rasm bo‘yicha qidiruvni qiyinlashtiring.',
     introPoint3: 'Yuzlar, matn va avtomobil raqamlarini avtomatik yashiring.',
     introPoint4: 'Rasmning tahrirlash tarixini bilib oling va AI ishlatilganini tekshiring.',
     introAction:
       'Foto brauzeringizda qoladi va uchinchi tomon xizmatlariga yuborilmaydi. Foydalanish bepul va cheklovsiz.',
     uploadButton: 'Fotoni tanlash',
     newPhotoLabel: 'Yangi foto yuklash',
+    toCleanupLabel: 'Tozalashga',
     scrollTopLabel: 'Yuqoriga',
     orDrop: 'yoki shu yerga sudrab keling, yoki buferdan qo‘ying (Ctrl/Cmd+V)',
     uploadFormats: 'JPEG, PNG, WebP, HEIC, AVIF, GIF, BMP · {limit} MB gacha',
@@ -1468,7 +1471,7 @@ const messages = {
     antiSearchActiveHint: 'Yoqilgan: nusxa biroz o‘zgaradi, maqsad rasm izini kamida 64 bitdan {bits} ga siljitish.',
     antiSearchActiveMeasured: 'Yoqilgan: maqsad 64 bitdan {bits}, ko‘rib chiqishda iz {distance} ga siljidi.',
     antiSearchOffHint: 'O‘chiq: piksellar asl nusxadagidek qoladi, rasm bo‘yicha qidiruv nusxani topadi.',
-    antiSearchWhat: 'Nimalar kiradi: kadrning yengil kesilishi va qiyalashi, mayda shovqin, silliq yorug‘lik o‘tishlari va rangning foiz ulushiga siljishi; natija asl nusxa izi bilan solishtiriladi va rasm bo‘yicha qidiruv nusxani bog‘lamay qolguncha kuch oshiriladi. Aks ettirish yana bir to‘siq qo‘shadi.',
+    antiSearchWhat: 'Nimalar kiradi: kadrning yengil kesilishi va qiyalashi, mayda shovqin va silliq yorug‘lik o‘tishlari; ranglarga tegilmaydi — rasm izi yorqinlik bo‘yicha o‘qiladi, shuning uchun rang siljishi izni deyarli qimirlatmagan, ammo ko‘zga tashlangan. Natija asl nusxa izi bilan solishtiriladi va rasm bo‘yicha qidiruv nusxani bog‘lamay qolguncha kuch oshiriladi. Aks ettirish yana bir to‘siq qo‘shadi.',
     hideFacesLabel: 'Yuzlar',
     hideTextLabel: 'Matn',
     hidePlatesLabel: 'Avtomobil raqamlari',

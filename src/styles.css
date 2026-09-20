@@ -235,9 +235,14 @@
 
 /* --- Sections & layout grids ------------------------------------------ */
 
-/* Sticky corner buttons: the DS scroll-to-top and, 8px above it, «new photo» with the picture-plus icon. */
-.fy-sticky-new {
+/* Sticky corner buttons, stacked 8px apart above the DS scroll-to-top: «to cleanup» (an arrow
+   down to section 03) and «new photo» (the picture-plus icon). */
+.fy-sticky-cleanup {
   bottom: 68px;
+}
+
+.fy-sticky-new {
+  bottom: 128px;
 }
 
 .fy-sticky-icon {

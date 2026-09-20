@@ -73,7 +73,12 @@ function buildFixture(baseJpeg) {
   return readFileSync(out);
 }
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
+// SMOKE_BROWSER_PATH points at a Chromium binary where no Chrome channel is installed (CI
+// containers, the agent sandbox); without it the locally installed Chrome is used as before.
+const browserPath = process.env.SMOKE_BROWSER_PATH;
+const browser = await chromium.launch(
+  browserPath ? { executablePath: browserPath, headless: true, args: ['--no-sandbox'] } : { channel: 'chrome', headless: true }
+);
 try {
   const page = await browser.newPage({ acceptDownloads: true });
   page.setDefaultTimeout(timeout);

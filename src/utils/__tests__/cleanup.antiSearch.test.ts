@@ -5,7 +5,6 @@ import {
   ANTI_SEARCH_MAX_CROP,
   ANTI_SEARCH_TARGET_BITS,
   antiSearchTargetBits,
-  colourMatrix,
   FIELD_GRID,
   generateAntiSearchParams,
   sampleField,
@@ -72,32 +71,6 @@ describe('the measuring loop (pure parts)', () => {
     expect(params.cropPercent).toBeLessThanOrEqual(ANTI_SEARCH_MAX_CROP);
     // At the budget no further attempt is made even when the target is missed.
     expect(shouldStrengthenAntiSearch(2, 18, params)).toBe(false);
-  });
-});
-
-describe('colourMatrix', () => {
-  const apply = (m: Float64Array, r: number, g: number, b: number) => [
-    m[0] * r + m[1] * g + m[2] * b,
-    m[3] * r + m[4] * g + m[5] * b,
-    m[6] * r + m[7] * g + m[8] * b
-  ];
-  it('is the identity for no hue shift and no saturation change', () => {
-    const m = colourMatrix(0, 0);
-    expect(apply(m, 200, 100, 50).map((v) => Math.round(v * 1000) / 1000)).toEqual([200, 100, 50]);
-  });
-  it('keeps greys grey and preserves their luminance under any hue shift', () => {
-    for (const hue of [-18, -5, 7, 18]) {
-      const [r, g, b] = apply(colourMatrix(hue, 0.05), 128, 128, 128);
-      expect(Math.abs(r - 128)).toBeLessThan(1e-9);
-      expect(Math.abs(g - 128)).toBeLessThan(1e-9);
-      expect(Math.abs(b - 128)).toBeLessThan(1e-9);
-    }
-  });
-  it('a negative saturation shift pulls colours towards grey', () => {
-    const [r, g, b] = apply(colourMatrix(0, -0.5), 200, 100, 50);
-    expect(r).toBeLessThan(200);
-    expect(b).toBeGreaterThan(50);
-    expect(Math.abs(g - 100)).toBeLessThan(30);
   });
 });
 
