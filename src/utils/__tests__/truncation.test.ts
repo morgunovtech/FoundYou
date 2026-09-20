@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { tailHasEndMarker, walkForEndMarker } from '../truncation';
+import { checkTruncation, tailHasEndMarker, walkForEndMarker } from '../truncation';
 
 /** A minimal but structurally real JPEG: SOI, APP0/JFIF, SOS with a short scan, EOI. */
 function jpeg({ withEoi = true, trailer = 0 } = {}): Uint8Array {
@@ -84,5 +84,83 @@ describe('tailHasEndMarker', () => {
 
   it('answers null — «do not check» — for every other container', () => {
     expect(tailHasEndMarker(new Uint8Array([0x52, 0x49, 0x46, 0x46]), new Uint8Array([0]))).toBeNull();
+  });
+});
+
+
+describe('checkTruncation: what it reads', () => {
+  /** A Blob that records every slice, so the test can see how much of the file was touched. */
+  function countingBlob(bytes: Uint8Array) {
+    const reads: Array<[number, number]> = [];
+    const blob = {
+      size: bytes.length,
+      slice(start = 0, end = bytes.length) {
+        const from = start < 0 ? Math.max(0, bytes.length + start) : Math.min(start, bytes.length);
+        const to = end < 0 ? Math.max(0, bytes.length + end) : Math.min(end, bytes.length);
+        reads.push([from, to]);
+        const part = bytes.subarray(from, Math.max(from, to));
+        return { arrayBuffer: async () => part.slice().buffer };
+      },
+      arrayBuffer: async () => {
+        reads.push([0, bytes.length]);
+        return bytes.slice().buffer;
+      }
+    };
+    return { blob: blob as unknown as Blob, reads };
+  }
+
+  /**
+   * A JPEG of `image` bytes followed by `trailer` bytes of video, laid out like a Motion Photo:
+   * the picture first, its EOI, then the MP4.
+   */
+  function motionPhoto(image: number, trailer: number): Uint8Array {
+    const head = jpeg({ trailer: Math.max(0, image - 40) });
+    const out = new Uint8Array(head.length + trailer);
+    out.set(head, 0);
+    for (let i = 0; i < trailer; i += 1) out[head.length + i] = i % 251;
+    // The EOI must be the last thing in the picture, so re-place it at the image's end.
+    out[head.length - 2] = 0xff;
+    out[head.length - 1] = 0xd9;
+    return out;
+  }
+
+  it('answers a Motion Photo without ever holding the whole file', async () => {
+    /*
+     * The EOI sits before megabytes of MP4, so the 64 KB tail misses it. Reading the file whole
+     * to answer would put a 50 MB photo in memory on the phone at once; the backwards scan holds
+     * one window. What matters for a phone is that peak, not the bytes touched in total.
+     */
+    const bytes = motionPhoto(2 * 1024 * 1024, 1024 * 1024);
+    const { blob, reads } = countingBlob(bytes);
+    expect(await checkTruncation(blob)).toBe('complete');
+    const peak = Math.max(...reads.map(([from, to]) => to - from));
+    expect(peak).toBeLessThanOrEqual(1024 * 1024 + 64);
+    expect(reads.some(([from, to]) => from === 0 && to === bytes.length)).toBe(false);
+  });
+
+  it('holds only a window even when the trailer is enormous', async () => {
+    // A worst case: the picture is small and the video is everything. Still one window at a time.
+    const bytes = motionPhoto(40, 3 * 1024 * 1024);
+    const { blob, reads } = countingBlob(bytes);
+    expect(await checkTruncation(blob)).toBe('complete');
+    const peak = Math.max(...reads.map(([from, to]) => to - from));
+    expect(peak).toBeLessThanOrEqual(1024 * 1024 + 64);
+  });
+
+  it('still reads only the tail for an ordinary photo', async () => {
+    const { blob, reads } = countingBlob(jpeg({ trailer: 0 }));
+    expect(await checkTruncation(blob)).toBe('complete');
+    expect(reads.length).toBeLessThanOrEqual(2);
+  });
+
+  it('calls a cut file cut', async () => {
+    const { blob } = countingBlob(jpeg({ withEoi: false }));
+    expect(await checkTruncation(blob)).toBe('jpeg-truncated');
+  });
+
+  it('says nothing about a container it does not check', async () => {
+    const { blob, reads } = countingBlob(new Uint8Array([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 1, 2, 3]));
+    expect(await checkTruncation(blob)).toBe('complete');
+    expect(reads).toHaveLength(1); // the 8-byte head, and nothing more
   });
 });

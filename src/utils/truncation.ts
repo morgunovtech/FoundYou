@@ -12,10 +12,11 @@
  * that the page admits the frame is incomplete instead of presenting a cut file as whole.
  *
  * Cost: the common case reads the last 64 KB only. A file with no end marker there is either
- * truncated or carries a trailer longer than that (a Samsung Motion Photo, whose MP4 payload runs
- * to several megabytes), and only then is the whole file read and walked. Platform note: this is
- * plain byte reading through `Blob.slice`, identical on Android/Chrome and iOS/Safari; the
- * full-read path is the one to watch on a phone, which is why it stays the exception.
+ * truncated or carries a trailer longer than that — a Samsung or Pixel Motion Photo hides its EOI
+ * behind a multi-megabyte MP4, which makes that miss ordinary rather than rare — so the scan then
+ * walks backwards a megabyte at a time and stops at the marker. Platform note: this is plain byte
+ * reading through `Blob.slice`, identical on Android/Chrome and iOS/Safari, and no path holds more
+ * than a window at once until a file is both small and genuinely suspect.
  */
 
 export type TruncationVerdict =
@@ -52,12 +53,19 @@ function lastIndexOf(bytes: Uint8Array, needle: number[]): number {
   return -1;
 }
 
-/** Pure part: given the first bytes and the last bytes, is the end marker in the tail? */
-export function tailHasEndMarker(head: Uint8Array, tail: Uint8Array): boolean | null {
-  if (startsWith(head, JPEG_SOI)) return lastIndexOf(tail, [0xff, 0xd9]) >= 0;
-  if (startsWith(head, PNG_SIGNATURE)) return lastIndexOf(tail, PNG_IEND) >= 0;
+/** The end marker a container must carry, or null for the formats this does not check. */
+export function endMarkerOf(head: Uint8Array): { needle: number[]; verdict: TruncationVerdict } | null {
+  if (startsWith(head, JPEG_SOI)) return { needle: [0xff, 0xd9], verdict: 'jpeg-truncated' };
+  if (startsWith(head, PNG_SIGNATURE)) return { needle: PNG_IEND, verdict: 'png-truncated' };
   // Not a container we know how to end-check: HEIC, WebP, AVIF, GIF, BMP.
   return null;
+}
+
+/** Pure part: given the first bytes and the last bytes, is the end marker in the tail? */
+export function tailHasEndMarker(head: Uint8Array, tail: Uint8Array): boolean | null {
+  const marker = endMarkerOf(head);
+  if (!marker) return null;
+  return lastIndexOf(tail, marker.needle) >= 0;
 }
 
 /**
@@ -134,15 +142,50 @@ function walkPng(bytes: Uint8Array): TruncationVerdict {
   return 'png-truncated';
 }
 
-/** The whole check against a file: cheap tail scan first, full walk only when it comes up empty. */
+/**
+ * Keep scanning backwards in windows of this size when the last 64 KB held no end marker. A
+ * Motion Photo hides its EOI behind a multi-megabyte MP4, so that first miss is the common case
+ * on a Samsung or a Pixel, not the exception — and reading a 50 MB file whole to answer it would
+ * put the entire photo in memory on the phone.
+ */
+const BACK_SCAN_WINDOW = 1024 * 1024;
+/** Overlap between windows so a marker straddling the boundary is not missed. */
+const BACK_SCAN_OVERLAP = 4;
+/** Past this the file is either truncated or something we should not spend more time on. */
+const BACK_SCAN_LIMIT = 24 * 1024 * 1024;
+
+/**
+ * The whole check against a file.
+ *
+ * The last 64 KB answer for almost every photo. When they do not, the scan walks backwards a
+ * megabyte at a time rather than reading the file whole: a trailer sits between the end marker
+ * and the end of the file, so going backwards finds the marker after a window or two and stops.
+ * Only a file with no marker anywhere in the last {@link BACK_SCAN_LIMIT} is called truncated,
+ * and even then the walk over the whole file — the one answer that cannot be fooled by a byte
+ * pair inside a video — is done only for files small enough to hold in memory.
+ */
 export async function checkTruncation(file: Blob): Promise<TruncationVerdict> {
   try {
     const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
-    const tailStart = Math.max(0, file.size - TAIL_BYTES);
-    const tail = new Uint8Array(await file.slice(tailStart).arrayBuffer());
-    const quick = tailHasEndMarker(head, tail);
-    if (quick === null || quick === true) return 'complete';
-    return walkForEndMarker(new Uint8Array(await file.arrayBuffer()));
+    const marker = endMarkerOf(head);
+    if (!marker) return 'complete';
+
+    let end = file.size;
+    const floor = Math.max(0, file.size - BACK_SCAN_LIMIT);
+    let window = TAIL_BYTES;
+    while (end > floor) {
+      const start = Math.max(floor, end - window);
+      const bytes = new Uint8Array(await file.slice(start, Math.min(file.size, end + BACK_SCAN_OVERLAP)).arrayBuffer());
+      if (lastIndexOf(bytes, marker.needle) >= 0) return 'complete';
+      if (start === floor) break;
+      end = start;
+      window = BACK_SCAN_WINDOW;
+    }
+
+    // No end marker within reach. For a file we can hold, confirm with the structural walk, which
+    // distinguishes a cut scan from a merely unusual one; for anything larger, report the tail.
+    if (file.size <= BACK_SCAN_LIMIT) return walkForEndMarker(new Uint8Array(await file.arrayBuffer()));
+    return marker.verdict;
   } catch (error) {
     // Reading failed (a file that disappeared, an out-of-memory slice): say nothing rather than
     // accuse a file we could not read.
