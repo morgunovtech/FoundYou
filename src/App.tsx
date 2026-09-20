@@ -891,6 +891,9 @@ const App: React.FC = () => {
               return;
             }
             const areaFallback = Math.round(blob.size * ratio * ratio);
+            // Put the rough figure up at once. The four sample windows take a moment to encode,
+            // and until they answered the row kept showing the number from the previous quality.
+            setEstimatedSize(areaFallback);
             sampledExportSize(finalWidth, finalHeight, exportScale, mime, quality)
               .then((size) => {
                 if (!cancelled) setEstimatedSize(size ?? areaFallback);

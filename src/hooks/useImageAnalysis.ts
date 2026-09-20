@@ -10,7 +10,7 @@ import {
   type DetectionSummary
 } from '../types/detection';
 import type { BasicFileInfo } from '../types/metadata';
-import { isPlausibleFace, pickDistinctFaces, PERSON_CONTEXT_SCORE, type Rect } from '../utils/facePlausibility';
+import { selectPlausibleFaces, FACE_MODEL_MIN_CONFIDENCE, PERSON_CONTEXT_SCORE, type Rect } from '../utils/facePlausibility';
 import { rotateCanvas, unrotateBox, unrotatePoint, type Quarter } from '../utils/faceRotation';
 
 /* ── self-hosted MediaPipe assets (see scripts/prepare-assets.mjs) ── */
@@ -37,7 +37,8 @@ const DECODE_MAX_DIMENSION = DETECTION_MAX_DIMENSION;
 
 const OBJECT_SCORE_THRESHOLD = 0.4;
 const OBJECT_MAX_RESULTS = 20;
-const FACE_MIN_CONFIDENCE = 0.5;
+/** Kept next to the gate's own floor so the two cannot drift apart; see facePlausibility.ts. */
+const FACE_MIN_CONFIDENCE = FACE_MODEL_MIN_CONFIDENCE;
 /** Grow each BlazeFace box by this fraction of its size on every side so hair, ears and chin end up under the blur. */
 const FACE_PADDING_RATIO = 0.15;
 
@@ -483,31 +484,25 @@ function plausibleFaces(
   persons: Rect[],
   canvas: { width: number; height: number }
 ): Detection[] {
-  // The passes see the same faces from different sides, so one face can arrive several times.
   const boxed = detected.filter((det) => det.boundingBox);
-  const distinct = pickDistinctFaces(
-    boxed.map((det) => ({
-      box: {
-        x: det.boundingBox!.originX,
-        y: det.boundingBox!.originY,
-        width: det.boundingBox!.width,
-        height: det.boundingBox!.height
-      },
-      score: det.categories[0]?.score ?? 0
-    }))
-  ).map((index) => boxed[index]);
-  return distinct.filter((det) => {
-    const bb = det.boundingBox;
-    if (!bb) return false;
-    return isPlausibleFace(
-      {
-        box: { x: bb.originX, y: bb.originY, width: bb.width, height: bb.height },
-        score: det.categories[0]?.score ?? 0,
-        keypoints: (det.keypoints ?? []).map((kp) => ({ x: kp.x * canvas.width, y: kp.y * canvas.height }))
-      },
-      persons
-    );
-  });
+  /*
+   * `selectPlausibleFaces` gates first and merges second, and admits a face a neighbour vouches
+   * for. Doing it the other way round — merge, then gate — let a candidate about to be rejected
+   * suppress an overlapping one that would have passed, and the gate alone lost every face the
+   * object detector had no person box for. On a tight selfie of five that showed as two «ЛИЦО»
+   * and two «ЧЕЛОВЕК» boxes over five people, on different people at that.
+   */
+  const candidates = boxed.map((det) => ({
+    box: {
+      x: det.boundingBox!.originX,
+      y: det.boundingBox!.originY,
+      width: det.boundingBox!.width,
+      height: det.boundingBox!.height
+    },
+    score: det.categories[0]?.score ?? 0,
+    keypoints: (det.keypoints ?? []).map((kp) => ({ x: kp.x * canvas.width, y: kp.y * canvas.height }))
+  }));
+  return selectPlausibleFaces(candidates, persons).map((index) => boxed[index]);
 }
 
 /** Maps the downscaled analysis canvas back onto the original image. */

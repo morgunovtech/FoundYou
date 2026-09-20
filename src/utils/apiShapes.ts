@@ -44,8 +44,17 @@ export function isReverseGeocode(data: unknown): boolean {
 
 export function isHistoricalWeather(data: unknown): boolean {
   if (!isRecord(data)) return false;
+  /*
+   * Only the temperature must be a number. The endpoint fills each field from its own hourly
+   * series and writes `null` where the upstream has a gap, and every reader already copes —
+   * `skyKey` uses `precipitation ?? 0`, `describeWeather` returns null without a temperature and
+   * skips the rest field by field. Demanding all five made one missing hour of wind throw the
+   * whole answer away as `invalid-shape`, so the card said «не удалось получить» over a reading
+   * it had.
+   */
   return (
-    ['temperature', 'precipitation', 'cloudCover', 'windSpeed', 'pressure'].every((key) => isFiniteNumber(data[key])) &&
+    isFiniteNumber(data.temperature) &&
+    ['precipitation', 'cloudCover', 'windSpeed', 'pressure'].every((key) => isOptionalNumber(data[key])) &&
     isOptionalNumber(data.weatherCode) &&
     isOptionalString(data.timezone)
   );

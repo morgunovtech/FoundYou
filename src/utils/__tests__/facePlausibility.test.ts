@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { faceAnomalies, isPlausibleFace, overlapRatio, pickDistinctFaces, type FaceCandidate, type Point, type Rect } from '../facePlausibility';
+import {
+  containmentRatio,
+  faceAnomalies,
+  isPlausibleFace,
+  overlapRatio,
+  pickDistinctFaces,
+  selectPlausibleFaces,
+  type FaceCandidate,
+  type Point,
+  type Rect
+} from '../facePlausibility';
 
 // Keypoints measured with BlazeFace short-range on public/test/face.jpg (the ESA astronaut
 // portrait) at the 640×800 analysis size: the real face and the golden helmet visor.
@@ -187,3 +197,108 @@ function scaleTo(points: Point[], from: Rect, x: number, y: number, size: number
   const k = size / from.width;
   return points.map((p) => ({ x: x + (p.x - from.x) * k, y: y + (p.y - from.y) * k }));
 }
+
+describe('containmentRatio', () => {
+  it('reads a box inside a box as fully contained, where IoU reads almost nothing', () => {
+    /*
+     * The measurement behind the rule. On a tight portrait BlazeFace returned the whole face at
+     * 179 px and two fragments of it at 59 and 47 px. Against the big box their IoU is 0.11 and
+     * 0.07 — under any sane merge threshold — so all three survived and the page drew three
+     * «ЛИЦО» labels over one person, which is also how a photo reports more faces than people.
+     */
+    const whole: Rect = { x: 9, y: 0, width: 179, height: 179 };
+    const fragment: Rect = { x: 56, y: 11, width: 59, height: 59 };
+    expect(overlapRatio(whole, fragment)).toBeLessThan(0.15);
+    expect(containmentRatio(whole, fragment)).toBe(1);
+  });
+
+  it('two genuinely different faces contain nothing of each other', () => {
+    // The two nearest faces on the five-person group photo, at their measured boxes.
+    const a: Rect = { x: 58, y: 240, width: 134, height: 134 };
+    const b: Rect = { x: 383, y: 302, width: 111, height: 111 };
+    expect(containmentRatio(a, b)).toBe(0);
+  });
+
+  it('is symmetric and safe on empty boxes', () => {
+    const a: Rect = { x: 0, y: 0, width: 100, height: 100 };
+    const b: Rect = { x: 25, y: 25, width: 50, height: 50 };
+    expect(containmentRatio(a, b)).toBe(containmentRatio(b, a));
+    expect(containmentRatio(a, { x: 0, y: 0, width: 0, height: 0 })).toBe(0);
+  });
+});
+
+describe('pickDistinctFaces: nested duplicates', () => {
+  it('drops a fragment sitting inside an accepted face', () => {
+    const kept = pickDistinctFaces([
+      { box: { x: 9, y: 0, width: 179, height: 179 }, score: 0.83 },
+      { box: { x: 56, y: 11, width: 59, height: 59 }, score: 0.45 },
+      { box: { x: 126, y: 45, width: 47, height: 47 }, score: 0.33 }
+    ]);
+    expect(kept).toEqual([0]);
+  });
+
+  it('keeps faces that merely sit side by side', () => {
+    const kept = pickDistinctFaces([
+      { box: { x: 58, y: 240, width: 134, height: 134 }, score: 0.95 },
+      { box: { x: 383, y: 302, width: 111, height: 111 }, score: 0.76 },
+      { box: { x: 600, y: 340, width: 108, height: 108 }, score: 0.48 }
+    ]);
+    expect(kept).toEqual([0, 1, 2]);
+  });
+});
+
+describe('selectPlausibleFaces', () => {
+  /** A face-shaped candidate of the given size and score, centred at (cx, cy). */
+  function faceAt(cx: number, cy: number, size: number, score: number): FaceCandidate {
+    const box: Rect = { x: cx - size / 2, y: cy - size / 2, width: size, height: size };
+    const s = size / 114; // the astronaut keypoints scaled to this box
+    const kp = astronautKeypoints.map((p) => ({
+      x: cx + (p.x - (astronautBox.x + 57)) * s,
+      y: cy + (p.y - (astronautBox.y + 57)) * s
+    }));
+    return candidate(box, kp, score);
+  }
+
+  it('admits a mid-confidence face when a sure one stands beside it', () => {
+    /*
+     * The reported case: a tight selfie of five where EfficientDet named two people, so three
+     * real faces — clean keypoints, scores in the 0.5–0.8 band — had nothing to vouch for them.
+     * The page showed two «ЛИЦО» and two «ЧЕЛОВЕК» boxes over five people.
+     */
+    const faces = [faceAt(100, 100, 120, 0.95), faceAt(260, 120, 110, 0.62), faceAt(410, 110, 115, 0.55)];
+    expect(selectPlausibleFaces(faces, [])).toEqual([0, 1, 2]);
+  });
+
+  it('a lone mid-confidence face with no neighbour and no person box is still refused', () => {
+    // A helmet on an empty road has nothing to vouch for it, which is the point of the gate.
+    expect(selectPlausibleFaces([faceAt(100, 100, 120, 0.62)], [])).toEqual([]);
+  });
+
+  it('a neighbour of a wildly different size does not vouch', () => {
+    const faces = [faceAt(100, 100, 300, 0.95), faceAt(700, 600, 40, 0.55)];
+    expect(selectPlausibleFaces(faces, [])).toEqual([0]);
+  });
+
+  it('vouching does not cascade from one admitted face to the next', () => {
+    // 0 is sure; 1 is admitted by 0; 2 is far from 0 and must not ride in on 1.
+    const faces = [faceAt(100, 100, 100, 0.95), faceAt(300, 100, 100, 0.6), faceAt(900, 100, 100, 0.6)];
+    expect(selectPlausibleFaces(faces, [])).toEqual([0, 1]);
+  });
+
+  it('gates before merging, so a reject cannot suppress a face that would have passed', () => {
+    /*
+     * The ordering bug. The helmet scores higher than the real face beside it and overlaps it
+     * enough to win a merge; merging first removed the face, and only then did the gate throw
+     * the helmet away too — leaving the person neither outlined nor blurred.
+     */
+    const helmet = candidate({ x: 100, y: 100, width: 120, height: 120 }, helmetKeypoints.map((p) => ({ x: p.x - 59, y: p.y - 380 })), 0.75);
+    const real = faceAt(150, 150, 120, 0.9);
+    const kept = selectPlausibleFaces([helmet, real], []);
+    expect(kept).toEqual([1]);
+  });
+
+  it('keeps refusing what the old gate refused: a helmet with a person under it', () => {
+    const helmet = candidate(helmetBox, helmetKeypoints, 0.62);
+    expect(selectPlausibleFaces([helmet], [astronautPerson])).toEqual([]);
+  });
+});

@@ -618,6 +618,12 @@ async function runOCR(fileInfo: BasicFileInfo, session: OCRSession, set: OCRStat
      * where the time would be noticed, never reaches this branch.
      */
     if (result.regions.length === 0 && pre.canvas) {
+      /*
+       * Wrapped on its own: this pass is an extra chance, never a risk to the answer already in
+       * hand. A throw from the rotation, the re-encode or the second recognition would otherwise
+       * escape to the outer handler and replace a truthful «текст не обнаружен» with an error.
+       */
+      try {
       const measuring = performance.now();
       const skew = detectSkew(pre.canvas);
       if (session.cancelled) return;
@@ -654,6 +660,9 @@ async function runOCR(fileInfo: BasicFileInfo, session: OCRSession, set: OCRStat
             }
           }
         }
+      }
+      } catch (err) {
+        console.warn('ocr-deskew-pass', err);
       }
     }
 
