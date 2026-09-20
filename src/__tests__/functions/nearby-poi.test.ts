@@ -9,6 +9,7 @@ import {
   SURVEILLANCE_ELEMENTS,
   TASHKENT,
   decodeQuery,
+  bearingFromCell,
   distanceFromCell,
   overpassPayload,
   type FakeElement
@@ -74,14 +75,21 @@ describe('nearby-poi: success', () => {
     const data = body.data!;
     expect(data).toHaveLength(5);
     for (const item of data) {
-      expect(Object.keys(item).sort()).toEqual(['category', 'distance', 'name']);
+      expect(Object.keys(item).sort()).toEqual(['bearing', 'category', 'distance', 'name']);
       expect(Number.isInteger(item.distance)).toBe(true);
     }
     const distances = data.map((item) => item.distance);
     expect(distances).toEqual([...distances].sort((a, b) => a - b));
 
     // Nearest is the cafe; Zara (farthest) is cut; the relation without a position never appears.
-    expect(data[0]).toEqual({ name: 'Cafe Uno', category: 'cafe', distance: distanceFromCell(POI_ELEMENTS[0]) });
+    expect(data[0]).toEqual({
+      name: 'Cafe Uno',
+      category: 'cafe',
+      distance: distanceFromCell(POI_ELEMENTS[0]),
+      // The direction from the shot to the object, so the page can say what was in the frame.
+      // A bearing and a distance say strictly less than the object's coordinates would.
+      bearing: bearingFromCell(POI_ELEMENTS[0])
+    });
     expect(data.map((item) => item.name)).not.toContain('Zara');
     expect(data.map((item) => item.name)).not.toContain('Underground parking');
     // Surveillance-only elements never leak into the POI list.
@@ -89,16 +97,23 @@ describe('nearby-poi: success', () => {
     expect(data.map((item) => item.category)).not.toContain('public');
 
     // Category comes from amenity/shop/tourism/leisure; the nameless museum has name ''.
-    expect(data).toContainEqual({ name: '', category: 'museum', distance: distanceFromCell(POI_ELEMENTS[2]) });
+    expect(data).toContainEqual({
+      name: '',
+      category: 'museum',
+      distance: distanceFromCell(POI_ELEMENTS[2]),
+      bearing: bearingFromCell(POI_ELEMENTS[2])
+    });
     expect(data).toContainEqual({
       name: 'Korzinka',
       category: 'supermarket',
-      distance: distanceFromCell(POI_ELEMENTS[1])
+      distance: distanceFromCell(POI_ELEMENTS[1]),
+      bearing: bearingFromCell(POI_ELEMENTS[1])
     });
     expect(data).toContainEqual({
       name: 'Central Park',
       category: 'park',
-      distance: distanceFromCell(POI_ELEMENTS[5])
+      distance: distanceFromCell(POI_ELEMENTS[5]),
+      bearing: bearingFromCell(POI_ELEMENTS[5])
     });
 
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -122,7 +137,9 @@ describe('nearby-poi: success', () => {
     expect(query).not.toContain('41.311158');
     expect(query).toContain(')->.poi;');
     expect(query).toContain(')->.cctv;');
-    expect(query.replace(/\s+/g, ' ')).toContain('.poi out center; .poi out count; .cctv out center;');
+    expect(query).toContain(')->.ctx;');
+    // Three sets, two separators: `place-context` is served from the same cached answer.
+    expect(query.replace(/\s+/g, ' ')).toContain('.poi out center; .poi out count; .cctv out center; .cctv out count; .ctx out center;');
   });
 
   it('uses brand when name is missing and falls back to category "poi"', async () => {
@@ -138,9 +155,9 @@ describe('nearby-poi: success', () => {
     );
     const { body } = await callJson<ApiResponse<PoiResult[]>>(onRequest, urlOf(PATH, TASHKENT));
     expect(body.data).toEqual([
-      { name: 'Evos', category: 'fast_food', distance: expect.any(Number) },
-      { name: 'Untagged', category: 'poi', distance: expect.any(Number) },
-      { name: '', category: 'poi', distance: expect.any(Number) }
+      { name: 'Evos', category: 'fast_food', distance: expect.any(Number), bearing: expect.any(Number) },
+      { name: 'Untagged', category: 'poi', distance: expect.any(Number), bearing: expect.any(Number) },
+      { name: '', category: 'poi', distance: expect.any(Number), bearing: expect.any(Number) }
     ]);
   });
 

@@ -97,5 +97,11 @@ export interface PoiResult {
   name: string;
   category: string;
   distance: number;
+  /**
+   * Direction from the shot to the object, degrees clockwise from north. The endpoint sends a
+   * bearing rather than the object's coordinates: it is what «камера смотрела на …» needs and
+   * it says strictly less.
+   */
+  bearing?: number;
 }
 

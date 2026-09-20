@@ -3,7 +3,8 @@ import type { GeoContext } from '../../hooks/useGeoContext';
 import type { StructuredMetadata } from '../../types/metadata';
 import type { Stance } from '../../utils/stance';
 import { useT } from '../../i18n';
-import { formatCoords } from '../../utils/insightsCompact';
+import { formatCoords, localizeCategoryKey } from '../../utils/insightsCompact';
+import { placesInFrame } from '../../utils/inFrame';
 import { ShotDiagram } from '../ShotDiagram';
 import { FactRow } from './FactRow';
 import { RetryButton } from './RetryButton';
@@ -24,6 +25,19 @@ interface StanceFactProps {
  */
 export const StanceFact: React.FC<StanceFactProps> = ({ stance, geo, metadata, remote, accuracyLabel }) => {
   const t = useT();
+  /*
+   * What the camera was pointed at, as opposed to what happened to be nearby: the heading from
+   * the file, the lens angle from `stance`, and the bearings the POI endpoint computed. A café
+   * fifty metres behind the photographer is in «объекты рядом» and was never in the picture.
+   * Empty without a heading, which is most Android photos — and that is the honest answer.
+   *
+   * Above the early return on purpose: a hook after one runs in a different order on the render
+   * where `geo.coords` is missing, which is what the lint rule is there to catch.
+   */
+  const framed = React.useMemo(
+    () => (remote ? placesInFrame(geo.poi.items, stance.heading?.degrees ?? null, stance.fovDegrees) : []),
+    [remote, geo.poi.items, stance.heading, stance.fovDegrees]
+  );
   if (!geo.coords) return null;
   const held =
     stance.orientation === 'landscape'
@@ -64,6 +78,12 @@ export const StanceFact: React.FC<StanceFactProps> = ({ stance, geo, metadata, r
     if (geo.elevation.status.error) return t('stanceTerrainUnavailable');
     return t('stanceTerrainPending');
   })();
+  /** Metres below a kilometre, kilometres above it — the same keys the POI list uses. */
+  const formatInFrameDistance = (metres: number) =>
+    metres >= 1000
+      ? t('insightPoiDistanceKm', { distance: (metres / 1000).toFixed(1) })
+      : t('insightPoiDistance', { distance: Math.round(metres) });
+
   return (
     <FactRow title={t('stanceTitle')} severity="low" value={null} sub={null}>
       <div className="fy-fact-details fy-shot">
@@ -84,6 +104,19 @@ export const StanceFact: React.FC<StanceFactProps> = ({ stance, geo, metadata, r
               ? t('stanceHeading', { point: t(COMPASS_KEYS[stance.heading.point]), degrees: stance.heading.degrees })
               : t('stanceHeadingUnknown')}
           </dd>
+          {framed.length > 0 ? (
+            <>
+              <dt>{t('stanceInFrame')}</dt>
+              <dd>
+                <span>
+                  {framed
+                    .map((item) => `${item.name || localizeCategoryKey(item.category, t)} — ${formatInFrameDistance(item.distance)}`)
+                    .join('; ')}
+                </span>
+                <span className="fy-muted">{t('stanceInFrameHint')}</span>
+              </dd>
+            </>
+          ) : null}
           <dt>{t('stanceHeld')}</dt>
           <dd>{`${held}, ${camera}, ${t('stanceFov', { fov: stance.fovDegrees })}`}</dd>
           <dt>{t('stanceSun')}</dt>

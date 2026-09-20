@@ -278,6 +278,8 @@ const messages = {
     settingExplainBody:
       'Это единственное, что снимок рассказывает даже без метаданных: геометку можно стереть, а кровать в кадре — нет. По предметам обычно понятно, дома человек, на работе или на улице, и этого достаточно, чтобы отделить рабочие снимки от домашних. Модель знает 80 типов предметов и не знает ни одной комнаты, поэтому это вывод из увиденного, а не измерение — и когда предметы противоречат друг другу, строка не показывается вовсе.',
     historyMessengerSize: 'Длинная сторона ровно {size} px — столько оставляет {platforms}. Совпадение размера, а не доказательство: до этого же числа можно уменьшить фото и руками, а сервисы меняют его от версии к версии.',
+    stanceInFrame: 'Что попало в кадр',
+    stanceInFrameHint: 'Объекты OpenStreetMap внутри угла обзора по направлению камеры. Это расчёт по направлению и углу, а не распознавание: объект мог быть закрыт зданием, деревом или спиной человека.',
     mapGateTitle: 'Карта загружается со стороннего сервера',
     mapGateBody:
       'Всё на этой странице посчитано на вашем устройстве, и наружу ушли только округлённые координаты — на наш сервер. Карта устроена иначе: её квадратики браузер скачивает напрямую у OpenStreetMap, мимо нас. Поэтому она за отдельной кнопкой, а не грузится сама.',
@@ -995,6 +997,8 @@ const messages = {
     settingExplainBody:
       'This is the one thing a photograph says even with no metadata at all: a geotag can be erased, a bed in the frame cannot. The objects usually make it clear whether someone is at home, at work or outside, which is enough to sort work pictures from private ones. The model knows 80 kinds of object and no rooms at all, so this is a reading of what it saw rather than a measurement — and when the objects disagree, the line is not shown.',
     historyMessengerSize: 'The longest side is exactly {size} px — the size {platforms} leaves behind. A match of size, not proof: a picture can be resized to that by hand, and the services change the number between versions.',
+    stanceInFrame: 'What was in the frame',
+    stanceInFrameHint: 'OpenStreetMap objects inside the lens angle along the camera direction. It is a calculation from the heading and the angle, not recognition: the object may have been hidden by a building, a tree or someone\u2019s back.',
     mapGateTitle: 'The map loads from a third-party server',
     mapGateBody:
       'Everything on this page was computed on your device, and the only thing that left it were rounded coordinates, sent to our server. The map works differently: the browser downloads its tiles straight from OpenStreetMap, bypassing us. That is why it sits behind a button instead of loading on its own.',
@@ -1713,6 +1717,8 @@ const messages = {
     settingExplainBody:
       'Bu surat metadatasiz ham aytadigan yagona narsa: geotegni o‘chirish mumkin, kadrdagi karavotni esa yo‘q. Buyumlardan odatda odam uydami, ishdami yoki ko‘chadami ekani ko‘rinadi, bu ish suratlarini shaxsiylaridan ajratishga yetarli. Model 80 turdagi buyumni biladi va birorta xonani bilmaydi, shuning uchun bu o‘lchov emas, ko‘rilgandan chiqarilgan xulosa — buyumlar bir-biriga zid bo‘lsa, satr umuman ko‘rsatilmaydi.',
     historyMessengerSize: 'Uzun tomoni aynan {size} px — {platforms} shu o‘lchamni qoldiradi. Bu o‘lcham mosligi, dalil emas: suratni shu songacha qo‘lda ham kichraytirish mumkin, xizmatlar esa bu sonni versiyadan versiyaga o‘zgartiradi.',
+    stanceInFrame: 'Kadrga nima tushgan',
+    stanceInFrameHint: 'Kamera yo‘nalishi bo‘yicha ko‘rish burchagi ichidagi OpenStreetMap obyektlari. Bu yo‘nalish va burchak bo‘yicha hisob, tanib olish emas: obyekt bino, daraxt yoki odamning orqasi bilan to‘silgan bo‘lishi mumkin.',
     mapGateTitle: 'Xarita uchinchi tomon serveridan yuklanadi',
     mapGateBody:
       'Bu sahifadagi hamma narsa sizning qurilmangizda hisoblandi, tashqariga faqat yaxlitlangan koordinatalar — bizning serverimizga — chiqdi. Xarita boshqacha: uning kataklarini brauzer to‘g‘ridan-to‘g‘ri OpenStreetMap’dan, bizni chetlab o‘tib yuklaydi. Shuning uchun u o‘zi yuklanmaydi, alohida tugma ortida turadi.',

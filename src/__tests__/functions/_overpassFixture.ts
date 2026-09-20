@@ -3,7 +3,7 @@
  * `.poi out center; .poi out count; .cctv out center; .cctv out count; .ctx out center;` —
  * each `{type:"count"}` element is a separator between two named sets.
  */
-import { haversine } from '../../../functions/api/_geo';
+import { bearing, haversine } from '../../../functions/api/_geo';
 
 export const TASHKENT = { lat: '41.311158', lon: '69.279737' };
 /** What the handlers round the caller's point to (4 decimals). */
@@ -79,4 +79,11 @@ export function distanceFromCell(element: FakeElement): number {
 export function decodeQuery(init: RequestInit | undefined): string {
   const body = String(init?.body ?? '');
   return decodeURIComponent(body.replace(/^data=/, ''));
+}
+
+/** Bearing in whole degrees from the rounded cell to the element, as the handler computes it. */
+export function bearingFromCell(element: FakeElement): number {
+  const lat = element.lat ?? element.center?.lat ?? NaN;
+  const lon = element.lon ?? element.center?.lon ?? NaN;
+  return Math.round(bearing(CELL.lat, CELL.lon, lat, lon));
 }
