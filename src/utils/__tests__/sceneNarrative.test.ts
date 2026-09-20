@@ -21,6 +21,31 @@ describe('generateSceneNarrative', () => {
     expect(result).toBe('No objects detected.');
   });
 
+  it('a lone object deep in the room is not «на переднем плане»', () => {
+    /*
+     * Reported from a phone: a photo of a hand holding a box, an armchair across the room behind
+     * it. The only thing EfficientDet names is the chair — and the sentence read «На переднем
+     * плане в центре — стул», with the actual foreground, the box, not in COCO's vocabulary at
+     * all and so never mentioned.
+     *
+     * The box measured off that screenshot, as a share of the frame: x 0.21–0.58, y 0.16–0.44,
+     * a tenth of the picture. Both depth readings said foreground and neither could say
+     * otherwise — the absolute bar because 10 % clears the 8 % «large» line, and the
+     * against-its-kind bar because a lone chair is compared with itself and always scores 1.
+     */
+    const chair = box('chair', 0.21 * IMG_W, 0.16 * IMG_H, 0.37 * IMG_W, 0.28 * IMG_H);
+    const result = generateSceneNarrative({ detections: [chair], imageWidth: IMG_W, imageHeight: IMG_H, lang: 'ru' });
+    expect(result).not.toMatch(/на переднем плане/i);
+    expect(result).toContain('стул');
+  });
+
+  it('an object that fills the lower frame still reads as foreground', () => {
+    // The control for the rule above: something held up close does reach the bottom of the frame.
+    const held = box('book', 0.1 * IMG_W, 0.45 * IMG_H, 0.8 * IMG_W, 0.5 * IMG_H);
+    const result = generateSceneNarrative({ detections: [held], imageWidth: IMG_W, imageHeight: IMG_H, lang: 'ru' });
+    expect(result).toMatch(/на переднем плане/i);
+  });
+
   it('puts a back row behind the front row instead of calling everyone foreground', () => {
     // The five person boxes MediaPipe returned for a group photo of five, at their measured
     // shares of the frame: 28 %, 25 %, 20 % for the front row and 15 % each for the two standing
