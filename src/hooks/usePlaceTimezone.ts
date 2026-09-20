@@ -23,32 +23,36 @@ function usable(zone: string | null | undefined): zone is string {
 }
 
 export function usePlaceTimezone(lat: number | null | undefined, lon: number | null | undefined): string | null {
-  const [zone, setZone] = useState<string | null>(null);
+  const point = lat != null && lon != null && Number.isFinite(lat) && Number.isFinite(lon) ? `${lat},${lon}` : null;
+  /*
+   * The answer is stored with the point it belongs to, rather than reset when the point changes.
+   * That keeps the state out of the effect's synchronous path — and it means the zone of the
+   * previous photograph is never shown for a moment against the next one's coordinates, which a
+   * plain «clear, then fill» would do on every new file.
+   */
+  const [entry, setEntry] = useState<{ point: string; zone: string | null } | null>(null);
 
   useEffect(() => {
-    if (lat == null || lon == null || !Number.isFinite(lat) || !Number.isFinite(lon)) {
-      setZone(null);
-      return undefined;
-    }
+    if (!point) return undefined;
     let cancelled = false;
     void (async () => {
       try {
         const module = await import('@photostructure/tz-lookup');
         if (cancelled) return;
         const lookup = (module.default ?? module) as (lat: number, lon: number) => string | null;
-        const found = lookup(lat, lon);
-        setZone(usable(found) ? found : null);
+        const found = lookup(lat as number, lon as number);
+        setEntry({ point, zone: usable(found) ? found : null });
       } catch (error) {
         // A missing chunk must not cost the card its other rows: the weather answer is still
         // there as a fallback, and a zone of `null` is what the profile already copes with.
         console.warn('tz-lookup', error);
-        if (!cancelled) setZone(null);
+        if (!cancelled) setEntry({ point, zone: null });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [lat, lon]);
+  }, [point, lat, lon]);
 
-  return zone;
+  return entry && entry.point === point ? entry.zone : null;
 }

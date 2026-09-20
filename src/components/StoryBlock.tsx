@@ -145,6 +145,8 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       platform={proData?.filename.platform}
       remote={remote}
       accuracyLabel={accuracyLabel}
+      dayKind={timeProfile?.dayKind}
+      hour={timeProfile?.parts.hour}
     />
   );
 

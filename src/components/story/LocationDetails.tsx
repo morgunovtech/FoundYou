@@ -14,6 +14,16 @@ import { googleMapsLink, streetViewLink } from '../../utils/mapLinks';
 import { MapBlock } from '../MapBlock';
 import { RetryButton } from './RetryButton';
 import { SCENE_MATCH_KEYS } from './storyKeys';
+import { Claim } from '../Claim';
+import { Explainer } from '../Explainer';
+import { guessHome, type HomeVerdict } from '../../utils/homeGuess';
+
+const HOME_KEYS: Record<HomeVerdict, MessageKey> = {
+  likely: 'home_likely',
+  possible: 'home_possible',
+  unlikely: 'home_unlikely',
+  undecided: 'home_undecided'
+};
 
 /**
  * Above this many people a point says little about anyone in particular; below it, the
@@ -53,6 +63,9 @@ interface LocationDetailsProps {
   /** Lookups allowed and coordinates present: the remote rows and the map are shown. */
   remote: boolean;
   accuracyLabel: string | null;
+  /** Weekday / weekend / holiday and the capture hour, for the «is this where you live» guess. */
+  dayKind?: 'weekday' | 'weekend' | 'holiday';
+  hour?: number;
 }
 
 /**
@@ -60,7 +73,7 @@ interface LocationDetailsProps {
  * weather and the holiday at that hour, the map and its links, the places and cameras nearby,
  * the device-specific tip on switching geotags off, and the disclosure of what was sent.
  */
-export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata, ocrResult, platform, remote, accuracyLabel }) => {
+export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata, ocrResult, platform, remote, accuracyLabel, dayKind, hour }) => {
   const t = useT();
   const { lang } = useI18n();
   const [copied, setCopied] = useState(false);
@@ -87,6 +100,28 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
   // A road, or anything far enough away, is the nearest object on the map — not what is here.
   const placeIsHere = useMemo(() => isAtThePoint(geo.reverse.data), [geo.reverse.data]);
   const placeDistance = geo.reverse.data?.distanceMeters ?? null;
+  /*
+   * The one question a stranger opens someone else's coordinates for. Every part of the answer
+   * is already on this card; none of them says it alone. It is a guess and it is labelled one,
+   * with every signal listed for and against — see `utils/homeGuess.ts`.
+   */
+  const home = useMemo(
+    () =>
+      remote
+        ? guessHome({
+            landuse: placeCtx?.landuse,
+            placeCategory: geo.reverse.data?.category,
+            placeType: geo.reverse.data?.type,
+            atThePoint: placeIsHere,
+            landmarkCount: geo.landmarks.items.length,
+            dayKind,
+            hour,
+            transport: placeCtx?.transport,
+            sensitive: placeCtx?.sensitive
+          })
+        : null,
+    [remote, placeCtx, geo.reverse.data, placeIsHere, geo.landmarks.items.length, dayKind, hour]
+  );
   // Numbers a receiver can write but nobody could have stood in: «0, 0», a pole, Everest+.
   const geoDoubts = useMemo(
     () => checkGeoPlausibility(geo.coords, metadata?.gps?.altitude ?? null),
@@ -340,6 +375,29 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
             </>
           ) : null}
         </dl>
+        {home ? (
+          <div className="fy-home">
+            <h4 className="v4-h3">
+              {t('homeTitle')}{' '}
+              <Claim kind="hypothesis" />
+            </h4>
+            <p className="fy-setting-value">{t(HOME_KEYS[home.verdict])}</p>
+            {home.for.length > 0 ? (
+              <p className="fy-hint">
+                {t('homeFor')}: {home.for.map((signal) => t(`homeSignal_${signal.id}` as MessageKey)).join('; ')}
+              </p>
+            ) : null}
+            {home.against.length > 0 ? (
+              <p className="fy-hint">
+                {t('homeAgainst')}: {home.against.map((signal) => t(`homeSignal_${signal.id}` as MessageKey)).join('; ')}
+              </p>
+            ) : null}
+            <Explainer title={t('homeExplainTitle')}>
+              <p>{t('homeExplainBody')}</p>
+              <p>{t('homeExplainWhy')}</p>
+            </Explainer>
+          </div>
+        ) : null}
         <div>
           {remote ? <MapBlock lat={coords.lat} lon={coords.lon} accuracy={geo.accuracyMeters ?? undefined} /> : null}
           <div className="fy-map-actions">

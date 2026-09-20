@@ -835,6 +835,29 @@
   overflow: hidden;
 }
 
+.fy-claim {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--v4-line);
+  color: var(--v4-muted);
+  font-family: var(--v4-mono);
+  font-size: var(--v4-label-xs-size);
+  letter-spacing: var(--v4-label-xs-tracking);
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.fy-claim[data-claim='hypothesis'] {
+  border-color: var(--v4-orange);
+  color: var(--v4-orange-text);
+}
+
+.fy-home {
+  display: grid;
+  gap: 6px;
+}
+
 .fy-setting {
   display: grid;
   gap: 8px;

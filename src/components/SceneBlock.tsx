@@ -5,6 +5,7 @@ import { useT } from '../i18n';
 import { SectionHead } from './SectionHead';
 import { PreviewViewer } from './PreviewViewer';
 import { Explainer } from './Explainer';
+import { Claim } from './Claim';
 import { readSetting, type Setting } from '../utils/settingType';
 import { readFaces, type Recognisability } from '../utils/faceRecognisability';
 import { localizeLabel } from '../utils/sceneNarrative';
@@ -81,6 +82,9 @@ export const SceneBlock: React.FC<SceneBlockProps> = ({
           <div className="fy-setting">
             <p className="fy-setting-value">
               {t(RECOGNISABILITY_KEYS[faces[0].level], { pixels: Math.round(faces[0].iedPx) })}
+              {/* The pixel count is measured; the band it falls in is a reading of a standard. */}
+              {' '}
+              <Claim kind="fact" />
             </p>
             {faces[0].distanceMeters != null ? (
               <p className="fy-hint">{t('faceDistance', { distance: faces[0].distanceMeters.toFixed(1) })}</p>
@@ -99,6 +103,9 @@ export const SceneBlock: React.FC<SceneBlockProps> = ({
                 {' '}
                 {t(setting.indoors ? 'settingIndoors' : 'settingOutdoors')}
               </span>
+              {/* The objects are detected; «похоже на жильё» is what they add up to. */}
+              {' '}
+              <Claim kind="inference" />
             </p>
             <p className="fy-hint">
               {t('settingEvidence', { objects: setting.evidence.map((label) => localizeLabel(label, lang)).join(', ') })}
