@@ -12,6 +12,12 @@ export interface BoundingBox {
   score: number;
   /** `'face'`, `'person'` or another COCO class name (`'car'`, `'cell phone'`, …). */
   label: string;
+  /**
+   * Faces only: distance between the two eye keypoints, in original-image pixels. It is the
+   * standard measure of how much of a face a picture actually holds, and with the focal length
+   * it also gives the distance the photograph was taken from (`utils/faceRecognisability.ts`).
+   */
+  iedPx?: number;
 }
 
 export interface DetectionSummary {

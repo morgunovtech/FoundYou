@@ -18,6 +18,7 @@ import { scoreScreenshot } from '../../utils/screenshot';
 import { wallClockOf } from '../../utils/fileHistory';
 import { COMPRESSION_KEYS, LIGHT_KEYS, SCREENSHOT_LEVEL_KEYS, SCREENSHOT_REASON_KEYS, TIMESTAMP_ISSUE_KEYS } from './storyKeys';
 import { useI18n, useT } from '../../i18n';
+import { matchMessengerSize } from '../../utils/messengerFootprint';
 import { FactRow } from './FactRow';
 import { DeviceRows } from './DeviceRows';
 
@@ -199,6 +200,15 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
               : t('driftBehind', { delta: formatSecondsDuration(-driftSeconds, t) })
         })
       : null;
+  /*
+   * The size a service left behind. `strippedDetector` already says «looks like social media
+   * re-compression» for anything under 1600 px, which fires on every downscaled photograph and
+   * names nobody. Sitting exactly on a known cap is narrower, and it is shown as a hint with
+   * every service that shares the number — never one, because 1280 is Telegram's and Viber's
+   * alike and the caps change between app versions.
+   */
+  const messengerSize = matchMessengerSize(fileInfo.width, fileInfo.height);
+
   const signText = (event: FileEvent): string => {
     switch (event.kind) {
       case 'resized':
@@ -242,6 +252,11 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
                 <span className="fy-muted">{signText(event)}</span>
               </span>
             ))}
+            {messengerSize ? (
+              <span className="fy-muted">
+                {t('historyMessengerSize', { size: messengerSize.cap, platforms: messengerSize.platforms.join(', ') })}
+              </span>
+            ) : null}
           </dd>
         </dl>
         <h4 className="v4-h3">{t('authenticityTitle')}</h4>

@@ -35,6 +35,21 @@ export function haversine(lat1: number, lon1: number, lat2: number, lon2: number
   return R * c;
 }
 
+/**
+ * Initial great-circle bearing from one point to another, in degrees clockwise from north.
+ * Computed here rather than on the page so the object's own coordinates never have to be sent:
+ * a direction and a distance are what the card needs, and they say less than a position does.
+ */
+export function bearing(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const phi1 = toRad(lat1);
+  const phi2 = toRad(lat2);
+  const dLon = toRad(lon2 - lon1);
+  const y = Math.sin(dLon) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLon);
+  return (((Math.atan2(y, x) * 180) / Math.PI) + 360) % 360;
+}
+
 /* ── input validation ─────────────────────────────────────── */
 
 const COORD_RE = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;

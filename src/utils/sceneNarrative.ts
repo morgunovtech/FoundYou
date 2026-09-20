@@ -1,5 +1,6 @@
 import { FACE_LABEL, PERSON_LABEL, type BoundingBox } from '../types/detection';
 import { capitalize } from './weather';
+import { formatMessage, type MessageKey } from '../i18n';
 
 type Lang = 'ru' | 'en' | 'uz';
 
@@ -74,13 +75,13 @@ export function localizeLabel(label: string, lang: Lang): string {
 
 /* ── zone labels ─────────────────────────────────────────── */
 
-const ZONE_RU: Record<Zone, string> = { left: 'слева', center: 'в центре', right: 'справа' };
-const ZONE_EN: Record<Zone, string> = { left: 'on the left', center: 'in the center', right: 'on the right' };
-const ZONE_UZ: Record<Zone, string> = { left: 'chapda', center: 'markazda', right: "o'ngda" };
-
-const DEPTH_RU: Record<Depth, string> = { foreground: 'на переднем плане', midground: '', background: 'на заднем плане' };
-const DEPTH_EN: Record<Depth, string> = { foreground: 'in the foreground', midground: '', background: 'in the background' };
-const DEPTH_UZ: Record<Depth, string> = { foreground: 'old planda', midground: '', background: 'orqa planda' };
+/**
+ * The three per-language tables these used to be are now dictionary keys, so a missing one is
+ * caught by `MessageKey`. What stays as code below is what a dictionary cannot hold: the 80-entry
+ * COCO label table, the Russian plural rule, and the sentence order itself — Russian says «место —
+ * объект» and English «an object place», which is grammar rather than a string.
+ */
+const t = (lang: Lang, key: MessageKey, params?: Record<string, string | number>) => formatMessage(lang, key, params);
 
 /**
  * Objects the detector saw with a score between `UNCERTAIN_SCORE` and `CONFIDENT_SCORE` are
@@ -95,20 +96,12 @@ export function isSceneObject(d: BoundingBox): boolean {
   return d.score >= (d.label === PERSON_LABEL ? CONFIDENT_SCORE : UNCERTAIN_SCORE);
 }
 
-const MAYBE_RU = 'возможно, ';
-const MAYBE_EN = 'possibly ';
-const MAYBE_UZ = 'ehtimol, ';
-
 function zoneLabel(zone: Zone, lang: Lang): string {
-  if (lang === 'ru') return ZONE_RU[zone];
-  if (lang === 'uz') return ZONE_UZ[zone];
-  return ZONE_EN[zone];
+  return t(lang, `sceneZone_${zone}` as MessageKey);
 }
 
 function depthLabel(depth: Depth, lang: Lang): string {
-  if (lang === 'ru') return DEPTH_RU[depth];
-  if (lang === 'uz') return DEPTH_UZ[depth];
-  return DEPTH_EN[depth];
+  return t(lang, `sceneDepth_${depth}` as MessageKey);
 }
 
 /* ── size description ────────────────────────────────────── */
@@ -273,17 +266,11 @@ function buildPhrase(entry: GroupedEntry, lang: Lang): string {
   const zone = zoneLabel(entry.zone, lang);
   const place = [depth, zone].filter(Boolean).join(' ');
 
-  if (lang === 'ru') {
-    const object = entry.uncertain ? `${MAYBE_RU}${counted}` : counted;
-    return `${place} — ${object}`;
-  }
-  if (lang === 'uz') {
-    const object = entry.uncertain ? `${MAYBE_UZ}${counted}` : counted;
-    return `${place} — ${object}`;
-  }
+  const maybe = entry.uncertain ? t(lang, 'sceneMaybe') : '';
+  // The word order is the part a dictionary cannot carry: Russian and Uzbek put the place first.
+  if (lang === 'ru' || lang === 'uz') return `${place} — ${maybe}${counted}`;
   const article = entry.count === 1 ? (EN_VOWEL.test(counted) ? 'an ' : 'a ') : '';
-  const object = `${entry.uncertain ? MAYBE_EN : ''}${article}${counted}`;
-  return `${object} ${place}`;
+  return `${maybe}${article}${counted} ${place}`;
 }
 
 /* ── main export ─────────────────────────────────────────── */
@@ -294,11 +281,7 @@ export function generateSceneNarrative(input: NarrativeInput): string {
   // Face boxes duplicate the person they belong to and are not scene objects.
   const confident = detections.filter(isSceneObject);
   if (confident.length === 0) {
-    return lang === 'ru'
-      ? 'Объекты не обнаружены.'
-      : lang === 'uz'
-      ? 'Obyektlar aniqlanmadi.'
-      : 'No objects detected.';
+    return t(lang, 'sceneNoObjects');
   }
 
   // The biggest box of every kind is the yardstick for the rest of that kind.
@@ -336,9 +319,7 @@ export function generateSceneNarrative(input: NarrativeInput): string {
   const total = confident.length;
   let suffix = '';
   if (total > 5) {
-    if (lang === 'ru') suffix = ` Всего обнаружено ${total} объектов.`;
-    else if (lang === 'uz') suffix = ` Jami ${total} ta obyekt aniqlandi.`;
-    else suffix = ` ${total} objects detected in total.`;
+    suffix = t(lang, 'sceneTotal', { total });
   }
 
   return `${joined}.${suffix}`;

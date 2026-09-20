@@ -100,7 +100,7 @@ describe('reverse-geocode: success', () => {
 
     // Upstream sees the 4-decimal cell, never the caller's exact point.
     const { url, init } = fetchCall(fetch);
-    expect(url).toBe('https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=41.3112&lon=69.2797');
+    expect(url).toBe('https://nominatim.openstreetmap.org/reverse?format=jsonv2&extratags=1&namedetails=1&lat=41.3112&lon=69.2797');
     expect(new Headers(init?.headers).get('User-Agent')).toContain('FoundYou');
   });
 
@@ -266,5 +266,69 @@ describe('reverse-geocode: distance to the matched object', () => {
     const { body } = await callJson<ApiResponse<ReverseGeocodeResult>>(onRequest, urlOf(PATH, TASHKENT));
     expect(body.ok).toBe(true);
     expect(body.data!.distanceMeters).toBe(0);
+  });
+});
+
+describe('reverse-geocode: the finer answer', () => {
+  /*
+   * `extratags` and `namedetails` cost nothing extra in privacy — the same rounded cell goes to
+   * the same upstream — and they answer three questions the plain reply cannot: which mahalla
+   * the point is in, how many storeys the building has, and what the place is called locally.
+   */
+  const nominatim = (extra: Record<string, unknown>) => ({
+    display_name: 'Амир Темур 12, Ташкент, Узбекистан',
+    lat: '41.3112',
+    lon: '69.2797',
+    place_rank: 30,
+    address: { country: 'Узбекистан', country_code: 'uz', city: 'Ташкент', road: 'Амир Темур', house_number: '12' },
+    ...extra
+  });
+
+  it('reads the mahalla and prefers it over the coarser levels', async () => {
+    mockFetch(async () => jsonResponse(nominatim({ address: { ...nominatim({}).address, neighbourhood: 'Мирзо Улугбек МФЙ', suburb: 'Мирзо-Улугбекский район' } })));
+    const { body } = await callJson<ApiResponse<ReverseGeocodeResult>>(onRequest, urlOf(PATH, { lat: '41.3112', lon: '69.2797' }));
+    expect(body.data!.neighbourhood).toBe('Мирзо Улугбек МФЙ');
+    // The district is still reported; the mahalla is an extra row, not a replacement.
+    expect(body.data!.district).toBe('Мирзо-Улугбекский район');
+  });
+
+  it('falls back through quarter, residential and city_block', async () => {
+    // A different cell per case: the answer is cached by rounded coordinates, so reusing one
+    // point would test the cache rather than the mapping.
+    const cells = ['41.3112', '41.3113', '41.3114'];
+    for (const [index, key] of ['quarter', 'residential', 'city_block'].entries()) {
+      mockFetch(async () => jsonResponse(nominatim({ address: { ...nominatim({}).address, [key]: 'Кварт. 5' } })));
+      const { body } = await callJson<ApiResponse<ReverseGeocodeResult>>(onRequest, urlOf(PATH, { lat: cells[index], lon: '69.2797' }));
+      expect(body.data!.neighbourhood).toBe('Кварт. 5');
+    }
+  });
+
+  it('reads the storeys and ignores a value that is not one', async () => {
+    mockFetch(async () => jsonResponse(nominatim({ extratags: { 'building:levels': '9' } })));
+    const ok = await callJson<ApiResponse<ReverseGeocodeResult>>(onRequest, urlOf(PATH, { lat: '41.3112', lon: '69.2797' }));
+    expect(ok.body.data!.buildingLevels).toBe(9);
+
+    const cells = ['41.3115', '41.3116', '41.3117', '41.3118'];
+    for (const [index, bad] of ['многоэтажный', '-2', '9000', ''].entries()) {
+      mockFetch(async () => jsonResponse(nominatim({ extratags: { 'building:levels': bad } })));
+      const { body } = await callJson<ApiResponse<ReverseGeocodeResult>>(onRequest, urlOf(PATH, { lat: cells[index], lon: '69.2797' }));
+      expect(body.data!.buildingLevels).toBeUndefined();
+    }
+  });
+
+  it('gives the local name only when OSM holds one and it differs', async () => {
+    mockFetch(async () => jsonResponse(nominatim({ namedetails: { name: 'Amir Temur Square', 'name:uz': 'Amir Temur xiyoboni' } })));
+    const differs = await callJson<ApiResponse<ReverseGeocodeResult>>(onRequest, urlOf(PATH, { lat: '41.3112', lon: '69.2797' }));
+    expect(differs.body.data!.localName).toBe('Amir Temur xiyoboni');
+
+    mockFetch(async () => jsonResponse(nominatim({ namedetails: { name: 'Amir Temur xiyoboni', 'name:uz': 'Amir Temur xiyoboni' } })));
+    const same = await callJson<ApiResponse<ReverseGeocodeResult>>(onRequest, urlOf(PATH, { lat: '41.3119', lon: '69.2797' }));
+    expect(same.body.data!.localName).toBeUndefined();
+  });
+
+  it('carries Nominatim’s own idea of how specific the match is', async () => {
+    mockFetch(async () => jsonResponse(nominatim({ place_rank: 16 })));
+    const { body } = await callJson<ApiResponse<ReverseGeocodeResult>>(onRequest, urlOf(PATH, { lat: '41.3112', lon: '69.2797' }));
+    expect(body.data!.placeRank).toBe(16);
   });
 });

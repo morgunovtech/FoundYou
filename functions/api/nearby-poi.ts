@@ -1,4 +1,4 @@
-import { defineHandler, getPosition, haversine, json, parseCoord, round4 } from './_geo';
+import { bearing, defineHandler, getPosition, haversine, json, parseCoord, round4 } from './_geo';
 import { OVERPASS_TTL, loadOverpassSets } from './_overpass';
 
 export const onRequest = defineHandler(async ({ url, context }) => {
@@ -13,7 +13,7 @@ export const onRequest = defineHandler(async ({ url, context }) => {
   const result = await loadOverpassSets(context, rlat, rlon);
   if (!result.ok) return result.error;
 
-  const items: Array<{ name: string; category: string; distance: number }> = [];
+  const items: Array<{ name: string; category: string; distance: number; bearing: number }> = [];
   for (const element of result.sets.poi) {
     const position = getPosition(element);
     if (!position) continue;
@@ -30,13 +30,16 @@ export const onRequest = defineHandler(async ({ url, context }) => {
       tags.place ||
       tags.man_made ||
       'poi';
-    items.push({ name, category, distance });
+    // The direction from the point to the object, so the page can say what the camera was
+    // pointed at. A bearing and a distance say strictly less than the object's coordinates,
+    // which is why they are computed here and the coordinates are not returned.
+    items.push({ name, category, distance, bearing: bearing(rlat, rlon, position.lat, position.lon) });
   }
 
   const data = items
     .sort((a, b) => a.distance - b.distance)
     .slice(0, 5)
-    .map((item) => ({ ...item, distance: Math.round(item.distance) }));
+    .map((item) => ({ ...item, distance: Math.round(item.distance), bearing: Math.round(item.bearing) }));
 
   return json({ ok: true, data }, 200, { 'X-Cache': result.cache }, OVERPASS_TTL);
 });

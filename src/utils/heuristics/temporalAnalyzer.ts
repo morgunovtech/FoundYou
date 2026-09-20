@@ -1,3 +1,4 @@
+import { formatMessage, type MessageKey } from '../../i18n';
 import { parseWallClock, wallClockAsUtcDate } from '../format';
 import { isWeekend, isWorkingHour, photoAge, timeOfDay } from '../timeProfile';
 
@@ -41,24 +42,30 @@ export function analyzeDateTime(shotDateLocal: string | undefined, lang: Lang): 
   const hour = parts.hour;
   const dayOfWeek = asUtc.getUTCDay();
   const insights: TemporalInsight[] = [];
+  /*
+   * The dictionary, as `generateDigitalProfile` reaches it. Two of these strings used to have no
+   * Uzbek branch and served English instead; a key cannot go missing without `MessageKey`
+   * catching it. The Russian plural forms stay as code below — a plural rule is not a flat string.
+   */
+  const t = (key: MessageKey, params?: Record<string, string | number>) => formatMessage(lang, key, params);
 
   // Time of day
   const period = timeOfDay(hour);
   if (period === 'night') {
     insights.push({
-      fact: lang === 'ru' ? `Ночное фото (${hour}:00)` : lang === 'uz' ? `Tungi foto (${hour}:00)` : `Night photo (${hour}:00)`,
+      fact: t('temporalNight', { hour }),
       inference: '',
       severity: 'medium',
     });
   } else if (period === 'earlyMorning') {
     insights.push({
-      fact: lang === 'ru' ? `Раннее утро (${hour}:00)` : lang === 'uz' ? `Erta tong (${hour}:00)` : `Early morning (${hour}:00)`,
+      fact: t('temporalEarlyMorning', { hour }),
       inference: '',
       severity: 'low',
     });
   } else if (period === 'lunch') {
     insights.push({
-      fact: lang === 'ru' ? 'Обеденное время' : lang === 'uz' ? 'Tushlik vaqti' : 'Lunchtime',
+      fact: t('temporalLunch'),
       inference: '',
       severity: 'low',
     });
@@ -67,13 +74,13 @@ export function analyzeDateTime(shotDateLocal: string | undefined, lang: Lang): 
   // Day of week + work hours
   if (isWeekend(dayOfWeek)) {
     insights.push({
-      fact: lang === 'ru' ? 'Выходной день' : lang === 'uz' ? 'Dam olish kuni' : 'Weekend',
+      fact: t('temporalWeekend'),
       inference: '',
       severity: 'low',
     });
   } else if (isWorkingHour(hour)) {
     insights.push({
-      fact: lang === 'ru' ? 'Будний день, рабочие часы' : lang === 'uz' ? 'Ish kuni, ish soatlari' : 'Weekday, working hours',
+      fact: t('temporalWorkingHours'),
       inference: '',
       severity: 'medium',
     });
@@ -84,35 +91,30 @@ export function analyzeDateTime(shotDateLocal: string | undefined, lang: Lang): 
 
   if (age.kind === 'future') {
     insights.push({
-      fact: lang === 'ru' ? 'Дата в будущем' : lang === 'uz' ? 'Kelajakdagi sana' : 'Future date',
-      inference: lang === 'ru' ? 'Часы на устройстве были настроены неправильно' : lang === 'uz' ? 'Qurilma soati noto\'g\'ri sozlangan' : 'Device clock was set incorrectly',
+      fact: t('temporalFuture'),
+      inference: t('temporalFutureWhy'),
       severity: 'low',
     });
   } else if (age.kind === 'today' || age.kind === 'yesterday') {
     const today = age.kind === 'today';
     insights.push({
-      fact: lang === 'ru'
-        ? (today ? 'Фото сделано сегодня' : 'Фото сделано вчера')
-        : lang === 'uz'
-        ? (today ? 'Foto bugun olingan' : 'Foto kecha olingan')
-        : (today ? 'Photo taken today' : 'Photo taken yesterday'),
-      inference: lang === 'ru' ? 'Свежее фото — геолокация актуальна' : lang === 'uz' ? 'Yangi foto — geolokatsiya dolzarb' : 'Fresh photo — geolocation is current',
+      fact: t(today ? 'temporalToday' : 'temporalYesterday'),
+      inference: t('temporalFresh'),
       severity: 'high',
     });
   } else if (age.kind === 'years') {
     const ageYears = age.value;
-    const ageStr = lang === 'ru'
-      ? pluralRu(ageYears, 'год', 'года', 'лет')
-      : `${ageYears} year${ageYears > 1 ? 's' : ''}`;
+    // Russian needs three plural forms; the other two dictionaries carry a plain template.
+    const ageStr = lang === 'ru' ? pluralRu(ageYears, 'год', 'года', 'лет') : t('temporalYearsUnit', { years: ageYears });
     insights.push({
-      fact: lang === 'ru' ? `Фото сделано ~${ageStr} назад` : lang === 'uz' ? `Foto ~${ageYears} yil oldin olingan` : `Photo taken ~${ageStr} ago`,
-      inference: lang === 'ru' ? 'Старое фото — но метаданные всё ещё содержат информацию' : lang === 'uz' ? 'Eski foto — lekin metadata hali ham ma\'lumot saqlaydi' : 'Old photo — but metadata still contains information',
+      fact: t('temporalYearsAgo', { age: ageStr }),
+      inference: t('temporalOld'),
       severity: 'medium',
     });
   } else if (age.kind === 'months') {
     const ageMonths = age.value;
     insights.push({
-      fact: lang === 'ru' ? `Фото сделано ~${ageMonths} мес. назад` : lang === 'uz' ? `Foto ~${ageMonths} oy oldin olingan` : `Photo taken ~${ageMonths} months ago`,
+      fact: t('temporalMonthsAgo', { months: ageMonths }),
       inference: '',
       severity: 'low',
     });

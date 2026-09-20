@@ -26,6 +26,9 @@ import { FrameChecksCard } from './story/FrameChecksCard';
 import { DATE_FAULT_KEYS, PII_KIND_KEYS, QR_KIND_KEYS } from './story/storyKeys';
 import { timeHeadline } from './story/timeHeadline';
 import { Explainer } from './Explainer';
+import { findAuthorship, type AuthorshipKind } from '../utils/authorship';
+import { findWrittenPlace } from '../utils/placeFromMetadata';
+import { usePlaceTimezone } from '../hooks/usePlaceTimezone';
 import { useContainerSignals } from '../hooks/useContainerSignals';
 import { useFrameStats } from '../hooks/useFrameStats';
 
@@ -81,17 +84,27 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   const accuracyLabel = geo.accuracyMeters != null ? formatDistance(geo.accuracyMeters, lang) : null;
 
   // «How the photo was taken»: derived from GPS, time and camera tags; the place zone and the
+  /*
+   * The zone of the place, worked out on the device from the coordinates. It used to come only
+   * from the weather answer (`timezone=auto`), which made «камера стояла на час впереди места»
+   * depend on a network call to a weather endpoint succeeding. The offline lookup answers from
+   * the file alone; the weather field stays as the fallback for the points it declines (open
+   * water, where it returns an `Etc/GMT` placeholder rather than a place).
+   */
+  const offlineZone = usePlaceTimezone(metadata?.gps?.lat, metadata?.gps?.lon);
+  const placeTimezone = offlineZone ?? (remote ? geo.weather.data?.timezone ?? null : null);
+
   // terrain height come from the lookups when they are allowed and have answered.
   const stance = useMemo(
     () =>
       metadata?.gps
         ? buildStance({
             metadata,
-            placeTimezone: remote ? geo.weather.data?.timezone ?? null : null,
+            placeTimezone,
             terrainElevation: remote ? geo.elevation.data?.elevation ?? null : null
           })
         : null,
-    [metadata, remote, geo.weather.data?.timezone, geo.elevation.data?.elevation]
+    [metadata, placeTimezone, remote, geo.elevation.data?.elevation]
   );
 
   // «When the photo was taken»: the camera clock read together with the place zone and the holidays.
@@ -99,10 +112,10 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     () =>
       buildTimeProfile({
         metadata,
-        placeTimezone: remote ? geo.weather.data?.timezone ?? null : null,
+        placeTimezone,
         holiday: remote ? geo.holidays.data : null
       }),
-    [metadata, remote, geo.weather.data?.timezone, geo.holidays.data]
+    [metadata, placeTimezone, remote, geo.holidays.data]
   );
 
   // «Device»: maker, marketing name, system, age of the model, camera module, shot counter.
@@ -132,6 +145,8 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       platform={proData?.filename.platform}
       remote={remote}
       accuracyLabel={accuracyLabel}
+      dayKind={timeProfile?.dayKind}
+      hour={timeProfile?.parts.hour}
     />
   );
 
@@ -173,7 +188,11 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
         {qrCodes.map((code, index) => (
           <React.Fragment key={`${code.kind}-${index}`}>
             <dt>{t(QR_KIND_KEYS[code.kind])}</dt>
-            <dd>{code.summary || t('emptyValue')}</dd>
+            <dd>
+              {code.summary || t('emptyValue')}
+              {/* A boarding pass is a PDF417 or an Aztec code, never a QR: say which it was. */}
+              {code.format ? <span className="fy-muted">{t('qrFormat', { format: code.format })}</span> : null}
+            </dd>
           </React.Fragment>
         ))}
       </dl>
@@ -190,6 +209,65 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
           </React.Fragment>
         ))}
       </dl>
+    ) : null;
+
+  /* ── author, contacts and a place written in words ────── */
+
+  /**
+   * Two facts the file carries that nobody checks, because both survive the advice people are
+   * actually given. The author block is written by settings rather than by the camera and has
+   * nothing to do with geotags; the written place is what is left of the location after the
+   * coordinates are gone. Neither is sent anywhere — the values come out of the groups exifr
+   * already parsed, and the place text is deliberately never geocoded.
+   */
+  const authorship = useMemo(() => findAuthorship(metadata?.groups), [metadata?.groups]);
+  const writtenPlace = useMemo(() => findWrittenPlace(metadata?.groups), [metadata?.groups]);
+
+  const AUTHOR_LABELS: Record<AuthorshipKind, 'authorPersonLabel' | 'authorContactLabel' | 'authorRightsLabel'> = {
+    person: 'authorPersonLabel',
+    contact: 'authorContactLabel',
+    rights: 'authorRightsLabel'
+  };
+
+  const authorCard = authorship ? (
+    <FactRow
+      key="author"
+      title={t('authorTitle')}
+      // A name or a way to reach someone identifies a person; a licence line on its own does not.
+      severity={authorship.people.length > 0 || authorship.contacts.length > 0 ? 'high' : 'low'}
+      value={authorship.people.join(', ') || null}
+      sub={null}
+    >
+      <dl className="fy-spec fy-spec--tight">
+        {authorship.findings.map((finding) => (
+          <React.Fragment key={`${finding.tag}-${finding.value}`}>
+            <dt>{t(AUTHOR_LABELS[finding.kind])}</dt>
+            <dd>
+              {finding.value} <span className="fy-mono">{finding.tag}</span>
+            </dd>
+          </React.Fragment>
+        ))}
+      </dl>
+      <Explainer title={t('authorExplainTitle')}>
+        <p>{t('authorExplainBody')}</p>
+        <p>{t('authorExplainRisk')}</p>
+      </Explainer>
+    </FactRow>
+  ) : null;
+
+  // Only without coordinates: with GPS the location card already answers the question better.
+  const writtenPlaceCard =
+    writtenPlace && !metadata?.gps ? (
+      <FactRow key="written-place" title={t('writtenPlaceTitle')} severity="medium" value={writtenPlace.line} sub={t('writtenPlaceSub')}>
+        <dl className="fy-spec fy-spec--tight">
+          <dt>{t('writtenPlaceTagsLabel')}</dt>
+          <dd className="fy-mono">{writtenPlace.tags.join(', ')}</dd>
+        </dl>
+        <Explainer title={t('writtenPlaceExplainTitle')}>
+          <p>{t('writtenPlaceExplainBody')}</p>
+          <p>{t('writtenPlaceNotGeocoded')}</p>
+        </Explainer>
+      </FactRow>
     ) : null;
 
   /* ── fact order ───────────────────────────────────────── */
@@ -243,7 +321,8 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       ) : null}
 
       <div className="fy-facts">
-        {FACT_ORDER.map((kind) => (kind === 'location' ? [renderFact(kind), stanceRow] : renderFact(kind)))}
+        {FACT_ORDER.map((kind) => (kind === 'location' ? [renderFact(kind), writtenPlaceCard, stanceRow] : renderFact(kind)))}
+        {authorCard}
         {profile ? (
           <OriginCard
             sectionsByKind={sectionsByKind}

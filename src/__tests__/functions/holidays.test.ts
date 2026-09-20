@@ -228,3 +228,58 @@ describe('holidays: upstream failures', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('holidays: the movable holidays of Uzbekistan', () => {
+  /*
+   * Nager answers 204 for UZ, and the two Eids are not fixed dates. They are set by the Muslim
+   * Board of Uzbekistan, so an announced date is listed verbatim and anything else is computed
+   * from the tabular calendar and flagged — the card then says the day may differ.
+   */
+  const noCoverage = () => mockFetch(async () => new Response(null, { status: 204 }));
+
+  it('an announced date is a fact, with no caveat', async () => {
+    noCoverage();
+    const { body } = await callJson<ApiResponse<HolidaysResult>>(onRequest, urlOf(PATH, { country: 'UZ', date: '2026-03-20' }));
+    expect(body.data!.isHoliday).toBe(true);
+    expect(body.data!.holidays[0].localName).toBe('Ramazon hayit');
+    expect(body.data!.holidays[0].approximate).toBeUndefined();
+  });
+
+  it('the other announced date too', async () => {
+    noCoverage();
+    const { body } = await callJson<ApiResponse<HolidaysResult>>(onRequest, urlOf(PATH, { country: 'UZ', date: '2026-05-27' }));
+    expect(body.data!.holidays[0].localName).toBe('Qurbon hayit');
+    expect(body.data!.holidays[0].approximate).toBeUndefined();
+  });
+
+  it('a year with no announcement is computed and says so', async () => {
+    // Tabular calendar: 10 Dhu al-Hijjah 1448 lands on 2027-05-17. The flag is what keeps it
+    // from being printed as a fact.
+    noCoverage();
+    const { body } = await callJson<ApiResponse<HolidaysResult>>(onRequest, urlOf(PATH, { country: 'UZ', date: '2027-05-17' }));
+    expect(body.data!.isHoliday).toBe(true);
+    expect(body.data!.holidays[0].localName).toBe('Qurbon hayit');
+    expect(body.data!.holidays[0].approximate).toBe(true);
+  });
+
+  it('the announced date wins over the computed one when they differ', async () => {
+    // The table computes 2027-03-10; the Muslim Board announced 2027-03-09.
+    noCoverage();
+    const announced = await callJson<ApiResponse<HolidaysResult>>(onRequest, urlOf(PATH, { country: 'UZ', date: '2027-03-09' }));
+    expect(announced.body.data!.isHoliday).toBe(true);
+    const computed = await callJson<ApiResponse<HolidaysResult>>(onRequest, urlOf(PATH, { country: 'UZ', date: '2027-03-10' }));
+    expect(computed.body.data!.isHoliday).toBe(false);
+  });
+
+  it('an ordinary day is still not a holiday', async () => {
+    noCoverage();
+    const { body } = await callJson<ApiResponse<HolidaysResult>>(onRequest, urlOf(PATH, { country: 'UZ', date: '2026-03-25' }));
+    expect(body.data!.isHoliday).toBe(false);
+  });
+
+  it('no movable holidays are invented for another country', async () => {
+    mockFetch(async () => new Response(null, { status: 404 }));
+    const { body } = await callJson<ApiResponse<HolidaysResult>>(onRequest, urlOf(PATH, { country: 'KZ', date: '2026-03-20' }));
+    expect(body.data!.isHoliday).toBe(false);
+  });
+});

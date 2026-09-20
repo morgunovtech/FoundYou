@@ -1,9 +1,9 @@
 import { useEffect, useMemo } from 'react';
 import type { StructuredMetadata } from '../types/metadata';
-import type { ElevationResult, HistoricalWeatherResult, HolidaysResult, PoiResult, ReverseGeocodeResult } from '../types/api';
+import type { ElevationResult, HistoricalWeatherResult, HolidaysResult, LandmarkResult, PlaceContextResult, PoiResult, ReverseGeocodeResult } from '../types/api';
 import { useAPIFetch } from './useAPIFetch';
 import { dedupeByNameAndDistance } from '../utils/insightsCompact';
-import { isElevation, isHistoricalWeather, isHolidays, isPoiList, isReverseGeocode } from '../utils/apiShapes';
+import { isElevation, isHistoricalWeather, isHolidays, isLandmarkList, isPlaceContext, isPoiList, isReverseGeocode } from '../utils/apiShapes';
 
 /** Lifecycle of one server lookup, as exposed by `useAPIFetch`. */
 export interface RemoteStatus {
@@ -23,6 +23,10 @@ export interface GeoContext {
   reverse: { data: ReverseGeocodeResult | null; status: RemoteStatus };
   weather: { data: HistoricalWeatherResult | null; status: RemoteStatus };
   holidays: { data: HolidaysResult | null; status: RemoteStatus };
+  /** What kind of place this is: land use, sensitive neighbours, transport, how many people live here. */
+  placeContext: { data: PlaceContextResult | null; status: RemoteStatus };
+  /** Wikipedia articles about places at the point: a landmark leaks far less than a home address. */
+  landmarks: { items: LandmarkResult[]; status: RemoteStatus };
   poi: { items: PoiResult[]; status: RemoteStatus };
   surveillance: { items: PoiResult[]; status: RemoteStatus };
   /** Terrain height at the rounded point, to compare with the GPS altitude. */
@@ -61,6 +65,8 @@ export function useGeoContext(metadata: StructuredMetadata | null): GeoContext {
   const holidaysFetch = useAPIFetch<HolidaysResult>(isHolidays);
   const poiFetch = useAPIFetch<PoiResult[]>(isPoiList);
   const surveillanceFetch = useAPIFetch<PoiResult[]>(isPoiList);
+  const placeContextFetch = useAPIFetch<PlaceContextResult>(isPlaceContext);
+  const landmarksFetch = useAPIFetch<LandmarkResult[]>(isLandmarkList);
   const elevationFetch = useAPIFetch<ElevationResult>(isElevation);
 
   const { request: reverseRequest, reset: reverseReset } = reverseFetch;
@@ -68,6 +74,8 @@ export function useGeoContext(metadata: StructuredMetadata | null): GeoContext {
   const { request: holidaysRequest, reset: holidaysReset } = holidaysFetch;
   const { request: poiRequest, reset: poiReset } = poiFetch;
   const { request: surveillanceRequest, reset: surveillanceReset } = surveillanceFetch;
+  const { request: placeContextRequest, reset: placeContextReset } = placeContextFetch;
+  const { request: landmarksRequest, reset: landmarksReset } = landmarksFetch;
   const { request: elevationRequest, reset: elevationReset } = elevationFetch;
 
   // The request key: the data that would be sent. A different photo → forget the previous
@@ -79,8 +87,20 @@ export function useGeoContext(metadata: StructuredMetadata | null): GeoContext {
     holidaysReset();
     poiReset();
     surveillanceReset();
+    placeContextReset();
+    landmarksReset();
     elevationReset();
-  }, [requestKey, reverseReset, weatherReset, holidaysReset, poiReset, surveillanceReset, elevationReset]);
+  }, [
+    requestKey,
+    reverseReset,
+    weatherReset,
+    holidaysReset,
+    poiReset,
+    surveillanceReset,
+    placeContextReset,
+    landmarksReset,
+    elevationReset
+  ]);
 
   useEffect(() => {
     if (!requestCoords) return;
@@ -88,8 +108,9 @@ export function useGeoContext(metadata: StructuredMetadata | null): GeoContext {
     void reverseRequest(`/api/reverse-geocode?${params}`);
     void poiRequest(`/api/nearby-poi?${params}`);
     void surveillanceRequest(`/api/surveillance-candidates?${params}`);
+    void placeContextRequest(`/api/place-context?${params}`);
     void elevationRequest(`/api/elevation?${params}`);
-  }, [requestCoords, reverseRequest, poiRequest, surveillanceRequest, elevationRequest]);
+  }, [requestCoords, reverseRequest, poiRequest, surveillanceRequest, placeContextRequest, elevationRequest]);
 
   useEffect(() => {
     if (!requestCoords || !shotDate) return;
@@ -110,6 +131,15 @@ export function useGeoContext(metadata: StructuredMetadata | null): GeoContext {
     const params = new URLSearchParams({ country: countryCode, date: holidayDate });
     void holidaysRequest(`/api/holidays?${params}`);
   }, [countryCode, holidayDate, holidaysRequest]);
+
+  // Landmarks wait for the country, because the Wikipedia edition follows it: half the
+  // monuments and mahallas of Tashkent have no article in the English one.
+  useEffect(() => {
+    if (!requestCoords) return;
+    const params = new URLSearchParams({ lat: String(requestCoords.lat), lon: String(requestCoords.lon) });
+    if (countryCode) params.set('country', countryCode);
+    void landmarksRequest(`/api/landmarks?${params}`);
+  }, [requestCoords, countryCode, landmarksRequest]);
 
   const reverseData = reverseFetch.data ?? null;
   const accuracyMeters = useMemo(() => {
@@ -134,6 +164,8 @@ export function useGeoContext(metadata: StructuredMetadata | null): GeoContext {
     holidays: { data: holidaysFetch.data ?? null, status: statusOf(holidaysFetch) },
     poi: { items: poiItems, status: statusOf(poiFetch) },
     surveillance: { items: surveillanceItems, status: statusOf(surveillanceFetch) },
+    placeContext: { data: placeContextFetch.data ?? null, status: statusOf(placeContextFetch) },
+    landmarks: { items: landmarksFetch.data ?? [], status: statusOf(landmarksFetch) },
     elevation: { data: elevationFetch.data ?? null, status: statusOf(elevationFetch) }
   };
 }

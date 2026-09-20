@@ -24,6 +24,11 @@ export interface QrCode extends QrPayload {
   height: number;
   /** The decoded text, kept for the raw data table only. */
   raw: string;
+  /**
+   * Symbology when it is not a QR. A boarding pass is a PDF417 or an Aztec code and calling it
+   * «QR-код» in the card would be a small lie in a product that cannot afford one.
+   */
+  format?: string;
 }
 
 function mask(value: string, keep = 2): string {
@@ -82,6 +87,8 @@ interface DetectedCode {
   y: number;
   width: number;
   height: number;
+  /** Symbology, when it is not a QR: `PDF417`, `Aztec`, `DataMatrix`, `Code128`… */
+  format?: string;
 }
 
 interface BarcodeDetectorLike {
@@ -154,9 +161,33 @@ export async function findQrCodes(source: CanvasImageSource, width: number, heig
       detected = [];
     }
   }
+  /*
+   * Still nothing: try the symbologies neither path can read at all. A boarding pass is a
+   * PDF417 or an Aztec code, never a QR, and it carries the passenger's name, record locator
+   * and flight in plain text; a parcel label is a DataMatrix; a delivery slip is a Code 128.
+   * The reader costs about 930 KB, which is why it is spent only where the answer would
+   * otherwise be «ничего не найдено» — a photo with a QR in it never reaches this branch.
+   */
+  if (detected.length === 0) {
+    try {
+      const { findWideBarcodes } = await import('./barcodes');
+      const wide = await findWideBarcodes(ctx.getImageData(0, 0, canvas.width, canvas.height));
+      detected = wide.map((code) => ({
+        raw: code.text,
+        x: code.box?.x ?? 0,
+        y: code.box?.y ?? 0,
+        width: code.box?.width ?? 0,
+        height: code.box?.height ?? 0,
+        format: code.format || undefined
+      }));
+    } catch {
+      detected = [];
+    }
+  }
   return detected.map((code) => ({
     ...classifyQrPayload(code.raw),
     raw: code.raw,
+    format: code.format,
     x: code.x / scale,
     y: code.y / scale,
     width: code.width / scale,
