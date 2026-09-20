@@ -64,6 +64,7 @@ export function localizeCategoryKey(
 }
 
 export function dedupeByNameAndDistance(items: PoiResult[]): PoiResult[] {
+  if (!Array.isArray(items)) return [];
   const seen = new Set<string>();
   return items.filter((poi) => {
     const id = (poi as { id?: string | number }).id;
@@ -87,6 +88,7 @@ export function withoutPlaceEchoes(
   items: PoiResult[],
   place: Pick<ReverseGeocodeResult, 'city' | 'district' | 'state' | 'country' | 'name'> | null | undefined
 ): PoiResult[] {
+  if (!Array.isArray(items)) return [];
   if (!place) return items;
   const echoes = new Set(
     [place.city, place.district, place.state, place.country, place.name]

@@ -5,6 +5,13 @@ const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 const REQUEST_TIMEOUT_MS = 12_000;
 const MAX_RETRIES = 2;
 
+/**
+ * Rejects an `ok: true` answer whose `data` is not the shape the caller reads. Without it the
+ * body is handed on with `T` merely asserted, and one malformed answer throws inside a component
+ * and blanks its whole section (see `utils/apiShapes.ts`).
+ */
+export type ShapeGuard = (data: unknown) => boolean;
+
 export interface ApiResult<T> extends ApiResponse<T> {
   /** HTTP status of the last response; null for network failures, timeouts and aborts. */
   status: number | null;
@@ -28,7 +35,47 @@ function isAbortError(error: unknown): boolean {
   return typeof error === 'object' && error !== null && (error as { name?: string }).name === 'AbortError';
 }
 
-async function fetchOnce<T>(url: string, init: RequestInit | undefined, signal: AbortSignal | undefined): Promise<ApiResult<T>> {
+/**
+ * What one answer means, with no network or React around it: an HTTP failure, a body that is not
+ * our envelope, an `ok: false` from the endpoint, a payload that is not the shape the caller
+ * reads, or the data. The shape check is the one that stops a malformed answer from reaching a
+ * component and blanking its section.
+ */
+export function interpretBody<T>(
+  body: ApiResponse<T> | null,
+  status: number,
+  httpOk: boolean,
+  accepts?: ShapeGuard
+): ApiResult<T> {
+  if (!httpOk) {
+    return {
+      ok: false,
+      error: `status-${status}`,
+      code: typeof body?.error === 'string' ? body.error : undefined,
+      status,
+      retryable: RETRYABLE_STATUS.has(status)
+    };
+  }
+  if (!body || typeof body !== 'object') {
+    return { ok: false, error: 'invalid-json', status, retryable: false };
+  }
+  if (!body.ok) {
+    return { ok: false, error: body.error ?? 'unknown-error', code: body.error, status, retryable: false };
+  }
+  if (accepts && !accepts(body.data)) {
+    // A well-formed envelope around the wrong payload: not worth a retry, and never worth
+    // passing on — the page would read fields that are not there.
+    return { ok: false, error: 'invalid-shape', status, retryable: false };
+  }
+  return { ok: true, data: body.data, status, retryable: false };
+}
+
+async function fetchOnce<T>(
+  url: string,
+  init: RequestInit | undefined,
+  signal: AbortSignal | undefined,
+  accepts: ShapeGuard | undefined
+): Promise<ApiResult<T>> {
   const controller = new AbortController();
   const onAbort = () => controller.abort();
   if (signal?.aborted) controller.abort();
@@ -53,22 +100,7 @@ async function fetchOnce<T>(url: string, init: RequestInit | undefined, signal: 
       body = null;
     }
 
-    if (!response.ok) {
-      return {
-        ok: false,
-        error: `status-${status}`,
-        code: typeof body?.error === 'string' ? body.error : undefined,
-        status,
-        retryable: RETRYABLE_STATUS.has(status)
-      };
-    }
-    if (!body || typeof body !== 'object') {
-      return { ok: false, error: 'invalid-json', status, retryable: false };
-    }
-    if (!body.ok) {
-      return { ok: false, error: body.error ?? 'unknown-error', code: body.error, status, retryable: false };
-    }
-    return { ok: true, data: body.data, status, retryable: false };
+    return interpretBody<T>(body, status, response.ok, accepts);
   } catch (error) {
     if (signal?.aborted) {
       return { ok: false, error: 'aborted', status: null, retryable: false };
@@ -89,11 +121,12 @@ async function fetchWithRetry<T>(
   url: string,
   init: RequestInit | undefined,
   signal: AbortSignal | undefined,
+  accepts: ShapeGuard | undefined,
   retries = MAX_RETRIES
 ): Promise<ApiResult<T>> {
   let result: ApiResult<T> = { ok: false, error: 'network-error', status: null, retryable: true };
   for (let attempt = 0; attempt <= retries; attempt += 1) {
-    result = await fetchOnce<T>(url, init, signal);
+    result = await fetchOnce<T>(url, init, signal, accepts);
     if (result.ok || !result.retryable || signal?.aborted) {
       return result;
     }
@@ -104,7 +137,12 @@ async function fetchWithRetry<T>(
   return result;
 }
 
-export function useAPIFetch<T>() {
+/**
+ * `accepts` must be a stable reference — a module-level predicate from `utils/apiShapes.ts`, not
+ * an inline lambda: it is a dependency of `request`, and the callers keep `request` in their own
+ * effect dependencies, so a new identity on every render would re-fire the request.
+ */
+export function useAPIFetch<T>(accepts?: ShapeGuard) {
   const [state, setState] = useState<FetchState<T>>(INITIAL_STATE);
   const abortRef = useRef<AbortController | null>(null);
   const lastRef = useRef<{ url: string; init?: RequestInit } | null>(null);
@@ -123,7 +161,7 @@ export function useAPIFetch<T>() {
 
       setState((prev) => ({ ...prev, loading: true, error: null, status: null, retryable: false }));
       const target = url.startsWith('http://') || url.startsWith('https://') ? url : `${base}${url}`;
-      const result = await fetchWithRetry<T>(target, init, controller.signal);
+      const result = await fetchWithRetry<T>(target, init, controller.signal, accepts);
 
       if (controller.signal.aborted) return result;
 
@@ -140,7 +178,7 @@ export function useAPIFetch<T>() {
       }
       return result;
     },
-    [base]
+    [base, accepts]
   );
 
   /** Re-fire the last request (for the "retry" button after 429 / 5xx / timeout). */

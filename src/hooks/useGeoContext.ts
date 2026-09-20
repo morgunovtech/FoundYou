@@ -3,6 +3,7 @@ import type { StructuredMetadata } from '../types/metadata';
 import type { ElevationResult, HistoricalWeatherResult, HolidaysResult, PoiResult, ReverseGeocodeResult } from '../types/api';
 import { useAPIFetch } from './useAPIFetch';
 import { dedupeByNameAndDistance } from '../utils/insightsCompact';
+import { isElevation, isHistoricalWeather, isHolidays, isPoiList, isReverseGeocode } from '../utils/apiShapes';
 
 /** Lifecycle of one server lookup, as exposed by `useAPIFetch`. */
 export interface RemoteStatus {
@@ -53,12 +54,14 @@ export function useGeoContext(metadata: StructuredMetadata | null): GeoContext {
   const shotDate = metadata?.shotDate ?? null;
   const shotDateLocal = metadata?.shotDateLocal ?? null;
 
-  const reverseFetch = useAPIFetch<ReverseGeocodeResult>();
-  const weatherFetch = useAPIFetch<HistoricalWeatherResult>();
-  const holidaysFetch = useAPIFetch<HolidaysResult>();
-  const poiFetch = useAPIFetch<PoiResult[]>();
-  const surveillanceFetch = useAPIFetch<PoiResult[]>();
-  const elevationFetch = useAPIFetch<ElevationResult>();
+  // Each lookup states the shape it reads: an answer that does not match is an error, not data
+  // the components have to survive (`utils/apiShapes.ts`).
+  const reverseFetch = useAPIFetch<ReverseGeocodeResult>(isReverseGeocode);
+  const weatherFetch = useAPIFetch<HistoricalWeatherResult>(isHistoricalWeather);
+  const holidaysFetch = useAPIFetch<HolidaysResult>(isHolidays);
+  const poiFetch = useAPIFetch<PoiResult[]>(isPoiList);
+  const surveillanceFetch = useAPIFetch<PoiResult[]>(isPoiList);
+  const elevationFetch = useAPIFetch<ElevationResult>(isElevation);
 
   const { request: reverseRequest, reset: reverseReset } = reverseFetch;
   const { request: weatherRequest, reset: weatherReset } = weatherFetch;
