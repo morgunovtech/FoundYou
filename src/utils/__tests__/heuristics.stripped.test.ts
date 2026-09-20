@@ -82,12 +82,26 @@ describe('detectStrippedMetadata: unknown origin', () => {
     expect(result.evidence).toHaveLength(2); // high-res JPEG w/o EXIF + non-camera name
   });
 
-  it('random-named PNG → only the filename sign, low confidence', () => {
+  it('a PNG never had EXIF, so nothing was stripped from it', () => {
+    // The card used to headline «Метаданные были удалены» over a chart, a drawing or a
+    // screenshot saved as PNG — formats that carry no EXIF to begin with.
     const result = detectStrippedMetadata(input('chart.png', { mimeType: 'image/png', width: 800, height: 600 }));
-    expect(result.stripped).toBe(true);
-    expect(result.strippedBy).toBeNull();
-    expect(result.confidence).toBe(0.6);
-    expect(result.evidence).toHaveLength(1);
+    expect(result).toEqual({ stripped: false, strippedBy: null, confidence: 0, evidence: [] });
+    for (const mime of ['image/gif', 'image/bmp', 'image/webp']) {
+      expect(detectStrippedMetadata(input('x.img', { mimeType: mime, width: 800, height: 600 })).stripped).toBe(false);
+    }
+  });
+
+  it('metadata of any kind means nothing was stripped, even without EXIF', () => {
+    // A generated PNG carries its prompt in a text chunk: that is metadata, not a stripped file.
+    const withChunks = detectStrippedMetadata(
+      input('00042-1234.png', { mimeType: 'image/png', width: 1024, height: 1024, hasOtherMetadata: true })
+    );
+    expect(withChunks.stripped).toBe(false);
+    const jpegWithXmp = detectStrippedMetadata(
+      input('random-name.jpg', { mimeType: 'image/jpeg', width: 4000, height: 3000, hasOtherMetadata: true })
+    );
+    expect(jpegWithXmp.stripped).toBe(false);
   });
 
   it('image/jpg is treated like image/jpeg', () => {

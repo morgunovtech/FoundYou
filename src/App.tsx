@@ -318,6 +318,12 @@ const App: React.FC = () => {
         height: fileInfo.height,
         hasExif: Object.keys(exif).length > 2,
         hasSoftwareTag: !!(exif.Software ?? exif.software ?? xmp.CreatorTool ?? xmp.creatorTool),
+        // PNG text chunks, XMP and IPTC are metadata too: a generator's «parameters» chunk is
+        // exactly the thing the card used to call «метаданные были удалены».
+        hasOtherMetadata:
+          Object.keys(metadata?.groups?.png ?? {}).length > 0 ||
+          Object.keys(xmp).length > 0 ||
+          Object.keys(metadata?.groups?.iptc ?? {}).length > 0,
         lang,
       });
       // Wall-clock of the camera, not the viewer's zone: "night photo" must be night where it was taken.
