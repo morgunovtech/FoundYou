@@ -1,3 +1,4 @@
+import type { DateFault } from '../utils/exifDateSanity';
 import type { AppleMakerNote } from '../utils/appleMakerNote';
 import type { SamsungTrailer } from '../utils/samsungTrailer';
 import type { EmbeddedThumbnail } from '../utils/fileHistory';
@@ -45,6 +46,12 @@ export interface StructuredMetadata {
   shotDateLocal?: string;
   /** `+05:00` form when EXIF carried OffsetTimeOriginal/OffsetTime; null when the offset is unknown. */
   utcOffset?: string | null;
+  /**
+   * Set when the capture-date tag holds something that is not a date — an out-of-range field, an
+   * all-zero placeholder. `shotDate` and `shotDateLocal` are then left empty on purpose: a value
+   * JavaScript rolled over into a real-looking moment must never be shown as the time of the shot.
+   */
+  dateFault?: DateFault;
   cameraMake?: string;
   cameraModel?: string;
   lensModel?: string;

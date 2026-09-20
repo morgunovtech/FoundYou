@@ -9,6 +9,7 @@ import type { AppleCaptureType } from '../../utils/appleMakerNote';
 import type { ScreenshotLevel, ScreenshotReason } from '../../utils/screenshot';
 import type { CompressionCode } from '../../utils/jpegQuant';
 import type { LightVerdict } from '../../utils/lightCheck';
+import type { DateFaultReason } from '../../utils/exifDateSanity';
 import type { TimestampIssue } from '../../utils/timestampConsistency';
 import type { FrameCheckStep } from '../../utils/frameChecks';
 
@@ -178,4 +179,11 @@ export const FRAME_STEP_KEYS: Record<FrameCheckStep, MessageKey> = {
   ela: 'frameStepEla',
   ghosts: 'frameStepGhosts',
   noise: 'frameStepNoise'
+};
+
+/** Why the capture-date tag is not a date. */
+export const DATE_FAULT_KEYS: Record<DateFaultReason, MessageKey> = {
+  'out-of-range': 'dateFaultOutOfRange',
+  placeholder: 'dateFaultPlaceholder',
+  unparsable: 'dateFaultUnparsable'
 };

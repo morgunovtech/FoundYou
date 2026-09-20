@@ -247,7 +247,7 @@ const App: React.FC = () => {
   const reducedMotion = usePrefersReducedMotion();
   /** «Open the picker» of the drop zone, for the sticky «new photo» button. */
   const pickerRef = useRef<(() => void) | null>(null);
-  const { fileInfo, error, loading, processFile } = useImageFile();
+  const { fileInfo, error, warning: fileWarning, loading, processFile } = useImageFile();
   const { metadata } = useExifMetadata(fileInfo);
   const credentials = useContentCredentials(fileInfo);
   const { loading: analysisLoading, error: analysisError, detectionStatus, detections, modelUnavailable, settledFile } =
@@ -944,7 +944,13 @@ const App: React.FC = () => {
         <main id="main" className="fy-main">
           <section className="fy-hero" aria-labelledby="hero-title">
             <InfoBlock scenariosActive={!fileInfo} />
-            <UploadZone loading={loading} onFile={handleFile} error={error ?? undefined} pickerRef={pickerRef} />
+            <UploadZone
+              loading={loading}
+              onFile={handleFile}
+              error={error ?? undefined}
+              warning={fileWarning ?? undefined}
+              pickerRef={pickerRef}
+            />
           </section>
 
           {fileInfo ? (

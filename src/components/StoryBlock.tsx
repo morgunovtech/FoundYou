@@ -23,8 +23,9 @@ import { TimeDetails } from './story/TimeDetails';
 import { TextDetails } from './story/TextDetails';
 import { OriginCard } from './story/OriginCard';
 import { FrameChecksCard } from './story/FrameChecksCard';
-import { PII_KIND_KEYS, QR_KIND_KEYS } from './story/storyKeys';
+import { DATE_FAULT_KEYS, PII_KIND_KEYS, QR_KIND_KEYS } from './story/storyKeys';
 import { timeHeadline } from './story/timeHeadline';
+import { Explainer } from './Explainer';
 import { useContainerSignals } from '../hooks/useContainerSignals';
 import { useFrameStats } from '../hooks/useFrameStats';
 
@@ -138,7 +139,30 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     <StanceFact key="stance" stance={stance} geo={geo} metadata={metadata} remote={remote} accuracyLabel={accuracyLabel} />
   ) : null;
 
-  const timeDetails = timeProfile ? <TimeDetails timeProfile={timeProfile} geo={geo} metadata={metadata} remote={remote} /> : null;
+  /*
+   * A capture date the file cannot actually hold. The card keeps the row — the tag is there, and
+   * that it is broken is itself a finding — but shows the raw characters instead of the moment a
+   * `Date` would have rolled them into.
+   */
+  const dateFault = metadata?.dateFault ?? null;
+  const dateFaultDetails = dateFault ? (
+    <div className="fy-fact-details">
+      <dl className="fy-spec fy-spec--tight">
+        <dt>{t('dateFaultRawLabel')}</dt>
+        <dd className="fy-mono">{dateFault.raw}</dd>
+      </dl>
+      <Explainer title={t('dateFaultExplainTitle')}>
+        <p>{t(DATE_FAULT_KEYS[dateFault.reason])}</p>
+        <p>{t('dateFaultWhyHidden')}</p>
+      </Explainer>
+    </div>
+  ) : null;
+
+  const timeDetails = dateFault
+    ? dateFaultDetails
+    : timeProfile
+    ? <TimeDetails timeProfile={timeProfile} geo={geo} metadata={metadata} remote={remote} />
+    : null;
 
   const textDetails = <TextDetails ocrResult={ocrResult} ocrLoading={ocrLoading} ocrError={ocrError} ocrProgressLabel={ocrProgressLabel} />;
 
@@ -197,7 +221,8 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
         ? textDetails
         : null;
     // Time: age, date, weekday, day kind, time of day and the clock make the headline; the rows place it.
-    const shotDate = kind === 'time' && timeProfile ? timeHeadline(timeProfile, lang, t) : null;
+    const shotDate =
+      kind === 'time' ? (dateFault ? t('dateFaultHeadline') : timeProfile ? timeHeadline(timeProfile, lang, t) : null) : null;
     const value = kind === 'location' ? null : shotDate ?? section.text;
     const sub = kind === 'location' || shotDate ? null : section.subtext;
     return (

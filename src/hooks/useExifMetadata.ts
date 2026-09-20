@@ -8,6 +8,7 @@ import { formatWallClock, parseWallClock, type WallClockParts } from '../utils/f
 import { parseAppleMakerNote } from '../utils/appleMakerNote';
 import { readSamsungTrailer } from '../utils/samsungTrailer';
 import { readEmbeddedThumbnail } from '../utils/heic';
+import { findShotDateFault } from '../utils/exifDateSanity';
 import type { EmbeddedThumbnail } from '../utils/fileHistory';
 
 interface UseExifMetadataResult {
@@ -39,7 +40,8 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
       setError(null);
       try {
         const sourceFile = fileInfo.originalFile ?? fileInfo.file;
-        const { exifData, xmpData, iptcData, iccData, pngData, gpsRaw } = await extractMetadataFromOriginal(sourceFile);
+        const { exifData, xmpData, iptcData, iccData, pngData, gpsRaw, rawDates } =
+          await extractMetadataFromOriginal(sourceFile);
 
         if (!active) return;
 
@@ -74,13 +76,23 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
         }
         thumbnailUrl = thumbnail?.url ?? null;
 
-        const shot = resolveShotDate(
-          pickFirstFromSources(
-            [exifRecord, xmpRecord],
-            ['DateTimeOriginal', 'dateTimeOriginal', 'CreateDate', 'createDate', 'DateTimeDigitized']
-          ),
-          pickFirst(exifRecord, ['OffsetTimeOriginal', 'offsetTimeOriginal', 'OffsetTime', 'OffsetTimeDigitized'])
-        );
+        /*
+         * The raw digits come first. When the tag the shot date would be read from is not a date —
+         * `2031:02:30 25:61:61`, `0000:00:00 00:00:00` — `resolveShotDate` is not asked at all:
+         * every consumer downstream (the headline, the weather and holiday lookups, the timestamp
+         * comparison) would otherwise work on the moment JavaScript invented by rolling the
+         * overflow forward, and print it as the time of the shot.
+         */
+        const dateFault = findShotDateFault(rawDates);
+        const shot = dateFault
+          ? undefined
+          : resolveShotDate(
+              pickFirstFromSources(
+                [exifRecord, xmpRecord],
+                ['DateTimeOriginal', 'dateTimeOriginal', 'CreateDate', 'createDate', 'DateTimeDigitized']
+              ),
+              pickFirst(exifRecord, ['OffsetTimeOriginal', 'offsetTimeOriginal', 'OffsetTime', 'OffsetTimeDigitized'])
+            );
         const cameraMake = pickFirst<string>(exifRecord, ['Make', 'make']);
         const cameraModel = pickFirst<string>(exifRecord, ['Model', 'model']);
         const lensModel = pickFirst<string>(exifRecord, ['LensModel', 'lensModel']);
@@ -111,6 +123,7 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
           shotDate: shot?.iso,
           shotDateLocal: shot?.local,
           utcOffset: shot ? shot.utcOffset : undefined,
+          dateFault: dateFault ?? undefined,
           cameraMake,
           cameraModel,
           lensModel,

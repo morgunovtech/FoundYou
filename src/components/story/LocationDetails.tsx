@@ -9,6 +9,7 @@ import { capitalize, describeWeather } from '../../utils/weather';
 import { matchSceneText } from '../../utils/sceneText';
 import { isAtThePoint, placeTypeLabel } from '../../utils/placeType';
 import { geotagTipKey } from '../../utils/geotagTips';
+import { checkGeoPlausibility } from '../../utils/geoPlausibility';
 import { googleMapsLink, streetViewLink } from '../../utils/mapLinks';
 import { MapBlock } from '../MapBlock';
 import { RetryButton } from './RetryButton';
@@ -51,6 +52,11 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
   // A road, or anything far enough away, is the nearest object on the map — not what is here.
   const placeIsHere = useMemo(() => isAtThePoint(geo.reverse.data), [geo.reverse.data]);
   const placeDistance = geo.reverse.data?.distanceMeters ?? null;
+  // Numbers a receiver can write but nobody could have stood in: «0, 0», a pole, Everest+.
+  const geoDoubts = useMemo(
+    () => checkGeoPlausibility(geo.coords, metadata?.gps?.altitude ?? null),
+    [geo.coords, metadata?.gps?.altitude]
+  );
   // The settlement the point sits in is not a «place nearby»: it is the address line above.
   const poiItems = useMemo(() => withoutPlaceEchoes(geo.poi.items, geo.reverse.data), [geo.poi.items, geo.reverse.data]);
 
@@ -169,6 +175,11 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
           <dd>
             <span className="fy-mono">{formatCoords(coords.lat, coords.lon)}</span>
             {!remote && accuracyLabel ? <span className="fy-muted">{accuracyLabel}</span> : null}
+            {geoDoubts.map((doubt) => (
+              <span key={doubt.kind} className="fy-muted">
+                {t(doubt.key, doubt.params)}
+              </span>
+            ))}
           </dd>
           {sceneMatches.length > 0 ? (
             <>
