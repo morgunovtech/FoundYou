@@ -31,6 +31,11 @@ const messages = {
     introAction:
       'Фотография остаётся в вашем браузере и не передаётся в сторонние сервисы. Использование бесплатно и без ограничений.',
     uploadButton: 'Выбрать фото',
+    demoButton: 'Попробовать на примере',
+    demoLoading: 'Загружаем пример…',
+    demoNotice:
+      'Это подготовленный пример, а не ваш снимок: фотография автора сервиса с дописанным блоком EXIF — координаты, время съёмки и устройство выбраны для демонстрации и настоящему месту съёмки не соответствуют. Всё остальное разбирается ровно так же, как ваше фото, и так же не покидает браузер.',
+    demoFailed: 'Не удалось загрузить пример. Попробуйте выбрать своё фото.',
     newPhotoLabel: 'Загрузить новое фото',
     toCleanupLabel: 'К очистке',
     scrollTopLabel: 'Наверх',
@@ -662,6 +667,11 @@ const messages = {
     introAction:
       'The photo stays in your browser and is never sent to third-party services. Free to use, with no limits.',
     uploadButton: 'Choose photo',
+    demoButton: 'Try it on a sample',
+    demoLoading: 'Loading the sample…',
+    demoNotice:
+      'This is a prepared sample, not your photo: a picture of the author with an EXIF block written into it — the coordinates, capture time and device were chosen for the demonstration and are not the real place it was taken. Everything else is analysed exactly as your own photo is, and leaves the browser just as little.',
+    demoFailed: 'The sample could not be loaded. Try choosing your own photo.',
     newPhotoLabel: 'Load a new photo',
     toCleanupLabel: 'To cleanup',
     scrollTopLabel: 'Back to top',
@@ -1294,6 +1304,11 @@ const messages = {
     introAction:
       'Foto brauzeringizda qoladi va uchinchi tomon xizmatlariga yuborilmaydi. Foydalanish bepul va cheklovsiz.',
     uploadButton: 'Fotoni tanlash',
+    demoButton: 'Namunada sinab ko‘rish',
+    demoLoading: 'Namuna yuklanmoqda…',
+    demoNotice:
+      'Bu tayyorlangan namuna, sizning suratingiz emas: xizmat muallifining surati, unga EXIF bloki yozilgan — koordinatalar, suratga olish vaqti va qurilma namoyish uchun tanlangan va haqiqiy joyga mos kelmaydi. Qolgan hammasi sizning suratingiz kabi tahlil qilinadi va xuddi shunday brauzerdan chiqmaydi.',
+    demoFailed: 'Namunani yuklab bo‘lmadi. O‘z suratingizni tanlab ko‘ring.',
     newPhotoLabel: 'Yangi foto yuklash',
     toCleanupLabel: 'Tozalashga',
     scrollTopLabel: 'Yuqoriga',

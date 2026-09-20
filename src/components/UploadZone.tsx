@@ -14,6 +14,10 @@ interface UploadZoneProps {
   pickerRef?: React.MutableRefObject<(() => void) | null>;
 }
 
+/** Shipped with the site, same origin: a photograph with an EXIF block written for the demo. */
+const DEMO_URL = '/images/demo.jpg';
+const DEMO_NAME = 'found-you-example.jpg';
+
 const IMAGE_NAME_PATTERN = /\.(jpe?g|png|webp|avif|gif|bmp|heic|heif)$/i;
 
 function looksLikeImage(file: File): boolean {
@@ -35,6 +39,10 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error, 
   // several files at once). The hook's own error arrives via the `error` prop.
   const [localError, setLocalError] = useState<string | null>(null);
   const [localHint, setLocalHint] = useState<string | null>(null);
+  // The sample is a file like any other once it is loaded; the flag only keeps the note on
+  // screen that says so, and any file chosen afterwards clears it.
+  const [demoLoading, setDemoLoading] = useState(false);
+  const [demoActive, setDemoActive] = useState(false);
 
   const openPicker = useCallback(() => {
     if (loading) return;
@@ -52,10 +60,38 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error, 
   const acceptFile = useCallback(
     (file: File) => {
       setLocalError(null);
+      setDemoActive(false);
       onFile(file);
     },
     [onFile]
   );
+
+  /**
+   * «Попробовать на примере»: a prepared photograph shipped with the site, fetched from our
+   * own origin and handed to the same pipeline as a dropped file. It exists because the first
+   * screen otherwise asks a stranger to hand over their own photo to a service they have no
+   * reason to trust yet — and because the first analysis downloads tens of megabytes of models
+   * before showing anything at all. The note that follows says outright that the EXIF block was
+   * written for the demonstration, so nobody reads its coordinates as a real place.
+   */
+  const loadDemo = useCallback(async () => {
+    if (loading || demoLoading) return;
+    setDemoLoading(true);
+    setLocalError(null);
+    setLocalHint(null);
+    try {
+      const response = await fetch(DEMO_URL);
+      if (!response.ok) throw new Error(String(response.status));
+      const blob = await response.blob();
+      setDemoActive(true);
+      onFile(new File([blob], DEMO_NAME, { type: blob.type || 'image/jpeg' }));
+    } catch {
+      setDemoActive(false);
+      setLocalError(t('demoFailed'));
+    } finally {
+      setDemoLoading(false);
+    }
+  }, [demoLoading, loading, onFile, t]);
 
   const handleFiles = useCallback(
     (files: FileList | null) => {
@@ -157,6 +193,16 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error, 
           <p className="fy-drop-meta">{t('uploadFormats', { limit: MAX_FILE_SIZE_MB })}</p>
         </label>
       </div>
+      <div className="fy-demo">
+        <button type="button" className="v4-btn fy-btn-sm" onClick={loadDemo} disabled={loading || demoLoading}>
+          {demoLoading ? t('demoLoading') : t('demoButton')}
+        </button>
+      </div>
+      {demoActive ? (
+        <p className="fy-notice" role="status">
+          {t('demoNotice')}
+        </p>
+      ) : null}
       {localHint ? (
         <p className="fy-notice" role="status">
           {localHint}
