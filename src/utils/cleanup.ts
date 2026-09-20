@@ -280,8 +280,6 @@ export function generateAntiSearchParams({ level }: { level: number }): AntiSear
   const noiseAmplitude = 3 + safeLevel * 2.5;
   const brightnessShift = (rand() - 0.5) * 0.04 * safeLevel;
   const contrastShift = (rand() - 0.5) * 0.05 * safeLevel;
-  const saturationShift = (rand() - 0.5) * 0.06 * safeLevel;
-  const hueShift = (rand() - 0.5) * 12 * safeLevel;
   const warpStrength = 0.004 * safeLevel + rand() * 0.002;
   return {
     crop,
@@ -290,8 +288,6 @@ export function generateAntiSearchParams({ level }: { level: number }): AntiSear
     noiseAmplitude,
     brightnessShift,
     contrastShift,
-    saturationShift,
-    hueShift,
     warpStrength,
     cropPercent: 0.004 + 0.008 * safeLevel,
     fieldAmplitude: 0.02 + 0.015 * safeLevel
@@ -362,42 +358,6 @@ export function sampleField(grid: Float32Array, nx: number, ny: number): number 
   const top = grid[y0 * FIELD_GRID + x0] * (1 - fx) + grid[y0 * FIELD_GRID + x1] * fx;
   const bottom = grid[y1 * FIELD_GRID + x0] * (1 - fx) + grid[y1 * FIELD_GRID + x1] * fx;
   return top * (1 - fy) + bottom * fy;
-}
-
-/**
- * Hue rotation and saturation change as one 3×3 matrix (YIQ hue rotation composed with a pull
- * towards luminance): pure arithmetic per pixel instead of an HSL round trip that allocated an
- * object and an array for every pixel of the picture.
- */
-export function colourMatrix(hueDegrees: number, saturationShift: number): Float64Array {
-  const a = (hueDegrees * Math.PI) / 180;
-  const cos = Math.cos(a);
-  const sin = Math.sin(a);
-  // Hue rotation in RGB (Haeberli): luminance-preserving rotation about the grey axis.
-  const lr = 0.299;
-  const lg = 0.587;
-  const lb = 0.114;
-  const hue = [
-    lr + cos * (1 - lr) + sin * -lr,
-    lg + cos * -lg + sin * -lg,
-    lb + cos * -lb + sin * (1 - lb),
-    lr + cos * -lr + sin * 0.143,
-    lg + cos * (1 - lg) + sin * 0.14,
-    lb + cos * -lb + sin * -0.283,
-    lr + cos * -lr + sin * -(1 - lr),
-    lg + cos * -lg + sin * lg,
-    lb + cos * (1 - lb) + sin * lb
-  ];
-  // Saturation: move each channel away from (or towards) the luminance by the shift.
-  const s = 1 + saturationShift;
-  const sat = [lr + s * (1 - lr), lg - s * lg, lb - s * lb, lr - s * lr, lg + s * (1 - lg), lb - s * lb, lr - s * lr, lg - s * lg, lb + s * (1 - lb)];
-  const out = new Float64Array(9);
-  for (let r = 0; r < 3; r++) {
-    for (let c = 0; c < 3; c++) {
-      out[r * 3 + c] = sat[r * 3] * hue[c] + sat[r * 3 + 1] * hue[3 + c] + sat[r * 3 + 2] * hue[6 + c];
-    }
-  }
-  return out;
 }
 
 /** Minimum Hamming distance (of 64 bits) the export must reach for each level; ≥ 10 stops reverse image search. */
@@ -516,8 +476,6 @@ export function applyAntiSearch(
   // The smooth luminance field is what actually moves the perceptual hash (see smoothFieldGrid).
   const amplitude = (params.fieldAmplitude ?? 0) * 255;
   const grid = amplitude > 0 ? smoothFieldGrid(params.noiseSeed) : null;
-  const matrix = colourMatrix(params.hueShift, params.saturationShift);
-  const [m00, m01, m02, m10, m11, m12, m20, m21, m22] = matrix;
   const offset = brightness * 255;
   const width = rotatedCanvas.width;
   const height = rotatedCanvas.height;
@@ -530,12 +488,9 @@ export function applyAntiSearch(
       const noise = (rand() - 0.5) * params.noiseAmplitude;
       const lift = grid ? sampleField(grid, (x + 0.5) / width, ny) * amplitude : 0;
       const shift = noise + lift + offset;
-      const r = factor * (data[i] + shift - 128) + 128;
-      const g = factor * (data[i + 1] + shift - 128) + 128;
-      const b = factor * (data[i + 2] + shift - 128) + 128;
-      data[i] = clamp(m00 * r + m01 * g + m02 * b, 0, 255);
-      data[i + 1] = clamp(m10 * r + m11 * g + m12 * b, 0, 255);
-      data[i + 2] = clamp(m20 * r + m21 * g + m22 * b, 0, 255);
+      data[i] = clamp(factor * (data[i] + shift - 128) + 128, 0, 255);
+      data[i + 1] = clamp(factor * (data[i + 1] + shift - 128) + 128, 0, 255);
+      data[i + 2] = clamp(factor * (data[i + 2] + shift - 128) + 128, 0, 255);
     }
   }
   rctx.putImageData(imageData, 0, 0);

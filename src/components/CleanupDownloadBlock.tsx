@@ -358,7 +358,9 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     setManualMaskMode(true);
     setAntiSearchEnabled(true);
     setAntiSearchLevel(3);
-    setWatermarkEnabled(true);
+    // The watermark is a signature of this service, not a privacy measure: someone who presses
+    // «apply everything» is asking to be protected, not to be branded. It stays a manual switch.
+    setWatermarkEnabled(false);
     setMirrorEnabled(false); // mirror is destructive, not in "apply all"
     setDownscaleMax(1920);
   }, [

@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useT } from '../i18n';
 import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion';
 
 interface StickyActionsProps {
-  /** Show «new photo»: only once a photo is loaded; before that the drop zone is the way in. */
+  /** Show «new photo» and «to cleanup»: only once a photo is loaded, before that there is nothing to go to. */
   photoLoaded: boolean;
   /** Opens the drop zone's file picker. */
   onNewPhoto: () => void;
@@ -13,11 +13,14 @@ interface StickyActionsProps {
 const SHOW_AFTER_PX = 240;
 
 /**
- * Two fixed buttons in the bottom-right corner on the design system's `.v4-scroll-top`
- * pattern: «Наверх» (the DS arrow) and, once a photo is loaded, «Загрузить новое фото» with a
- * picture-plus pictogram that opens the drop zone's file picker. Both appear after the first
- * screen has been scrolled past, stay out of the Tab order until then (the DS class toggles
- * visibility) and disappear in print.
+ * Three fixed buttons in the bottom-right corner on the design system's `.v4-scroll-top`
+ * pattern: «Наверх» (the DS arrow) and, once a photo is loaded, «К очистке» (a downward arrow
+ * to section 03) and «Загрузить новое фото» (a picture-plus pictogram that opens the drop
+ * zone's file picker). All appear after the first screen has been scrolled past, stay out of
+ * the Tab order until then (the DS class toggles visibility) and disappear in print.
+ *
+ * «К очистке» is navigation, not a call to action: the facts section runs long, and section 03
+ * is otherwise several screens of scrolling away. It moves the viewport and nothing else.
  */
 export const StickyActions: React.FC<StickyActionsProps> = ({ photoLoaded, onNewPhoto }) => {
   const t = useT();
@@ -30,6 +33,14 @@ export const StickyActions: React.FC<StickyActionsProps> = ({ photoLoaded, onNew
     window.addEventListener('scroll', update, { passive: true });
     return () => window.removeEventListener('scroll', update);
   }, []);
+
+  const toCleanup = useCallback(() => {
+    const heading = document.getElementById('sec-cleanup');
+    if (!heading) return;
+    heading.tabIndex = -1;
+    heading.scrollIntoView({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
+    heading.focus({ preventScroll: true });
+  }, [reducedMotion]);
 
   const visible = scrolled ? ' is-visible' : '';
   return (
@@ -56,6 +67,17 @@ export const StickyActions: React.FC<StickyActionsProps> = ({ photoLoaded, onNew
             <path d="M4 18 L8.5 13 L11 15.5 L12.5 14 L14.5 16" />
             <path d="M19.75 3.5 V10.5 M16.25 7 H23.25" />
           </svg>
+        </button>
+      ) : null}
+      {photoLoaded ? (
+        <button
+          type="button"
+          className={`v4-scroll-top fy-sticky-cleanup${visible}`}
+          onClick={toCleanup}
+          aria-label={t('toCleanupLabel')}
+          title={t('toCleanupLabel')}
+        >
+          ↓
         </button>
       ) : null}
       <button

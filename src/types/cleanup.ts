@@ -21,8 +21,6 @@ export interface AntiSearchParams {
   noiseAmplitude: number;
   brightnessShift: number;
   contrastShift: number;
-  saturationShift: number;
-  hueShift: number;
   warpStrength: number;
   /** Crop per side as a fraction of the picture (on top of the pixel `crop`): shifts the content on the hash grid. */
   cropPercent: number;
