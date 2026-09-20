@@ -265,6 +265,17 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
               </dd>
             </>
           ) : null}
+          {remote && geo.landmarks.items.length > 0 ? (
+            <>
+              <dt>{t('insightCompactLandmarks')}</dt>
+              <dd>
+                <span>
+                  {geo.landmarks.items.map((item) => `${item.title} — ${formatPoiDistance(item.distance)}`).join('; ')}
+                </span>
+                <span className="fy-muted">{t('landmarksHint')}</span>
+              </dd>
+            </>
+          ) : null}
           {placeCtx?.population != null ? (
             <>
               <dt>{t('insightCompactPopulation')}</dt>

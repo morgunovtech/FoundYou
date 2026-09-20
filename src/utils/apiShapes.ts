@@ -44,6 +44,16 @@ export function isPlaceContext(data: unknown): boolean {
   return data.sensitive.every(isItem) && data.transport.every(isItem);
 }
 
+export function isLandmarkList(data: unknown): boolean {
+  return (
+    Array.isArray(data) &&
+    data.every(
+      (item) =>
+        isRecord(item) && typeof item.title === 'string' && isFiniteNumber(item.distance) && typeof item.lang === 'string'
+    )
+  );
+}
+
 export function isReverseGeocode(data: unknown): boolean {
   if (!isRecord(data)) return false;
   if (!isFiniteNumber(data.lat) || !isFiniteNumber(data.lon)) return false;

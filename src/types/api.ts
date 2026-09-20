@@ -73,6 +73,15 @@ export interface HolidaysResult {
   holidays: HolidayEntry[];
 }
 
+export interface LandmarkResult {
+  /** Wikipedia article title, in the edition it was found in. */
+  title: string;
+  /** Metres from the rounded point to the article's coordinates. */
+  distance: number;
+  /** Wikipedia edition the article came from: `uz`, `ru`, `en`… */
+  lang: string;
+}
+
 export interface PlaceContextItem {
   /** OSM value that made it interesting: `school`, `hospital`, `military`, `railway:station`… */
   kind: string;

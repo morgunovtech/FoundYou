@@ -280,6 +280,8 @@ const messages = {
     historyMessengerSize: 'Длинная сторона ровно {size} px — столько оставляет {platforms}. Совпадение размера, а не доказательство: до этого же числа можно уменьшить фото и руками, а сервисы меняют его от версии к версии.',
     stanceInFrame: 'Что попало в кадр',
     stanceInFrameHint: 'Объекты OpenStreetMap внутри угла обзора по направлению камеры. Это расчёт по направлению и углу, а не распознавание: объект мог быть закрыт зданием, деревом или спиной человека.',
+    insightCompactLandmarks: 'Известные места рядом',
+    landmarksHint: 'У этой точки есть статьи в Википедии. Это скорее хорошо: координаты у достопримечательности говорят, что человек был там, где бывают тысячи людей, а координаты в жилом квартале — что он там, скорее всего, живёт. На наш сервер ушли те же округлённые координаты, сам запрос к Википедии делает сервер, ваш IP туда не попадает.',
     mapGateTitle: 'Карта загружается со стороннего сервера',
     mapGateBody:
       'Всё на этой странице посчитано на вашем устройстве, и наружу ушли только округлённые координаты — на наш сервер. Карта устроена иначе: её квадратики браузер скачивает напрямую у OpenStreetMap, мимо нас. Поэтому она за отдельной кнопкой, а не грузится сама.',
@@ -999,6 +1001,8 @@ const messages = {
     historyMessengerSize: 'The longest side is exactly {size} px — the size {platforms} leaves behind. A match of size, not proof: a picture can be resized to that by hand, and the services change the number between versions.',
     stanceInFrame: 'What was in the frame',
     stanceInFrameHint: 'OpenStreetMap objects inside the lens angle along the camera direction. It is a calculation from the heading and the angle, not recognition: the object may have been hidden by a building, a tree or someone\u2019s back.',
+    insightCompactLandmarks: 'Known places here',
+    landmarksHint: 'This point has Wikipedia articles about it. That is rather good news: coordinates at a landmark say someone was where thousands of people go, while coordinates in a residential street say they probably live there. The same rounded coordinates went to our own server, which asked Wikipedia — your IP address never reaches it.',
     mapGateTitle: 'The map loads from a third-party server',
     mapGateBody:
       'Everything on this page was computed on your device, and the only thing that left it were rounded coordinates, sent to our server. The map works differently: the browser downloads its tiles straight from OpenStreetMap, bypassing us. That is why it sits behind a button instead of loading on its own.',
@@ -1719,6 +1723,8 @@ const messages = {
     historyMessengerSize: 'Uzun tomoni aynan {size} px — {platforms} shu o‘lchamni qoldiradi. Bu o‘lcham mosligi, dalil emas: suratni shu songacha qo‘lda ham kichraytirish mumkin, xizmatlar esa bu sonni versiyadan versiyaga o‘zgartiradi.',
     stanceInFrame: 'Kadrga nima tushgan',
     stanceInFrameHint: 'Kamera yo‘nalishi bo‘yicha ko‘rish burchagi ichidagi OpenStreetMap obyektlari. Bu yo‘nalish va burchak bo‘yicha hisob, tanib olish emas: obyekt bino, daraxt yoki odamning orqasi bilan to‘silgan bo‘lishi mumkin.',
+    insightCompactLandmarks: 'Yaqin atrofdagi mashhur joylar',
+    landmarksHint: 'Bu nuqta haqida Vikipediyada maqolalar bor. Bu ko‘proq yaxshi xabar: diqqatga sazovor joydagi koordinatalar odam minglab kishilar boradigan joyda bo‘lganini bildiradi, turar-joy kvartalidagilari esa u yerda yashashini. Serverimizga o‘sha yaxlitlangan koordinatalar bordi, Vikipediyaga so‘rovni server yuboradi, sizning IP manzilingiz u yerga tushmaydi.',
     mapGateTitle: 'Xarita uchinchi tomon serveridan yuklanadi',
     mapGateBody:
       'Bu sahifadagi hamma narsa sizning qurilmangizda hisoblandi, tashqariga faqat yaxlitlangan koordinatalar — bizning serverimizga — chiqdi. Xarita boshqacha: uning kataklarini brauzer to‘g‘ridan-to‘g‘ri OpenStreetMap’dan, bizni chetlab o‘tib yuklaydi. Shuning uchun u o‘zi yuklanmaydi, alohida tugma ortida turadi.',
