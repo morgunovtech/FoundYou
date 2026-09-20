@@ -70,7 +70,8 @@ export const DAY_KIND_KEYS: Record<DayKind, MessageKey> = { weekend: 'dayWeekend
 
 export const AGE_KEYS: Record<AgeKind, MessageKey> = {
   future: 'ageFuture',
-  fresh: 'ageFresh',
+  today: 'ageToday',
+  yesterday: 'ageYesterday',
   days: 'ageDays',
   months: 'ageMonths',
   years: 'ageYears'

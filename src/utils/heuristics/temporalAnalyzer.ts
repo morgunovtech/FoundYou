@@ -88,9 +88,14 @@ export function analyzeDateTime(shotDateLocal: string | undefined, lang: Lang): 
       inference: lang === 'ru' ? 'Часы на устройстве были настроены неправильно' : lang === 'uz' ? 'Qurilma soati noto\'g\'ri sozlangan' : 'Device clock was set incorrectly',
       severity: 'low',
     });
-  } else if (age.kind === 'fresh') {
+  } else if (age.kind === 'today' || age.kind === 'yesterday') {
+    const today = age.kind === 'today';
     insights.push({
-      fact: lang === 'ru' ? 'Фото сделано сегодня или вчера' : lang === 'uz' ? 'Foto bugun yoki kecha olingan' : 'Photo taken today or yesterday',
+      fact: lang === 'ru'
+        ? (today ? 'Фото сделано сегодня' : 'Фото сделано вчера')
+        : lang === 'uz'
+        ? (today ? 'Foto bugun olingan' : 'Foto kecha olingan')
+        : (today ? 'Photo taken today' : 'Photo taken yesterday'),
       inference: lang === 'ru' ? 'Свежее фото — геолокация актуальна' : lang === 'uz' ? 'Yangi foto — geolokatsiya dolzarb' : 'Fresh photo — geolocation is current',
       severity: 'high',
     });
