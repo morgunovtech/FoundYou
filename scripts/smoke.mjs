@@ -159,7 +159,8 @@ try {
   await verify.waitFor();
   const fullText = (await verify.textContent()) ?? '';
   if (!/осталось 0|0 left|0 ta|0 qoldi/.test(fullText)) fail(`unexpected verification text after «apply all»: ${fullText}`);
-  const phashLine = page.locator('.fy-hint[role="status"]', { hasText: /из 64 бит|of 64 bits|64 bitdan/ });
+  // The verification's own lines: the anti-search card carries a status hint about «64 bits» too.
+  const phashLine = page.locator('.fy-verify-extra', { hasText: /из 64 бит|of 64 bits|64 bitdan/ });
   await phashLine.waitFor();
   const phashText = (await phashLine.textContent()) ?? '';
 

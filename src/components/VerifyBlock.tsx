@@ -12,8 +12,9 @@ const REPO_URL = 'https://github.com/morgunovtech/meta-data';
  */
 export const VerifyBlock: React.FC = () => {
   const t = useT();
+  // `fy-howto`, not `fy-verify`: that class names the post-export verification line, which the smoke locates.
   return (
-    <section className="v4-section fy-verify" aria-labelledby="sec-verify">
+    <section className="v4-section fy-howto" aria-labelledby="sec-verify">
       <h2 className="v4-h2" id="sec-verify">
         {t('verifyTitle')}
       </h2>

@@ -1011,7 +1011,9 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
           </p>
         ) : null}
         {verifyMessage?.extra.map((line) => (
-          <p key={line} className="fy-hint" role="status">
+          // `fy-verify-extra`: the smoke reads the fingerprint line here, and the anti-search card
+          // has a status hint of its own that also speaks of «64 bits».
+          <p key={line} className="fy-hint fy-verify-extra" role="status">
             {line}
           </p>
         ))}
