@@ -138,7 +138,7 @@ export const FrameChecksCard: React.FC<FrameChecksCardProps> = ({ fileInfo, jpeg
   const cropped = (width: number, height: number) => t('frameChecksCropped', { width, height });
 
   return (
-    <FactRow title={t('frameChecksTitle')} severity="low" value={null} sub={t('frameChecksIntro')}>
+    <FactRow title={t('frameChecksTitle')} value={null} sub={t('frameChecksIntro')}>
       <div className="fy-fact-details fy-frame">
         <Explainer title={t('frameChecksLimitTitle')}>
           <p>{t('frameChecksLimit')}</p>

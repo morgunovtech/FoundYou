@@ -27,6 +27,11 @@ interface CleanupSummaryInput {
   qualityPercent: number;
   /** The export keeps the original picture bytes and only rewrites the container (JPEG/PNG source, no pixel operation). */
   losslessContainer?: boolean;
+  /** The copy is written as PNG: lossless, so the quality setting does not apply. */
+  losslessFormat?: boolean;
+  /** The leak index now and the one predicted for the copy; both or neither. */
+  leakBefore?: number | null;
+  leakAfter?: number | null;
   t: Translate;
 }
 
@@ -47,6 +52,9 @@ export function buildCleanupSummary({
   qualityMode,
   qualityPercent,
   losslessContainer = false,
+  losslessFormat = false,
+  leakBefore = null,
+  leakAfter = null,
   t
 }: CleanupSummaryInput): string[] {
   const items: string[] = [];
@@ -75,11 +83,18 @@ export function buildCleanupSummary({
   }
   items.push(renameSummary);
   items.push(watermarkEnabled ? t('privacyDiffWatermarkOn') : t('privacyDiffWatermarkOff'));
-  items.push(
-    t('privacyDiffQualityMode', {
-      mode: t(`qualityMode_${qualityMode}`),
-      percent: qualityPercent
-    })
-  );
+  // A PNG has no quality knob; «Качество: Среднее (90 %)» under a PNG screenshot was a lie by template.
+  if (losslessFormat || losslessContainer) {
+    items.push(t('privacyDiffFormatLossless'));
+  } else {
+    items.push(
+      qualityMode === 'match'
+        ? t('privacyDiffQualityMatch', { percent: qualityPercent })
+        : t('privacyDiffQualityMode', { mode: t(`qualityMode_${qualityMode}`), percent: qualityPercent })
+    );
+  }
+  if (leakBefore != null && leakAfter != null) {
+    items.push(t('privacyDiffLeakIndex', { before: leakBefore, after: leakAfter }));
+  }
   return items;
 }

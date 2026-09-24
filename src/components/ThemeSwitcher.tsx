@@ -21,10 +21,9 @@ export const ThemeSwitcher: React.FC = () => {
 
   return (
     <Dropdown
-      className="v4-theme"
+      className="fy-theme"
       toggleClassName="v4-icon-btn"
       toggleLabel={t('themeMenuLabel')}
-      menuClassName="v4-theme-menu"
       items={OPTIONS.map((option) => ({
         value: option.value,
         label: t(option.labelKey),

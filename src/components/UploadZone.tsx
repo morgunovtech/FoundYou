@@ -147,7 +147,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error, 
   const bannerMessage = error ?? localError;
 
   return (
-    <section className="fy-card" aria-label={t('uploadButton')}>
+    <section id="upload-zone" className="fy-card" aria-label={t('uploadButton')}>
       <div
         className={clsx('fy-drop', { 'is-drag-over': dragOver })}
         onDragEnter={(event) => {
@@ -179,6 +179,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error, 
           htmlFor={uploadInputId}
           role="button"
           tabIndex={0}
+          aria-labelledby={`${uploadInputId}-label`}
           onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault();
@@ -186,7 +187,8 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error, 
             }
           }}
         >
-          <span className="v4-btn v4-btn-primary" aria-live="polite">
+          {/* The button's own text is its name; without this the label read the two hints below as well. */}
+          <span id={`${uploadInputId}-label`} className="v4-btn v4-btn-primary" aria-live="polite">
             {loading ? t('uploading') : t('uploadButton')}
           </span>
           <p className="fy-drop-hint">{t('orDrop')}</p>
@@ -198,6 +200,12 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error, 
           {demoLoading ? t('demoLoading') : t('demoButton')}
         </button>
       </div>
+      {/* The trust link: a stranger is asked to hand over a photograph; here is how they can check the promise first. */}
+      <p className="fy-trust">
+        <a href="#sec-verify" className="fy-trust-link">
+          {t('trustLink')}
+        </a>
+      </p>
       {demoActive ? (
         <p className="fy-notice" role="status">
           {t('demoNotice')}

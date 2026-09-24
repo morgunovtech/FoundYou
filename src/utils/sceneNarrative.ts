@@ -54,17 +54,41 @@ const LABELS_RU: Record<string, string> = {
   remote: 'пульт',
 };
 
+/**
+ * All 80 classes, like the Russian table: this one used to know 30 of them, and `localizeLabel`
+ * fell back to the *English* word, so an Uzbek scene sentence read «… — elephant» or «pizza» in
+ * the middle — the mixed-language card the 2026-09-20 dictionary conversion was meant to end.
+ * A test pins that every class in `LABELS_RU` is here too.
+ */
 const LABELS_UZ: Record<string, string> = {
   person: 'odam', car: 'avtomobil', bus: 'avtobus', truck: 'yuk mashinasi',
   bicycle: 'velosiped', motorcycle: 'mototsikl', train: 'poyezd',
   dog: 'it', cat: 'mushuk', bird: 'qush', horse: 'ot',
-  sheep: 'qo\'y', cow: 'sigir',
-  chair: 'stul', couch: 'divan', bed: 'karavot', tv: 'televizor',
-  laptop: 'noutbuk', 'cell phone': 'telefon', book: 'kitob', clock: 'soat',
-  bottle: 'shisha', cup: 'piyola', bench: 'skameyka',
-  'traffic light': 'svetofor', boat: 'qayiq', airplane: 'samolyot',
-  backpack: 'ryukzak', umbrella: 'soyabon', handbag: 'sumka',
+  sheep: 'qo‘y', cow: 'sigir', elephant: 'fil', bear: 'ayiq',
+  zebra: 'zebra', giraffe: 'jirafa',
+  backpack: 'ryukzak', umbrella: 'soyabon', handbag: 'sumka', suitcase: 'chamadon',
+  bottle: 'shisha', cup: 'piyola', fork: 'vilka', knife: 'pichoq', spoon: 'qoshiq',
+  bowl: 'kosa', banana: 'banan', apple: 'olma', sandwich: 'sendvich',
+  orange: 'apelsin', pizza: 'pitsa', cake: 'tort',
+  chair: 'stul', couch: 'divan', bed: 'karavot', 'dining table': 'stol',
+  tv: 'televizor', laptop: 'noutbuk', mouse: 'sichqoncha', keyboard: 'klaviatura',
+  'cell phone': 'telefon', book: 'kitob', clock: 'soat', vase: 'vaza',
+  'potted plant': 'tuvakdagi o‘simlik', toilet: 'hojatxona', sink: 'rakovina',
+  refrigerator: 'muzlatgich', oven: 'pech', microwave: 'mikroto‘lqinli pech',
+  toaster: 'toster', bench: 'skameyka',
+  'traffic light': 'svetofor', 'fire hydrant': 'gidrant', 'stop sign': '«stop» belgisi',
+  'parking meter': 'parkomat', skateboard: 'skeytbord', surfboard: 'syorf taxtasi',
+  'tennis racket': 'tennis raketkasi', 'sports ball': 'to‘p', kite: 'varrak',
+  'baseball bat': 'beysbol tayoqchasi', 'baseball glove': 'beysbol qo‘lqopi', frisbee: 'frisbi',
+  skis: 'chang‘i', snowboard: 'snoubord', 'wine glass': 'qadah',
+  'hot dog': 'xot-dog', donut: 'donat', broccoli: 'brokkoli', carrot: 'sabzi',
+  scissors: 'qaychi', 'teddy bear': 'ayiqcha o‘yinchoq', 'hair drier': 'fen',
+  toothbrush: 'tish cho‘tkasi', tie: 'galstuk', boat: 'qayiq', airplane: 'samolyot',
+  remote: 'pult',
 };
+
+/** The label tables, for the test that keeps them complete. */
+export const SCENE_LABELS = { ru: LABELS_RU, uz: LABELS_UZ } as const;
 
 /** Human label for a COCO class in the UI language (the preview boxes use it too). */
 export function localizeLabel(label: string, lang: Lang): string {
@@ -217,22 +241,116 @@ function pluralRu(count: number, one: string, few: string, many: string): string
 
 /* ── object label with count ─────────────────────────────── */
 
-// Russian-specific plural forms for common COCO labels
-const RU_PLURALS: Record<string, [string, string, string]> = {
+/**
+ * Russian plural forms (one, few, many) for every COCO label. The table used to cover 13 of the
+ * 80 and the rest printed «3 ноутбук», «2 телефон», «4 чашка». Labels that are themselves plural
+ * (часы, лыжи, ножницы) are counted in pairs, which is how Russian counts them.
+ */
+export const RU_PLURALS: Record<string, [string, string, string]> = {
   'человек': ['человек', 'человека', 'человек'],
   'автомобиль': ['автомобиль', 'автомобиля', 'автомобилей'],
   'автобус': ['автобус', 'автобуса', 'автобусов'],
   'грузовик': ['грузовик', 'грузовика', 'грузовиков'],
   'велосипед': ['велосипед', 'велосипеда', 'велосипедов'],
   'мотоцикл': ['мотоцикл', 'мотоцикла', 'мотоциклов'],
+  'поезд': ['поезд', 'поезда', 'поездов'],
   'собака': ['собака', 'собаки', 'собак'],
   'кошка': ['кошка', 'кошки', 'кошек'],
   'птица': ['птица', 'птицы', 'птиц'],
   'лошадь': ['лошадь', 'лошади', 'лошадей'],
-  'стул': ['стул', 'стула', 'стульев'],
+  'овца': ['овца', 'овцы', 'овец'],
+  'корова': ['корова', 'коровы', 'коров'],
+  'слон': ['слон', 'слона', 'слонов'],
+  'медведь': ['медведь', 'медведя', 'медведей'],
+  'зебра': ['зебра', 'зебры', 'зебр'],
+  'жираф': ['жираф', 'жирафа', 'жирафов'],
+  'рюкзак': ['рюкзак', 'рюкзака', 'рюкзаков'],
+  'зонт': ['зонт', 'зонта', 'зонтов'],
+  'сумка': ['сумка', 'сумки', 'сумок'],
+  'чемодан': ['чемодан', 'чемодана', 'чемоданов'],
   'бутылка': ['бутылка', 'бутылки', 'бутылок'],
+  'чашка': ['чашка', 'чашки', 'чашек'],
+  'вилка': ['вилка', 'вилки', 'вилок'],
+  'нож': ['нож', 'ножа', 'ножей'],
+  'ложка': ['ложка', 'ложки', 'ложек'],
+  'тарелка': ['тарелка', 'тарелки', 'тарелок'],
+  'банан': ['банан', 'банана', 'бананов'],
+  'яблоко': ['яблоко', 'яблока', 'яблок'],
+  'бутерброд': ['бутерброд', 'бутерброда', 'бутербродов'],
+  'апельсин': ['апельсин', 'апельсина', 'апельсинов'],
+  'пицца': ['пицца', 'пиццы', 'пицц'],
+  'торт': ['торт', 'торта', 'тортов'],
+  'стул': ['стул', 'стула', 'стульев'],
+  'диван': ['диван', 'дивана', 'диванов'],
+  'кровать': ['кровать', 'кровати', 'кроватей'],
+  'стол': ['стол', 'стола', 'столов'],
+  'телевизор': ['телевизор', 'телевизора', 'телевизоров'],
+  'ноутбук': ['ноутбук', 'ноутбука', 'ноутбуков'],
+  'мышь': ['мышь', 'мыши', 'мышей'],
+  'клавиатура': ['клавиатура', 'клавиатуры', 'клавиатур'],
+  'телефон': ['телефон', 'телефона', 'телефонов'],
   'книга': ['книга', 'книги', 'книг'],
+  'часы': ['часы', 'пары часов', 'пар часов'],
+  'ваза': ['ваза', 'вазы', 'ваз'],
+  'растение': ['растение', 'растения', 'растений'],
+  'туалет': ['туалет', 'туалета', 'туалетов'],
+  'раковина': ['раковина', 'раковины', 'раковин'],
+  'холодильник': ['холодильник', 'холодильника', 'холодильников'],
+  'печь': ['печь', 'печи', 'печей'],
+  'микроволновка': ['микроволновка', 'микроволновки', 'микроволновок'],
+  'тостер': ['тостер', 'тостера', 'тостеров'],
+  'скамейка': ['скамейка', 'скамейки', 'скамеек'],
+  'светофор': ['светофор', 'светофора', 'светофоров'],
+  'гидрант': ['гидрант', 'гидранта', 'гидрантов'],
+  'знак стоп': ['знак стоп', 'знака стоп', 'знаков стоп'],
+  'паркомат': ['паркомат', 'паркомата', 'паркоматов'],
+  'скейтборд': ['скейтборд', 'скейтборда', 'скейтбордов'],
+  'сёрф': ['сёрф', 'сёрфа', 'сёрфов'],
+  'ракетка': ['ракетка', 'ракетки', 'ракеток'],
+  'мяч': ['мяч', 'мяча', 'мячей'],
+  'воздушный змей': ['воздушный змей', 'воздушных змея', 'воздушных змеев'],
+  'бита': ['бита', 'биты', 'бит'],
+  'перчатка': ['перчатка', 'перчатки', 'перчаток'],
+  'фрисби': ['фрисби', 'фрисби', 'фрисби'],
+  'лыжи': ['пара лыж', 'пары лыж', 'пар лыж'],
+  'сноуборд': ['сноуборд', 'сноуборда', 'сноубордов'],
+  'бокал': ['бокал', 'бокала', 'бокалов'],
+  'хот-дог': ['хот-дог', 'хот-дога', 'хот-догов'],
+  'пончик': ['пончик', 'пончика', 'пончиков'],
+  'брокколи': ['брокколи', 'брокколи', 'брокколи'],
+  'морковь': ['морковь', 'моркови', 'морковей'],
+  'ножницы': ['ножницы', 'пары ножниц', 'пар ножниц'],
+  'плюшевый мишка': ['плюшевый мишка', 'плюшевых мишки', 'плюшевых мишек'],
+  'фен': ['фен', 'фена', 'фенов'],
+  'зубная щётка': ['зубная щётка', 'зубные щётки', 'зубных щёток'],
+  'галстук': ['галстук', 'галстука', 'галстуков'],
+  'лодка': ['лодка', 'лодки', 'лодок'],
+  'самолёт': ['самолёт', 'самолёта', 'самолётов'],
+  'пульт': ['пульт', 'пульта', 'пультов'],
 };
+
+/** English nouns whose plural is not «add an s»; the rule below covers the rest. */
+const EN_IRREGULAR_PLURALS: Record<string, string> = {
+  person: 'people',
+  sheep: 'sheep',
+  mouse: 'mice',
+  knife: 'knives',
+  broccoli: 'broccoli',
+  skis: 'skis',
+  scissors: 'scissors'
+};
+
+/** «2 bus», «2 benchs», «2 knifes», «2 sheeps» is what «append an s unless it ends in one» gave. */
+export function pluralEn(noun: string): string {
+  const irregular = EN_IRREGULAR_PLURALS[noun];
+  if (irregular) return irregular;
+  // A compound pluralises its last word: «wine glass» → «wine glasses».
+  const space = noun.lastIndexOf(' ');
+  if (space !== -1) return `${noun.slice(0, space + 1)}${pluralEn(noun.slice(space + 1))}`;
+  if (/(s|x|z|ch|sh)$/.test(noun)) return `${noun}es`;
+  if (/[^aeiou]y$/.test(noun)) return `${noun.slice(0, -1)}ies`;
+  return `${noun}s`;
+}
 
 function countedLabel(label: string, count: number, lang: Lang): string {
   if (count === 1) return localizeLabel(label, lang);
@@ -245,11 +363,7 @@ function countedLabel(label: string, count: number, lang: Lang): string {
   if (lang === 'uz') {
     return `${count} ta ${localizeLabel(label, lang)}`;
   }
-  // English: simple plural
-  const en = localizeLabel(label, lang);
-  if (count === 1) return en;
-  if (en === 'person') return `${count} people`;
-  return `${count} ${en}${en.endsWith('s') ? '' : 's'}`;
+  return `${count} ${pluralEn(localizeLabel(label, lang))}`;
 }
 
 const EN_VOWEL = /^[aeiou]/i;

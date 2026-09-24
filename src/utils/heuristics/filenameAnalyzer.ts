@@ -59,6 +59,12 @@ const PATTERNS: FilenamePattern[] = [
 
   // Messenger re-saves
   { regex: /^photo_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.jpg$/i, platform: 'Telegram', device: { ru: 'Сохранено из Telegram', en: 'Saved from Telegram', uz: 'Telegramdan saqlangan' }, confidence: 0.95 },
+  // Telegram on macOS and iOS: a space and dots (`photo_2022-03-08 13.33.59.jpeg`), optionally a
+  // Finder duplicate counter. All 43 Telegram files in the owner's bench are named this way and
+  // none matched the underscore form above — the most common messenger name on a Mac went unseen.
+  { regex: /^photo_\d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2}(?: \d+)?\.jpe?g$/i, platform: 'Telegram', device: { ru: 'Сохранено из Telegram', en: 'Saved from Telegram', uz: 'Telegramdan saqlangan' }, confidence: 0.95 },
+  // Telegram Desktop: `photo_12@08-03-2022_13-33-59.jpg`.
+  { regex: /^photo_\d+@\d{2}-\d{2}-\d{4}_\d{2}-\d{2}-\d{2}\.jpe?g$/i, platform: 'Telegram', device: { ru: 'Сохранено из Telegram', en: 'Saved from Telegram', uz: 'Telegramdan saqlangan' }, confidence: 0.95 },
   { regex: /^signal-\d{4}-\d{2}-\d{2}/i, platform: 'Signal', device: { ru: 'Сохранено из Signal', en: 'Saved from Signal', uz: 'Signaldan saqlangan' }, confidence: 0.95 },
   { regex: /^received_\d+\.jpeg$/i, platform: 'Facebook Messenger', device: { ru: 'Сохранено из FB Messenger', en: 'Saved from FB Messenger', uz: 'FB Messengerdan saqlangan' }, confidence: 0.9 },
   { regex: /^WhatsApp\sImage\s\d{4}-\d{2}-\d{2}/i, platform: 'WhatsApp', device: { ru: 'Сохранено из WhatsApp', en: 'Saved from WhatsApp', uz: 'WhatsAppdan saqlangan' }, confidence: 0.95 },

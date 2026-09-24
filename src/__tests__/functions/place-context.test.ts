@@ -87,6 +87,13 @@ describe('place-context: what kind of place this is', () => {
     expect(body.data!.sensitive.some((item) => item.kind.startsWith('railway'))).toBe(false);
   });
 
+  it('a metro station is a metro station, not a railway one', async () => {
+    const metro: FakeElement = { type: 'node', id: 90, lat: 41.3114, lon: 69.2798, tags: { railway: 'station', station: 'subway', name: 'Bodomzor' } };
+    mockFetch(async () => jsonResponse(payload([metro], [])));
+    const { body } = await callJson<ApiResponse<PlaceContextResult>>(onRequest, urlOf(PATH, TASHKENT));
+    expect(body.data!.transport).toEqual([{ kind: 'station:subway', name: 'Bodomzor', distance: expect.any(Number) }]);
+  });
+
   it('says nothing rather than something empty when OSM knows nothing here', async () => {
     mockFetch(async () => jsonResponse(payload([], [])));
     const { response, body } = await callJson<ApiResponse<PlaceContextResult>>(onRequest, urlOf(PATH, TASHKENT));

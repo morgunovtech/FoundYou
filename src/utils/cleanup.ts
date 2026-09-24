@@ -11,7 +11,8 @@ export interface BlurRegion {
 }
 
 const MIN_MASK_SIZE = 12;
-const MIN_MASK_POINTS = 3;
+/** Fewer points than this is a tap: a dab of the brush. Two points already make a band. */
+const MIN_MASK_POINTS = 2;
 
 /* ── blur engine: CSS filter where it works, resampling elsewhere ── */
 
@@ -61,11 +62,71 @@ function pixelateFactor(strength: number): number {
   return Math.max(2, Math.round(strength / 2));
 }
 
+/** A Gaussian is gone past 3σ: a blurred layer wider than that no longer fades inside the region. */
+const BLEED_SIGMAS = 3;
+
+/** Width and height of what is being blurred; every source this file is handed is a canvas or a bitmap. */
+function sourceSize(source: CanvasImageSource, fallback: { width: number; height: number }): { width: number; height: number } {
+  const candidate = source as { width?: unknown; height?: unknown };
+  const width = typeof candidate.width === 'number' ? candidate.width : fallback.width;
+  const height = typeof candidate.height === 'number' ? candidate.height : fallback.height;
+  return { width, height };
+}
+
+/**
+ * The region grown by `bleed` on every side, as its own canvas. Where the padding would reach
+ * past the picture, the picture is mirrored into it: the blur then samples pixels on every
+ * side of the region, at the very edge of the frame as in the middle of it.
+ */
+function paddedSourceLayer(
+  source: CanvasImageSource,
+  sourceWidth: number,
+  sourceHeight: number,
+  region: BlurRegion,
+  bleed: number
+): { canvas: HTMLCanvasElement; x: number; y: number } | null {
+  const x = Math.floor(region.x - bleed);
+  const y = Math.floor(region.y - bleed);
+  const width = Math.ceil(region.width + bleed * 2);
+  const height = Math.ceil(region.height + bleed * 2);
+  if (width <= 0 || height <= 0) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  for (const fy of [-1, 0, 1]) {
+    for (const fx of [-1, 0, 1]) {
+      // The tile the picture (or its mirror image) occupies, in picture coordinates.
+      const tileX = fx * sourceWidth;
+      const tileY = fy * sourceHeight;
+      if (tileX >= x + width || tileX + sourceWidth <= x || tileY >= y + height || tileY + sourceHeight <= y) continue;
+      // A mirrored tile is the picture drawn with a negative scale: `-u` lands at 0…−W for the
+      // left neighbour, `2W − u` at W…2W for the right one; the same for the rows.
+      const scaleX = fx === 0 ? 1 : -1;
+      const scaleY = fy === 0 ? 1 : -1;
+      const translateX = fx === 1 ? 2 * sourceWidth : 0;
+      const translateY = fy === 1 ? 2 * sourceHeight : 0;
+      ctx.setTransform(scaleX, 0, 0, scaleY, translateX - x, translateY - y);
+      ctx.drawImage(source, 0, 0, sourceWidth, sourceHeight);
+    }
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  return { canvas, x, y };
+}
+
 /**
  * Draws `region` of `source` back onto `ctx` blurred. The caller owns the
  * clip and the save/restore pair. With filter support this is the classic
  * `filter: blur()` redraw; otherwise the region is shrunk into a tiny canvas
  * and stretched back with smoothing, which hides detail just as reliably.
+ *
+ * The filter path does not draw the region alone. The blur samples a layer that is transparent
+ * outside whatever was drawn, so a layer the exact size of the region fades to α ≈ 0.5 at its
+ * edge and the original shows through a band about 2σ wide — measured on 40 px text with the
+ * default 28 px blur, the letters stayed as dark ghosts. The layer is therefore the region
+ * padded by 3σ (mirrored where it would leave the picture), and the caller's clip cuts it
+ * back to the region.
  */
 function paintBlurredRegion(
   ctx: CanvasRenderingContext2D,
@@ -75,8 +136,12 @@ function paintBlurredRegion(
 ) {
   const { x, y, width, height } = region;
   if (canvasBlurMode() === 'filter') {
+    const bleed = Math.max(1, Math.round(strength)) * BLEED_SIGMAS;
+    const picture = sourceSize(source, ctx.canvas);
+    const padded = paddedSourceLayer(source, picture.width, picture.height, region, bleed);
+    if (!padded) return;
     ctx.filter = `blur(${Math.round(strength)}px)`;
-    ctx.drawImage(source, x, y, width, height, x, y, width, height);
+    ctx.drawImage(padded.canvas, padded.x, padded.y);
     ctx.filter = 'none';
     return;
   }
@@ -197,9 +262,6 @@ export function blurManualMasks(
   if (masks.length === 0) return;
 
   const { width, height } = ctx.canvas;
-  // Blur input outside the painted area so the polygon edge never samples the
-  // transparent border of the sub-rectangle (3σ covers the Gaussian tail).
-  const bleed = Math.round(strength) * 3;
 
   masks.forEach((mask) => {
     if (mask.points.length === 0) return;
@@ -215,7 +277,8 @@ export function blurManualMasks(
       maxX = Math.max(maxX, pt.x);
       maxY = Math.max(maxY, pt.y);
     }
-    const pad = radius + bleed;
+    // The band reaches `radius` past the points on every side, plus a pixel for the anti-aliased rim.
+    const pad = radius + 1;
     const bounds = clampRect(
       { x: minX - pad, y: minY - pad, width: maxX - minX + pad * 2, height: maxY - minY + pad * 2 },
       width,
@@ -223,29 +286,59 @@ export function blurManualMasks(
     );
     if (!bounds) return;
 
-    ctx.save();
-    ctx.lineJoin = 'round';
-    ctx.lineCap = 'round';
-    ctx.beginPath();
+    /*
+     * What the brush covers is the shape the overlay draws, and nothing narrower. It used to be
+     * the *filled polygon* of the stroke's points (`clip()` takes a fill region): a near-straight
+     * swipe across a name tag enclosed a sliver, and measured in Chromium the export changed
+     * about a tenth of the pixels the overlay had painted over. So the mask is rasterised the way
+     * the overlay is — the swept band of a moving dab (a stroke of width 2·radius with round caps
+     * and joins) together with the inside of the loop the points close — and it is applied with
+     * `destination-in`, which keeps the union of the two, where a clip could only intersect them.
+     */
+    const blurred = document.createElement('canvas');
+    blurred.width = bounds.width;
+    blurred.height = bounds.height;
+    const blurredCtx = blurred.getContext('2d');
+    const shape = document.createElement('canvas');
+    shape.width = bounds.width;
+    shape.height = bounds.height;
+    const shapeCtx = shape.getContext('2d');
+    if (!blurredCtx || !shapeCtx) return;
+
+    blurredCtx.translate(-bounds.x, -bounds.y);
+    paintBlurredRegion(blurredCtx, source, bounds, strength);
+
+    shapeCtx.translate(-bounds.x, -bounds.y);
+    shapeCtx.fillStyle = '#000';
+    shapeCtx.strokeStyle = '#000';
+    shapeCtx.lineJoin = 'round';
+    shapeCtx.lineCap = 'round';
+    shapeCtx.lineWidth = radius * 2;
+    shapeCtx.beginPath();
     if (mask.points.length < MIN_MASK_POINTS) {
       /*
-       * A tap, or a stroke too short to make a polygon. It used to be dropped without a word:
-       * a finger that presses and lifts sends pointerdown and pointerup with no pointermove
-       * in between (measured with touch input in Chromium), so tapping a spot to cover it
-       * painted the draft on the overlay and then lost it. A brush dab is a disc.
+       * A tap. It used to be dropped without a word: a finger that presses and lifts sends
+       * pointerdown and pointerup with no pointermove in between (measured with touch input in
+       * Chromium), so tapping a spot to cover it painted the draft on the overlay and then lost
+       * it. A brush dab is a disc of the brush radius.
        */
       const centre = mask.points[mask.points.length - 1];
-      ctx.arc(centre.x, centre.y, radius, 0, Math.PI * 2);
+      shapeCtx.arc(centre.x, centre.y, radius, 0, Math.PI * 2);
+      shapeCtx.fill();
     } else {
-      ctx.moveTo(mask.points[0].x, mask.points[0].y);
+      shapeCtx.moveTo(mask.points[0].x, mask.points[0].y);
       for (let i = 1; i < mask.points.length; i += 1) {
-        ctx.lineTo(mask.points[i].x, mask.points[i].y);
+        shapeCtx.lineTo(mask.points[i].x, mask.points[i].y);
       }
-      ctx.closePath();
+      shapeCtx.closePath();
+      shapeCtx.fill();
+      shapeCtx.stroke();
     }
-    ctx.clip();
-    paintBlurredRegion(ctx, source, bounds, strength);
-    ctx.restore();
+
+    blurredCtx.setTransform(1, 0, 0, 1, 0, 0);
+    blurredCtx.globalCompositeOperation = 'destination-in';
+    blurredCtx.drawImage(shape, 0, 0);
+    ctx.drawImage(blurred, bounds.x, bounds.y);
   });
 }
 

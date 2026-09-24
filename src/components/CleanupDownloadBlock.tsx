@@ -85,16 +85,27 @@ interface CleanupDownloadBlockProps {
   antiSearchDistance?: number | null;
   /** The export keeps the original picture bytes (JPEG/PNG source, nothing touches the pixels). */
   losslessExport?: boolean;
+  /** The quality the source JPEG was written with (exact for libjpeg tables, estimated otherwise); null when unknown. */
+  sourceQuality?: number | null;
+  /** The leak index of the uploaded file and the one predicted for the copy from the current settings. */
+  leakBefore?: number | null;
+  leakAfter?: number | null;
 }
 
 const BRUSH_RADIUS = 18;
 const MIN_POINT_DISTANCE = 4;
 
-const QUALITY_PERCENT: Record<QualityMode, number> = {
+const QUALITY_PERCENT: Record<Exclude<QualityMode, 'match'>, number> = {
   low: Math.round(0.82 * 100),
   medium: Math.round(0.9 * 100),
   original: Math.round(0.98 * 100)
 };
+
+/** The percentage shown for a mode; «match» is the source's own quality, clamped as the encoder clamps it. */
+function qualityPercentOf(mode: QualityMode, sourceQuality: number | null): number {
+  if (mode === 'match') return sourceQuality != null ? Math.min(95, Math.max(50, Math.round(sourceQuality))) : QUALITY_PERCENT.medium;
+  return QUALITY_PERCENT[mode];
+}
 
 /** Design-system colour token as rgba() for canvas strokes; falls back to the light-theme value. */
 function tokenRgba(name: string, alpha: number, fallback: string): string {
@@ -155,6 +166,9 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
   qrPending = false,
   antiSearchDistance = null,
   losslessExport = false,
+  sourceQuality = null,
+  leakBefore = null,
+  leakAfter = null,
   plateCount = 0,
   blurPlates = false,
   qrCount = 0,
@@ -205,6 +219,10 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
       labels: labels.map((label, index) => (index === 0 ? label : uncapitalizeWord(label))).join(', ')
     }));
   }, [blurTargetCount, detectionUnavailable, ocrRegionCount, ocrPending, plateCount, qrCount, qrPending, documentCount, t]);
+
+  /** The copy is written as PNG (asked for, or the source is PNG): no quality knob applies. */
+  const outputLossless =
+    outputFormat === 'png' || (outputFormat === 'original' && (fileInfo?.originalMimeType ?? fileInfo?.mimeType) === 'image/png');
 
   const estimatedLabel = useMemo(() => {
     if (estimatedSize != null) {
@@ -282,10 +300,13 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
         antiSearchTargetBits: antiSearchTargetBits(antiSearchLevel),
         antiSearchDistance,
         losslessContainer: losslessExport,
+        losslessFormat: outputLossless,
+        leakBefore,
+        leakAfter,
         renameSummary,
         watermarkEnabled,
         qualityMode,
-        qualityPercent: QUALITY_PERCENT[qualityMode],
+        qualityPercent: qualityPercentOf(qualityMode, sourceQuality),
         t
       }),
     [
@@ -293,6 +314,9 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
       antiSearchLevel,
       antiSearchDistance,
       losslessExport,
+      outputLossless,
+      leakBefore,
+      leakAfter,
       blurActive,
       blurMode,
       blurSummary,
@@ -300,6 +324,7 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
       platformCapped,
       prnuCleanup,
       qualityMode,
+      sourceQuality,
       renameSummary,
       resolutionSummary,
       t,
@@ -362,7 +387,10 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     // «apply everything» is asking to be protected, not to be branded. It stays a manual switch.
     setWatermarkEnabled(false);
     setMirrorEnabled(false); // mirror is destructive, not in "apply all"
-    setDownscaleMax(1920);
+    // No downscale either (owner's decision, 2026-09-24): «apply everything» is about hiding
+    // what the picture gives away, and a smaller picture hides nothing that the blur, the
+    // metadata strip and the anti-search pass do not. The resolution preset stays manual.
+    setDownscaleMax(0);
   }, [
     detectionUnavailable,
     setAntiSearchEnabled,
@@ -569,7 +597,10 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
         return;
       }
       ctx.save();
-      ctx.lineWidth = Math.max(mapped.radius, 6);
+      // The band is the swept area of the dab: 2·radius wide, exactly what the export blurs
+      // (`blurManualMasks` rasterises the same shape). It used to be `radius` wide here and
+      // the polygon's fill alone in the export, so neither matched the other.
+      ctx.lineWidth = Math.max(mapped.radius, 6) * 2;
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
       ctx.strokeStyle = color;
@@ -602,11 +633,19 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
     if (!verifyResult) return null;
     // Beyond the metadata count: the perceptual fingerprint and any vendor trailer.
     const extra: string[] = [];
+    // The index of the copy next to the field count: the arithmetic the cleanup was aimed at.
+    if (verifyResult.leakBefore != null && verifyResult.leakAfter != null) {
+      extra.push(t('verifyLeakIndex', { before: verifyResult.leakBefore, after: verifyResult.leakAfter }));
+    }
     if (verifyResult.phashDistance != null) {
+      // «поиск найдёт копию» a second after «файл готов» read as a failure of an export that had
+      // not asked for the anti-search pass; with it off the distance is a plain fact.
       extra.push(
-        verifyResult.phashDistance >= PHASH_SAME_PICTURE
-          ? t('verifyPhashChanged', { distance: verifyResult.phashDistance })
-          : t('verifyPhashSame', { distance: verifyResult.phashDistance })
+        !verifyResult.antiSearchApplied
+          ? t('verifyPhashNeutral', { distance: verifyResult.phashDistance })
+          : verifyResult.phashDistance >= PHASH_SAME_PICTURE
+            ? t('verifyPhashChanged', { distance: verifyResult.phashDistance })
+            : t('verifyPhashSame', { distance: verifyResult.phashDistance })
       );
     }
     if (verifyResult.trailingBytesBefore) {
@@ -652,55 +691,68 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
               <label className="fy-field-label" htmlFor="cleanup-quality">
                 {t('qualityLabel')}
               </label>
-              <select
-                id="cleanup-quality"
-                className="fy-select"
-                value={qualityMode}
-                onChange={(event) => setQualityMode(event.target.value as QualityMode)}
-              >
-                <option value="low">{t('qualityMode_low')}</option>
-                <option value="medium">{t('qualityMode_medium')}</option>
-                <option value="original">{t('qualityMode_original')}</option>
-              </select>
+              <span className="fy-select-wrap">
+                <select
+                  id="cleanup-quality"
+                  className="fy-select"
+                  value={qualityMode}
+                  onChange={(event) => setQualityMode(event.target.value as QualityMode)}
+                >
+                  <option value="low">{t('qualityMode_low')}</option>
+                  <option value="medium">{t('qualityMode_medium')}</option>
+                  {/* Re-encode at the source's own quality: a copy at 90 % of an 80 % original was bigger than it. */}
+                  {sourceQuality != null ? <option value="match">{t('qualityMode_match', { percent: qualityPercentOf('match', sourceQuality) })}</option> : null}
+                  <option value="original">{t('qualityMode_original')}</option>
+                </select>
+              </span>
             </div>
             <div className="fy-field">
               <label className="fy-field-label" htmlFor="cleanup-resolution">
                 {t('resolutionLabel')}
               </label>
-              <select
-                id="cleanup-resolution"
-                className="fy-select"
-                value={downscaleMax}
-                onChange={(event) => setDownscaleMax(Number(event.target.value))}
-              >
-                <option value={0}>{t('resolutionOriginal')}</option>
-                <option value={1280}>{t('resolutionMessenger')}</option>
-                <option value={1920}>{t('resolutionSocial')}</option>
-                <option value={2560}>{t('resolutionModerate')}</option>
-              </select>
+              <span className="fy-select-wrap">
+                <select
+                  id="cleanup-resolution"
+                  className="fy-select"
+                  value={downscaleMax}
+                  onChange={(event) => setDownscaleMax(Number(event.target.value))}
+                >
+                  <option value={0}>{t('resolutionOriginal')}</option>
+                  <option value={1280}>{t('resolutionMessenger')}</option>
+                  <option value={1920}>{t('resolutionSocial')}</option>
+                  <option value={2560}>{t('resolutionModerate')}</option>
+                </select>
+              </span>
             </div>
             <div className="fy-field">
               <label className="fy-field-label" htmlFor="cleanup-format">
                 {t('formatLabel')}
               </label>
-              <select
-                id="cleanup-format"
-                className="fy-select"
-                value={outputFormat}
-                onChange={(event) => setOutputFormat(event.target.value as OutputFormat)}
-              >
-                <option value="original">{t('formatOriginal')}</option>
-                <option value="jpeg">JPEG</option>
-                <option value="png">PNG</option>
-                <option value="webp">WebP</option>
-              </select>
+              <span className="fy-select-wrap">
+                <select
+                  id="cleanup-format"
+                  className="fy-select"
+                  value={outputFormat}
+                  onChange={(event) => setOutputFormat(event.target.value as OutputFormat)}
+                >
+                  <option value="original">{t('formatOriginal')}</option>
+                  <option value="jpeg">JPEG</option>
+                  <option value="png">PNG</option>
+                  <option value="webp">WebP</option>
+                </select>
+              </span>
             </div>
             <span className="fy-field-meta">
-              {t('qualityPercentLabel', {
-                percent: QUALITY_PERCENT[qualityMode],
-                size: estimatedLabel,
-                original: fileInfo ? formatBytesPrecise(fileInfo.originalSizeBytes ?? fileInfo.sizeBytes) : t('emptyValue')
-              })}
+              {outputLossless
+                ? t('sizeLabelLossless', {
+                    size: estimatedLabel,
+                    original: fileInfo ? formatBytesPrecise(fileInfo.originalSizeBytes ?? fileInfo.sizeBytes) : t('emptyValue')
+                  })
+                : t('qualityPercentLabel', {
+                    percent: qualityPercentOf(qualityMode, sourceQuality),
+                    size: estimatedLabel,
+                    original: fileInfo ? formatBytesPrecise(fileInfo.originalSizeBytes ?? fileInfo.sizeBytes) : t('emptyValue')
+                  })}
             </span>
             <p className="fy-hint">{t('qualityHint')}</p>
           </div>
@@ -717,20 +769,6 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
               <input type="checkbox" checked={renameFile} onChange={(event) => setRenameFile(event.target.checked)} />
               <span>{t('renameCheckbox')}</span>
             </label>
-            <label className="fy-check">
-              <input type="checkbox" checked={watermarkEnabled} onChange={(event) => setWatermarkEnabled(event.target.checked)} />
-              <span>{t('watermarkToggle')}</span>
-            </label>
-            {watermarkEnabled ? (
-              <input
-                type="text"
-                className="fy-input"
-                aria-label={t('watermarkText')}
-                placeholder={t('watermarkText')}
-                value={watermarkText}
-                onChange={(event) => setWatermarkText(event.target.value)}
-              />
-            ) : null}
           </div>
 
           {/* Card 3: hide faces, text, plates, manual masks. A row without a find is a plain line, not a dead toggle. */}
@@ -835,6 +873,26 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
             </label>
             <p className="fy-hint">{t('antiSearchWhat')}</p>
           </div>
+
+          {/* Card 5: the service's signature. Not metadata and not a privacy measure, so not in the metadata card. */}
+          <div className="fy-card">
+            <h3 className="v4-h3">{t('watermarkGroupTitle')}</h3>
+            <label className="fy-check">
+              <input type="checkbox" checked={watermarkEnabled} onChange={(event) => setWatermarkEnabled(event.target.checked)} />
+              <span>{t('watermarkToggle')}</span>
+            </label>
+            {watermarkEnabled ? (
+              <input
+                type="text"
+                className="fy-input"
+                aria-label={t('watermarkText')}
+                placeholder={t('watermarkText')}
+                value={watermarkText}
+                onChange={(event) => setWatermarkText(event.target.value)}
+              />
+            ) : null}
+            <p className="fy-hint">{t('watermarkGroupHint')}</p>
+          </div>
         </div>
 
         {manualMaskMode ? <p className="fy-hint">{t('manualMaskDrawingHint')}</p> : null}
@@ -864,8 +922,9 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
                   onPointerMove={handlePointerMove}
                   onPointerUp={handlePointerUp}
                   onPointerCancel={handlePointerCancel}
-                  role={manualMaskMode ? 'img' : 'presentation'}
+                  role={manualMaskMode ? 'application' : 'presentation'}
                   aria-label={manualMaskMode ? t('manualMaskDrawingHint') : undefined}
+                  aria-roledescription={manualMaskMode ? t('manualMaskSurfaceRole') : undefined}
                   style={{ pointerEvents: manualMaskMode ? 'auto' : 'none' }}
                 >
                   <canvas ref={overlayCanvasRef} />
@@ -952,7 +1011,9 @@ const CleanupDownloadBlockInner: React.FC<CleanupDownloadBlockProps> = ({
           </p>
         ) : null}
         {verifyMessage?.extra.map((line) => (
-          <p key={line} className="fy-hint" role="status">
+          // `fy-verify-extra`: the smoke reads the fingerprint line here, and the anti-search card
+          // has a status hint of its own that also speaks of «64 bits».
+          <p key={line} className="fy-hint fy-verify-extra" role="status">
             {line}
           </p>
         ))}

@@ -2,11 +2,13 @@
 import fs from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
 import { execSync } from 'node:child_process';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { defineConfig } from 'vite';
+import { defineConfig, type ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react-swc';
+// The real extension: Vite's future native config loader resolves imports as Node does.
+import { stampDsVersions } from './src/build/dsVersionStamp.ts';
+import { readVersions } from './scripts/asset-versions.mjs';
 
 /**
  * Short commit hash for the footer «build» line. Cloudflare Pages exposes the
@@ -26,9 +28,10 @@ function buildId(): string {
 
 /**
  * The design-system stylesheets live in public/ds/v1 and are linked from
- * index.html with `?v=dev`. At build time the stamp becomes a content hash,
- * mirroring the source repo's scripts/version-stamp.py, so a DS update busts
- * the cache while unchanged files keep theirs.
+ * index.html with `?v=dev`. At build time the stamp becomes a content hash
+ * (`src/build/dsVersionStamp.ts`, tested there), so a DS update busts the
+ * cache while unchanged files keep theirs. A stylesheet index.html links but
+ * public/ds/v1 does not hold fails the build rather than shipping `?v=dev`.
  */
 function dsVersionStamp() {
   const dsDir = path.resolve(__dirname, 'public/ds/v1');
@@ -36,14 +39,7 @@ function dsVersionStamp() {
     name: 'ds-version-stamp',
     apply: 'build' as const,
     transformIndexHtml(html: string) {
-      return html.replace(/\/ds\/v1\/([a-z]+)\.css\?v=dev/g, (match, name: string) => {
-        try {
-          const hash = createHash('md5').update(readFileSync(path.join(dsDir, `${name}.css`))).digest('hex');
-          return `/ds/v1/${name}.css?v=${hash.slice(0, 8)}`;
-        } catch {
-          return match;
-        }
-      });
+      return stampDsVersions(html, (name) => readFileSync(path.join(dsDir, name)));
     }
   };
 }
@@ -53,7 +49,7 @@ function functionsDevProxy() {
 
   return {
     name: 'cloudflare-functions-dev-proxy',
-    configureServer(server: any) {
+    configureServer(server: ViteDevServer) {
       server.middlewares.use(async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
         const url = req.url ?? '';
         if (!url.startsWith('/api/')) {
@@ -62,14 +58,18 @@ function functionsDevProxy() {
         }
 
         const requestUrl = new URL(url, 'http://localhost');
-        const functionName = requestUrl.pathname.replace(/^\/api\//, '');
-        if (!/^[a-z0-9-]+$/i.test(functionName)) {
+        const apiPath = requestUrl.pathname.replace(/^\/api\//, '');
+        if (!/^[a-z0-9-]+(?:\/[a-z0-9.-]+)*$/i.test(apiPath)) {
           res.statusCode = 404;
           res.end('Not found');
           return;
         }
 
-        const filePath = path.join(apiDir, `${functionName}.ts`);
+        // `/api/<name>` → functions/api/<name>.ts; `/api/<name>/a/b` → functions/api/<name>/[[path]].ts
+        // with `params.path = ['a', 'b']`, the way Cloudflare routes a catch-all segment.
+        const [functionName, ...rest] = apiPath.split('/');
+        const modulePath = rest.length === 0 ? `${functionName}.ts` : `${functionName}/[[path]].ts`;
+        const filePath = path.join(apiDir, modulePath);
         try {
           await fs.access(filePath);
         } catch {
@@ -79,7 +79,7 @@ function functionsDevProxy() {
 
         try {
           // Use Vite's ssrLoadModule to properly transform TypeScript
-          const mod = await server.ssrLoadModule(`/functions/api/${functionName}.ts`);
+          const mod = await server.ssrLoadModule(`/functions/api/${modulePath}`);
           if (typeof mod.onRequest !== 'function') {
             res.statusCode = 500;
             res.end('Function missing onRequest');
@@ -104,7 +104,7 @@ function functionsDevProxy() {
           const response: Response = await mod.onRequest({
             request,
             env: {},
-            params: {},
+            params: rest.length === 0 ? {} : { path: rest },
             // Cloudflare-only hook; here we just make sure a rejected
             // background promise (cache put) cannot crash the dev server.
             waitUntil: (p: Promise<unknown>) => {
@@ -121,7 +121,8 @@ function functionsDevProxy() {
         } catch (error) {
           console.error('functions-dev-proxy', error);
           res.statusCode = 500;
-          res.end(JSON.stringify({ ok: false, error: 'Function execution failed' }));
+          // The same body shape and code `defineHandler` in functions/api/_geo.ts answers with.
+          res.end(JSON.stringify({ ok: false, error: 'internal-error' }));
         }
       });
     }
@@ -131,13 +132,17 @@ function functionsDevProxy() {
 export default defineConfig({
   plugins: [react(), functionsDevProxy(), dsVersionStamp()],
   define: {
-    __BUILD__: JSON.stringify(buildId())
+    __BUILD__: JSON.stringify(buildId()),
+    // The versioned asset directories `prepare:assets` writes; `src/assetPaths.ts` reads them.
+    __ASSET_VERSIONS__: JSON.stringify(readVersions(__dirname))
   },
   build: {
     outDir: 'dist',
     sourcemap: 'hidden'
   },
   test: {
-    include: ['src/**/__tests__/**/*.test.{ts,tsx}', 'src/**/*.test.{ts,tsx}']
+    include: ['src/**/__tests__/**/*.test.{ts,tsx}', 'src/**/*.test.{ts,tsx}'],
+    // Replaces globalThis.fetch with a guard that throws: no test reaches the network.
+    setupFiles: ['src/__tests__/setup.ts']
   }
 });

@@ -60,10 +60,7 @@ export function buildQuery(lat: string, lon: string): string {
 (
   node["man_made"="surveillance"]${at(300)};
   node["surveillance"]${at(300)};
-  node["amenity"~"bank|atm|bureau_de_change"]${at(300)};
-  node["shop"~"mall|supermarket|convenience"]${at(300)};
   way["man_made"="surveillance"]${at(300)};
-  way["amenity"~"bank|atm"]${at(300)};
   relation["man_made"="surveillance"]${at(300)};
 )->.cctv;
 (
@@ -94,7 +91,9 @@ const inflight = new Map<string, Promise<Shared>>();
 export async function loadOverpassSets(context: CacheContext, lat: number, lon: number): Promise<OverpassResult> {
   const [lat4, lon4] = coordKey(lat, lon);
   // The version suffix changes whenever the query does, so cells cached under the old query are not served.
-  const key = cacheKey('overpass-v3', lat4, lon4);
+  // v4: the `.cctv` set lost the banks and shops on 2026-09-24; a v3 answer cached at the edge
+  // for a week would keep listing them under «Камеры наблюдения рядом» at every popular cell.
+  const key = cacheKey('overpass-v4', lat4, lon4);
 
   let pending = inflight.get(key);
   if (!pending) {
@@ -131,7 +130,7 @@ async function produce(lat4: string, lon4: string): Promise<Response> {
   });
   if (!upstream.ok) return upstream.error;
 
-  const text = await upstream.response.text();
+  const text = upstream.text;
   let parsed: any;
   try {
     parsed = JSON.parse(text);
@@ -198,13 +197,12 @@ function isContextCandidate(element: OverpassElement): boolean {
   );
 }
 
+/**
+ * Only cameras someone mapped. Banks, cash machines and supermarkets used to be listed as
+ * «places that may have a camera», which named every shop within 300 m and answered no question
+ * a reader had; a list that is honest about being short beats one padded with guesses.
+ */
 function isSurveillanceCandidate(element: OverpassElement): boolean {
   const tags = element.tags ?? {};
-  const cctv = tags.man_made === 'surveillance';
-  if (element.type === 'node') {
-    return cctv || !!tags.surveillance || /bank|atm|bureau_de_change/.test(tags.amenity ?? '') || /mall|supermarket|convenience/.test(tags.shop ?? '');
-  }
-  if (element.type === 'way') return cctv || /bank|atm/.test(tags.amenity ?? '');
-  if (element.type === 'relation') return cctv;
-  return false;
+  return tags.man_made === 'surveillance' || (element.type === 'node' && !!tags.surveillance);
 }

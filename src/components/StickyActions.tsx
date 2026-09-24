@@ -12,6 +12,48 @@ interface StickyActionsProps {
 /** Scrolled this far, the hero with the drop zone is off screen and the buttons earn their place. */
 const SHOW_AFTER_PX = 240;
 
+/** Below this width the three buttons cover the right edge of every card; see `useScrollDirection`. */
+const NARROW_MAX_PX = 640;
+/** A scroll shorter than this is a wobble, not a direction. */
+const DIRECTION_THRESHOLD_PX = 12;
+
+/**
+ * On a phone the stack sits over the last 60 px of every line for the whole length of section
+ * 02 («Временные метаданные отсутствуют или был|и удалены»). Fixed elements always cover
+ * something; what can change is when. Reading is scrolling down, so the buttons go away while
+ * the page moves down and come back on the first scroll up — the moment someone is looking for
+ * a way back to the top, the picker or the cleanup. Wide screens have margin to spare and keep
+ * the buttons still.
+ */
+function useScrollDirection(): 'up' | 'down' {
+  const [direction, setDirection] = useState<'up' | 'down'>('up');
+  useEffect(() => {
+    let last = window.scrollY;
+    const update = () => {
+      const y = window.scrollY;
+      const delta = y - last;
+      if (Math.abs(delta) < DIRECTION_THRESHOLD_PX) return;
+      last = y;
+      setDirection(delta > 0 ? 'down' : 'up');
+    };
+    window.addEventListener('scroll', update, { passive: true });
+    return () => window.removeEventListener('scroll', update);
+  }, []);
+  return direction;
+}
+
+function useIsNarrow(): boolean {
+  const [narrow, setNarrow] = useState(() => (typeof window === 'undefined' ? false : window.innerWidth <= NARROW_MAX_PX));
+  useEffect(() => {
+    const query = window.matchMedia(`(max-width: ${NARROW_MAX_PX}px)`);
+    const update = () => setNarrow(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+  return narrow;
+}
+
 /**
  * Three fixed buttons in the bottom-right corner on the design system's `.v4-scroll-top`
  * pattern: «Наверх» (the DS arrow) and, once a photo is loaded, «К очистке» (a downward arrow
@@ -26,6 +68,8 @@ export const StickyActions: React.FC<StickyActionsProps> = ({ photoLoaded, onNew
   const t = useT();
   const reducedMotion = usePrefersReducedMotion();
   const [scrolled, setScrolled] = useState(false);
+  const direction = useScrollDirection();
+  const narrow = useIsNarrow();
 
   useEffect(() => {
     const update = () => setScrolled(window.scrollY > SHOW_AFTER_PX);
@@ -42,7 +86,7 @@ export const StickyActions: React.FC<StickyActionsProps> = ({ photoLoaded, onNew
     heading.focus({ preventScroll: true });
   }, [reducedMotion]);
 
-  const visible = scrolled ? ' is-visible' : '';
+  const visible = scrolled && !(narrow && direction === 'down') ? ' is-visible' : '';
   return (
     <>
       {photoLoaded ? (

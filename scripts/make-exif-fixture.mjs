@@ -9,7 +9,9 @@
  *     --date "2026:09:14 13:20:00" --offset +03:00 --gps-time 10:20:03 \
  *     --make Apple --model "iPhone 15 Pro" --lens "iPhone 15 Pro back triple camera 6.765mm f/1.78" --focal35 24
  *
- * Any option may be omitted; only --lat and --lon are required for the GPS block.
+ * Any option may be omitted; only --lat and --lon are required for the GPS block. A negative
+ * --alt (below sea level: the Dead Sea shore, a mine) is written as its magnitude with
+ * GPSAltitudeRef = 1, the way the EXIF spec encodes it — every RATIONAL here is unsigned.
  *
  * Vendor blocks for the «Device» card: --software "26.2" (iOS version in the Software tag),
  * --apple-uptime 1051200 (an Apple MakerNote with RunTime, a Live Photo id, a burst id and
@@ -95,6 +97,11 @@ const long = (v) => {
 const rat = (pairs) => {
   const b = Buffer.alloc(pairs.length * 8);
   pairs.forEach(([n, d], i) => {
+    // EXIF type 5 is an unsigned pair; a sign lives in its own *Ref tag (see GPSAltitudeRef).
+    if (!(n >= 0) || !(d >= 0)) {
+      console.error(`RATIONAL values are unsigned: cannot write ${n}/${d}. Write the magnitude and a *Ref tag instead.`);
+      process.exit(1);
+    }
     b.writeUInt32LE(n, i * 8);
     b.writeUInt32LE(d, i * 8 + 4);
   });
@@ -257,8 +264,9 @@ const gpsEntries = [
   { tag: 0x0002, type: RATIONAL, count: 3, data: rat(dms(Math.abs(lat))) },
   { tag: 0x0003, type: ASCII, count: 2, data: ascii(lon >= 0 ? 'E' : 'W') },
   { tag: 0x0004, type: RATIONAL, count: 3, data: rat(dms(Math.abs(lon))) },
-  { tag: 0x0005, type: BYTE, count: 1, data: Buffer.from([0]) },
-  { tag: 0x0006, type: RATIONAL, count: 1, data: rat([[Math.round(alt * 100), 100]]) },
+  // GPSAltitudeRef: 0 above sea level, 1 below; GPSAltitude is always the magnitude.
+  { tag: 0x0005, type: BYTE, count: 1, data: Buffer.from([alt < 0 ? 1 : 0]) },
+  { tag: 0x0006, type: RATIONAL, count: 1, data: rat([[Math.round(Math.abs(alt) * 100), 100]]) },
   { tag: 0x001f, type: RATIONAL, count: 1, data: rat([[Math.round(acc * 100), 100]]) }
 ];
 if (gpsTime) {

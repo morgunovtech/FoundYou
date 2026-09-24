@@ -35,7 +35,8 @@ export default defineConfig([
     },
     rules: {
       'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
+      // `npm run lint` fails on errors only, so a rule that is meant to gate a merge must be one.
+      'react-hooks/exhaustive-deps': 'error',
       // React Compiler rule (react-hooks v7). Fires on the "reset state when the input
       // disappears" pattern in App / UploadZone / useExifMetadata / useImageAnalysis /
       // useOCR / theme. Kept visible as a warning until those effects are reworked.

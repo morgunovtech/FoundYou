@@ -5,8 +5,13 @@ export interface ApiResponse<T> {
 }
 
 export interface ReverseGeocodeResult {
-  address: string;
-  country: string;
+  /**
+   * Nominatim's `display_name`. Absent, together with `country`, when it answered «Unable to
+   * geocode» — open sea, the poles — because the endpoint invents nothing: the page falls back to
+   * its own «unknown place» line in the reader's language.
+   */
+  address?: string;
+  country?: string;
   countryCode?: string;
   city?: string;
   state?: string;

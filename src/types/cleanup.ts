@@ -28,7 +28,8 @@ export interface AntiSearchParams {
   fieldAmplitude: number;
 }
 
-export type QualityMode = 'low' | 'medium' | 'original';
+/** `match` re-encodes at the quality the source was written with, so the copy is not bigger than the original. */
+export type QualityMode = 'low' | 'medium' | 'original' | 'match';
 
 export interface CleanupPreviewDimensions {
   width: number;
@@ -52,4 +53,9 @@ export interface VerifyResult {
   trailingBytesBefore?: number;
   /** Size of the embedded thumbnail in the original; the canvas export carries none. */
   thumbnailBytesBefore?: number;
+  /** The leak index of the uploaded file and the one predicted for the copy from the settings used. */
+  leakBefore?: number | null;
+  leakAfter?: number | null;
+  /** Whether the anti-search pass was on: the fingerprint line is a result only then, a neutral fact otherwise. */
+  antiSearchApplied?: boolean;
 }

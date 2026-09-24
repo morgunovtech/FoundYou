@@ -63,7 +63,7 @@
 
 /* Language menu: three items, current one checked. Markup mirrors the
    theme menu so both panels open identical rows. */
-.v4-lang .v4-menu-item[lang] {
+.fy-lang .v4-menu-item[lang] {
   text-transform: none;
   letter-spacing: 0;
   font-size: 13px;
@@ -398,11 +398,27 @@
   appearance: none;
   -webkit-appearance: none;
   padding-right: 30px;
-  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
-    linear-gradient(135deg, currentColor 50%, transparent 50%);
-  background-position: calc(100% - 15px) 55%, calc(100% - 10px) 55%;
-  background-size: 5px 5px, 5px 5px;
-  background-repeat: no-repeat;
+}
+
+/* The chevron: a bordered square turned 45°, in the control's own colour.
+   It used to be two linear-gradients, the one gradient on the page. */
+.fy-select-wrap {
+  position: relative;
+  display: block;
+}
+
+.fy-select-wrap::after {
+  content: '';
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -5px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(45deg);
+  pointer-events: none;
 }
 
 .fy-select:hover,
@@ -612,7 +628,7 @@
 .fy-lightbox {
   position: fixed;
   inset: 0;
-  background: rgba(20, 17, 13, 0.92);
+  background: color-mix(in srgb, var(--v4-fg) 92%, transparent);
   display: grid;
   place-items: center;
   z-index: 1000;
@@ -1111,14 +1127,6 @@
   transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
-.fy-fact[data-severity="high"] {
-  border-left-color: var(--v4-orange);
-}
-
-.fy-fact[data-severity="medium"] {
-  border-left-color: var(--v4-fg);
-}
-
 .fy-fact-head {
   display: flex;
   align-items: baseline;
@@ -1484,4 +1492,62 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+/* Leak index: one number and its arithmetic, at the top of section 02 */
+.fy-leak {
+  margin: 0 0 24px;
+}
+
+.fy-leak-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.fy-leak-title {
+  font-family: var(--v4-mono);
+  font-size: var(--v4-label-size);
+  letter-spacing: var(--v4-label-tracking);
+  text-transform: uppercase;
+  color: var(--v4-muted);
+}
+
+.fy-leak-value {
+  margin: 8px 0 4px;
+  font-size: 22px;
+  line-height: 1.2;
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.fy-leak-level {
+  font-size: 15px;
+}
+
+/* Trust link under the upload zone, and the «how to check» section it points to */
+.fy-trust {
+  margin: 12px 0 0;
+  font-size: 14px;
+}
+
+.fy-trust-link {
+  color: var(--v4-fg);
+  text-decoration: underline;
+  text-decoration-color: var(--v4-orange);
+  text-underline-offset: 4px;
+}
+
+.fy-verify-lead,
+.fy-verify-steps {
+  max-width: 720px;
+}
+
+.fy-verify-steps {
+  padding-left: 20px;
+  display: grid;
+  gap: 12px;
 }

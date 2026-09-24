@@ -14,7 +14,7 @@ import type { MessageKey } from '../i18n';
  * permission on but no fix yet, on either platform.
  */
 
-export type GeoDoubt = 'null-island' | 'polar' | 'altitude-high' | 'altitude-low' | 'sea-level-exact';
+export type GeoDoubt = 'null-island' | 'polar' | 'altitude-high' | 'altitude-low';
 
 export interface GeoDoubtEntry {
   kind: GeoDoubt;

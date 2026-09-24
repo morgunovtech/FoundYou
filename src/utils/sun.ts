@@ -43,7 +43,8 @@ export function sunPosition(date: Date, lat: number, lon: number): SunPosition {
 
   const minutesUtc = date.getUTCHours() * 60 + date.getUTCMinutes() + date.getUTCSeconds() / 60;
   const trueSolar = mod(minutesUtc + eqTime + 4 * lon, 1440);
-  const hourAngle = trueSolar / 4 < 0 ? trueSolar / 4 + 180 : trueSolar / 4 - 180;
+  // `mod` keeps the true solar time in 0…1440, so the hour angle is always this branch.
+  const hourAngle = trueSolar / 4 - 180;
 
   const latR = lat * RAD;
   const cosZenith =

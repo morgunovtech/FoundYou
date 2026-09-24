@@ -50,12 +50,19 @@ export const Dropdown: React.FC<DropdownProps> = ({
     if (restoreFocus) toggleRef.current?.focus();
   }, []);
 
-  // Focus the checked item (or the first) once the panel is shown.
+  // Focus the checked item (or the first) once the panel is shown — once. The switchers build
+  // `items` afresh on every render and the header re-renders with every progress tick of the
+  // analysis, so depending on `items` here snapped the focus back to the checked row while a
+  // keyboard user was already arrowing through the open menu.
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  });
   useEffect(() => {
     if (!open) return;
-    const checkedIndex = Math.max(0, items.findIndex((item) => item.checked));
+    const checkedIndex = Math.max(0, itemsRef.current.findIndex((item) => item.checked));
     itemRefs.current[checkedIndex]?.focus();
-  }, [open, items]);
+  }, [open]);
 
   // Outside pointer and focus leaving the component both close it.
   useEffect(() => {

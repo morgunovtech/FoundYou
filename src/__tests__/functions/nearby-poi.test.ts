@@ -68,7 +68,7 @@ describe('nearby-poi: success', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('application/json; charset=utf-8');
-    expect(response.headers.get('Cache-Control')).toBe('public, max-age=86400, s-maxage=86400');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(response.headers.get('X-Cache')).toBe('MISS');
     expect(body.ok).toBe(true);
 
@@ -175,8 +175,8 @@ describe('nearby-poi: success', () => {
     expect(body.ok).toBe(true);
     const names = body.data!.map((item) => item.name);
     expect(names).toContain('Cafe Uno');
-    // A bank way carries `amenity`, so the tag heuristic counts it as a POI too; a pure CCTV node is not.
-    expect(names).toContain('NBU');
+    // A camera way carries no `amenity`, so the tag heuristic never counts it as a POI.
+    expect(names).not.toContain('NBU');
     expect(body.data!.map((item) => item.category)).not.toContain('surveillance');
     expect(body.data!.map((item) => item.category)).not.toContain('public');
     expect(console.warn).toHaveBeenCalledWith('overpass-missing-separator');

@@ -29,9 +29,9 @@ function profile(overrides: Partial<TimeProfile> = {}): TimeProfile {
 }
 
 describe('timeHeadline', () => {
-  it('lines up age, date, weekday, day kind, time of day and the clock to the second', () => {
+  it('groups the moment, the age and the kind of day instead of one list of seven', () => {
     expect(timeHeadline(profile(), 'ru', t)).toBe(
-      'AgeYesterday(0), 16 сентября 2026 г., среда, dayWeekday, todEvening, 22:06:41'
+      '16 сентября 2026 г., среда, 22:06:41 · ageYesterday(0) · dayWeekday, todEvening'
     );
   });
 
@@ -42,8 +42,8 @@ describe('timeHeadline', () => {
       age: { kind: 'days', value: 15 }
     });
     expect(timeHeadline(holiday, 'en', t)).toBe(
-      'AgeDays(15), September 16, 2026, Wednesday, dayHoliday(Independence Day), todEvening, 22:06:41'
+      'September 16, 2026, Wednesday, 22:06:41 · ageDays(15) · dayHoliday(Independence Day), todEvening'
     );
-    expect(timeHeadline(profile({ dayKind: 'weekend' }), 'en', t)).toContain(', dayWeekend, ');
+    expect(timeHeadline(profile({ dayKind: 'weekend' }), 'en', t)).toContain('· dayWeekend, ');
   });
 });

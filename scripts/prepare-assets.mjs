@@ -10,9 +10,10 @@
  *   public/mediapipe/models/   BlazeFace short-range (faces) + EfficientDet-Lite2 (COCO objects)
  *
  * Idempotent: a copy is skipped when the destination already has the source's
- * size; a download is skipped when the destination exists with the pinned size
- * and MD5. Fails loudly on missing sources, HTTP errors, or a size/hash
- * mismatch. Node >= 20, ESM, no deps.
+ * size and is not older than it; a download is skipped when the destination
+ * exists with the pinned size and MD5. Fails loudly on missing sources, HTTP
+ * errors, a stalled download, or a size/hash mismatch. Node >= 22.13 (the
+ * `engines` field in package.json), ESM, no deps.
  *
  * Wired into `npm run build` so Cloudflare Pages regenerates the assets on
  * every deploy — nothing produced here is committed (see .gitignore).
@@ -21,24 +22,55 @@ import { createHash } from 'node:crypto';
 import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readVersions } from './asset-versions.mjs';
 
-const MIN_NODE_MAJOR = 20;
+/** Mirrors `engines.node` in package.json. */
+const MIN_NODE = { major: 22, minor: 13 };
+
+/** A model download that has not finished in this long is abandoned rather than left hanging. */
+const DOWNLOAD_TIMEOUT_MS = 120_000;
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const NODE_MODULES = path.join(ROOT, 'node_modules');
 const PUBLIC_DIR = path.join(ROOT, 'public');
 
-const OCR_DIR = path.join(PUBLIC_DIR, 'ocr');
+/**
+ * Every runtime asset lives under a directory named after the installed package version
+ * (`public/mediapipe/1.0.1/…`), and `_headers` serves those paths as immutable for a year. The
+ * roots used to be unversioned with a one-day cache, which made every returning visitor fetch
+ * the 33 MB of models again the next day; a version in the path is what lets the cache be long
+ * and a package update still reach everyone. `src/assetPaths.ts` builds the same paths from the
+ * versions Vite injects (`__ASSET_VERSIONS__`), so the two sides cannot drift apart.
+ */
+const versions = readAssetVersions();
+
+const OCR_DIR = path.join(PUBLIC_DIR, 'ocr', versions.ocr);
 const OCR_LANG_DIR = path.join(OCR_DIR, 'lang');
 
-const MEDIAPIPE_DIR = path.join(PUBLIC_DIR, 'mediapipe');
+const MEDIAPIPE_DIR = path.join(PUBLIC_DIR, 'mediapipe', versions.mediapipe);
 const MEDIAPIPE_WASM_DIR = path.join(MEDIAPIPE_DIR, 'wasm');
 const MEDIAPIPE_MODEL_DIR = path.join(MEDIAPIPE_DIR, 'models');
-const C2PA_DIR = path.join(PUBLIC_DIR, 'c2pa');
-const ZXING_DIR = path.join(PUBLIC_DIR, 'zxing');
+const C2PA_DIR = path.join(PUBLIC_DIR, 'c2pa', versions.c2pa);
+const ZXING_DIR = path.join(PUBLIC_DIR, 'zxing', versions.zxing);
+
+/** Older versioned directories under each root, removed so the build never ships two copies. */
+const VERSIONED_ROOTS = [
+  [path.join(PUBLIC_DIR, 'ocr'), versions.ocr],
+  [path.join(PUBLIC_DIR, 'mediapipe'), versions.mediapipe],
+  [path.join(PUBLIC_DIR, 'c2pa'), versions.c2pa],
+  [path.join(PUBLIC_DIR, 'zxing'), versions.zxing]
+];
 
 /** Output of the previous detection stack (tfjs COCO-SSD); removed so stale weights never ship. */
 const STALE_OUTPUT_DIRS = [path.join(PUBLIC_DIR, 'models')];
+
+/**
+ * The installed versions of the packages the assets come from. Shared with `vite.config.ts`
+ * through `scripts/asset-versions.mjs`, which is the one place that reads them.
+ */
+function readAssetVersions() {
+  return readVersions(ROOT);
+}
 
 /** Languages requested by src/hooks/useOCR.ts — createWorker('rus+eng', OEM.LSTM_ONLY). */
 const OCR_LANGS = ['rus', 'eng'];
@@ -119,32 +151,44 @@ function formatBytes(n) {
   return `${n} B`;
 }
 
-/** Size of a regular file, or -1 when it does not exist. */
-async function fileSize(p) {
+/** Stats of a regular file, or null when it does not exist (or is not a file). */
+async function fileStat(p) {
   try {
     const s = await stat(p);
-    return s.isFile() ? s.size : -1;
+    return s.isFile() ? s : null;
   } catch {
-    return -1;
+    return null;
   }
+}
+
+/** Size of a regular file, or -1 when it does not exist. */
+async function fileSize(p) {
+  return (await fileStat(p))?.size ?? -1;
 }
 
 function md5(buf) {
   return createHash('md5').update(buf).digest('hex');
 }
 
+/**
+ * Copies `src` over `dest` unless the copy already has the source's size and is not older
+ * than it. Size alone let a package update with a same-sized file (a rebuilt worker, a
+ * patched wasm loader) keep serving the previous build; the copy's mtime is the time of the
+ * copy, so a source installed later than that is what "newer" means here.
+ */
 async function copyIfNeeded(src, dest, summary) {
-  const srcSize = await fileSize(src);
-  if (srcSize < 0) {
+  const source = await fileStat(src);
+  if (!source) {
     throw new Error(`Missing source ${rel(src)} — run \`npm install\` first`);
   }
-  if ((await fileSize(dest)) === srcSize) {
-    summary.push({ file: rel(dest), size: srcSize, action: 'kept' });
+  const existing = await fileStat(dest);
+  if (existing && existing.size === source.size && existing.mtimeMs >= source.mtimeMs) {
+    summary.push({ file: rel(dest), size: source.size, action: 'kept' });
     return;
   }
   await mkdir(path.dirname(dest), { recursive: true });
   await copyFile(src, dest);
-  summary.push({ file: rel(dest), size: srcSize, action: 'copied' });
+  summary.push({ file: rel(dest), size: source.size, action: 'copied' });
 }
 
 /**
@@ -162,11 +206,26 @@ async function downloadIfNeeded({ url, size, md5: expectedMd5 }, dest, summary) 
     await rm(dest, { force: true });
   }
   await mkdir(path.dirname(dest), { recursive: true });
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status} ${res.statusText} while fetching ${url}`);
+  // A `.part` left by an interrupted run is never the file we want; start clean.
+  const tmp = `${dest}.part`;
+  await rm(tmp, { force: true });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+  let buf;
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} ${res.statusText} while fetching ${url}`);
+    }
+    buf = Buffer.from(await res.arrayBuffer());
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error(`${url}: no complete answer within ${DOWNLOAD_TIMEOUT_MS / 1000} s`, { cause: err });
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  const buf = Buffer.from(await res.arrayBuffer());
   if (buf.byteLength !== size) {
     throw new Error(`${url}: expected ${size} bytes, got ${buf.byteLength} — pinned model changed upstream?`);
   }
@@ -176,7 +235,6 @@ async function downloadIfNeeded({ url, size, md5: expectedMd5 }, dest, summary) 
   }
   // Write to a temp name and rename so an interrupted run never leaves a
   // truncated file behind under the final name.
-  const tmp = `${dest}.part`;
   await writeFile(tmp, buf);
   await rename(tmp, dest);
   summary.push({ file: rel(dest), size: buf.byteLength, action: 'downloaded' });
@@ -259,6 +317,21 @@ async function removeStaleOutputs() {
     await rm(dir, { recursive: true, force: true });
     console.log(`[prepare-assets] removed stale ${rel(dir)}/`);
   }
+  // Anything under a root that is not the current version directory: a previous version, or the
+  // unversioned layout from before 2026-09-24 (files straight under `public/mediapipe/`).
+  for (const [root, current] of VERSIONED_ROOTS) {
+    let entries;
+    try {
+      entries = await readdir(root, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.name === current || entry.name === '.gitkeep') continue;
+      await rm(path.join(root, entry.name), { recursive: true, force: true });
+      console.log(`[prepare-assets] removed stale ${rel(path.join(root, entry.name))}`);
+    }
+  }
 }
 
 function printSummary(summary) {
@@ -287,9 +360,9 @@ function printSummary(summary) {
 }
 
 async function main() {
-  const major = Number(process.versions.node.split('.')[0]);
-  if (major < MIN_NODE_MAJOR) {
-    throw new Error(`Node >= ${MIN_NODE_MAJOR} is required (running ${process.versions.node})`);
+  const [major, minor] = process.versions.node.split('.').map(Number);
+  if (major < MIN_NODE.major || (major === MIN_NODE.major && minor < MIN_NODE.minor)) {
+    throw new Error(`Node >= ${MIN_NODE.major}.${MIN_NODE.minor} is required (running ${process.versions.node})`);
   }
   await removeStaleOutputs();
   const summary = [];

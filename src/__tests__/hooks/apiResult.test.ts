@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { interpretBody } from '../../hooks/useAPIFetch';
+import { interpretBody, shouldRetryAutomatically } from '../../hooks/useAPIFetch';
 import { isPoiList } from '../../utils/apiShapes';
 import type { PoiResult } from '../../types/api';
 
@@ -43,5 +43,28 @@ describe('interpretBody', () => {
       retryable: false
     });
     expect(interpretBody(null, 200, true, isPoiList)).toMatchObject({ ok: false, error: 'invalid-json' });
+  });
+});
+
+describe('shouldRetryAutomatically', () => {
+  it('retries a 5xx, a timeout and a network failure on its own', () => {
+    for (const status of [500, 502, 503, 504]) {
+      expect(shouldRetryAutomatically(interpretBody(null, status, false))).toBe(true);
+    }
+    expect(shouldRetryAutomatically({ ok: false, error: 'timeout', status: null, retryable: true })).toBe(true);
+    expect(shouldRetryAutomatically({ ok: false, error: 'network-error', status: null, retryable: true })).toBe(true);
+  });
+
+  it('leaves a 429 to the reader: retryable for the button, never retried by the hook', () => {
+    const limited = interpretBody(null, 429, false);
+    expect(limited.retryable).toBe(true);
+    expect(shouldRetryAutomatically(limited)).toBe(false);
+  });
+
+  it('never retries a success, an abort or a client error', () => {
+    expect(shouldRetryAutomatically({ ok: true, data: [], status: 200, retryable: false })).toBe(false);
+    expect(shouldRetryAutomatically({ ok: false, error: 'aborted', status: null, retryable: false })).toBe(false);
+    expect(shouldRetryAutomatically(interpretBody(null, 400, false))).toBe(false);
+    expect(shouldRetryAutomatically(interpretBody(null, 403, false))).toBe(false);
   });
 });

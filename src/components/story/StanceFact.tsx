@@ -85,7 +85,7 @@ export const StanceFact: React.FC<StanceFactProps> = ({ stance, geo, metadata, r
       : t('insightPoiDistance', { distance: Math.round(metres) });
 
   return (
-    <FactRow title={t('stanceTitle')} severity="low" value={null} sub={null}>
+    <FactRow title={t('stanceTitle')} value={null} sub={null}>
       <div className="fy-fact-details fy-shot">
         <ShotDiagram
           stance={stance}

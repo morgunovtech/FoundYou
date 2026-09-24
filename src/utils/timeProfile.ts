@@ -89,8 +89,8 @@ export interface TimeProfile {
   holidayNames: string[];
   /** Weekday, not a holiday, 09:00–18:59 on the camera clock. */
   workingHours: boolean;
-  /** The camera's own offset from UTC, when the file lets us tell. */
-  camera: { offsetMinutes: number; source: CameraClockSource } | null;
+  /** The camera's own offset from UTC, when the file lets us tell; `assumed` when it is the place's zone rather than a measurement. */
+  camera: { offsetMinutes: number; source: CameraClockSource; assumed?: boolean } | null;
   /** The zone of the place at the moment of capture, when the lookup answered. */
   place: { timezone: string; offsetMinutes: number } | null;
   /** Camera clock versus place clock; null unless both are known. */
@@ -145,7 +145,7 @@ export function buildTimeProfile(input: TimeProfileInput): TimeProfile | null {
     instant &&
     instant.cameraOffsetMinutes != null &&
     (instant.source === 'exif-offset' || instant.source === 'gps-time')
-      ? { offsetMinutes: instant.cameraOffsetMinutes, source: instant.source }
+      ? { offsetMinutes: instant.cameraOffsetMinutes, source: instant.source, ...(instant.cameraOffsetAssumed ? { assumed: true } : {}) }
       : null;
 
   let placeZone: TimeProfile['place'] = null;

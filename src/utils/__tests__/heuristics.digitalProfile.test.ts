@@ -5,6 +5,7 @@ import type { ResolutionAnalysis } from '../heuristics/resolutionAnalyzer';
 import type { StrippedAnalysis } from '../heuristics/strippedDetector';
 import type { EditingAnalysis } from '../heuristics/editingHistory';
 import type { TemporalInsight } from '../heuristics/temporalAnalyzer';
+import type { OriginJudgement } from '../originJudge';
 import type { StructuredMetadata } from '../../types/metadata';
 import type { BoundingBox } from '../../types/detection';
 
@@ -29,6 +30,14 @@ const PHOTO_RES: ResolutionAnalysis = { possibleDevices: ['iPhone 12/13/14/15'],
 const SCREENSHOT_RES: ResolutionAnalysis = { possibleDevices: ['FullHD monitor'], contentType: 'video_frame', contentHint: '16:9 — video frame / screenshot', isScreenshot: true };
 
 const NOT_STRIPPED: StrippedAnalysis = { stripped: false, strippedBy: null, confidence: 0, evidence: [] };
+const ORIGIN_CAMERA: OriginJudgement = { verdict: 'camera-original', confidence: 'high', platforms: [], reasons: ['camera-exif', 'own-tables'] };
+const ORIGIN_TELEGRAM: OriginJudgement = {
+  verdict: 'messenger',
+  confidence: 'high',
+  platforms: ['Telegram'],
+  reasons: ['no-camera-exif', 'messenger-name', 'messenger-size']
+};
+const ORIGIN_STRIPPED: OriginJudgement = { verdict: 'stripped', confidence: 'medium', platforms: [], reasons: ['no-camera-exif', 'small-jpeg'] };
 const STRIPPED_TELEGRAM: StrippedAnalysis = { stripped: true, strippedBy: 'Telegram', confidence: 0.85, evidence: ['sign-1', 'sign-2'] };
 const STRIPPED_UNKNOWN: StrippedAnalysis = { stripped: true, strippedBy: null, confidence: 0.6, evidence: ['sign-1'] };
 
@@ -68,6 +77,7 @@ function base(lang: Lang = 'en'): ProfileInput {
     editing: NOT_EDITED,
     hash: null,
     temporal: [],
+    origin: ORIGIN_CAMERA,
     metadata: null,
     detections: [],
     ocrResult: null,
@@ -84,6 +94,7 @@ function fullInput(lang: Lang = 'en'): ProfileInput {
     editing: PHOTOSHOP,
     hash: HASH,
     temporal: TEMPORAL_HIGH,
+    origin: ORIGIN_CAMERA,
     metadata: FULL_META,
     detections: [box('person', 0.9), box('person', 0.4), box('car', 0.95)],
     ocrResult: { fullText: 'Amir Temur 12', regions: [region('Amir Temur'), region('12')] },
@@ -98,6 +109,7 @@ function strippedInput(lang: Lang = 'en'): ProfileInput {
     filename: TELEGRAM_FILENAME,
     resolution: { ...PHOTO_RES, possibleDevices: [] },
     stripped: STRIPPED_TELEGRAM,
+    origin: ORIGIN_TELEGRAM,
     originalFilename: 'photo_2024-06-14_18-30-12.jpg'
   };
 }
@@ -125,10 +137,10 @@ describe('generateDigitalProfile: full EXIF + GPS', () => {
 
   it('caps the score at 100 and rates it critical', () => {
     const raw = profile.sections.reduce((sum, s) => sum + s.leakPoints, 0);
-    expect(raw).toBeGreaterThan(100);
+    expect(raw).toBeGreaterThanOrEqual(100);
     expect(profile.leakScore).toBe(100);
     expect(profile.leakLevel.level).toBe('critical');
-    expect(profile.leakLevel.color).toMatch(/^#[0-9A-F]{6}$/i);
+    expect(profile.leakLevel.label).toBe('The file says almost everything');
   });
 
   it('device from EXIF: 15 points, high, make in brackets', () => {
@@ -185,16 +197,20 @@ describe('generateDigitalProfile: full EXIF + GPS', () => {
     expect(profile.serialNumbers).toEqual(['SerialNumber: ABC123']);
   });
 
-  it('hash: pHash first, then the first 16 hex chars of SHA-256, 5 points', () => {
-    expect(section(profile, 'hash')).toMatchObject({ text: 'pHash a1b2c3d4e5f60718 · SHA-256 0123456789abcdef…', leakPoints: 5, severity: 'low' });
+  it('hash: pHash first, then the first 16 hex chars of SHA-256, no points (every file has one)', () => {
+    expect(section(profile, 'hash')).toMatchObject({ text: 'pHash a1b2c3d4e5f60718 · SHA-256 0123456789abcdef…', leakPoints: 0, severity: 'low' });
+  });
+
+  it('nothing is missing from a full file', () => {
+    expect(profile.missing).toEqual([]);
   });
 });
 
 describe('generateDigitalProfile: stripped messenger file', () => {
   const profile = generateDigitalProfile(strippedInput());
 
-  it('has no location/people/text/serial/hash sections', () => {
-    expect(kinds(profile)).toEqual(['device', 'time', 'ai', 'editing', 'origin', 'content']);
+  it('has no location/time/people/text/serial/hash sections', () => {
+    expect(kinds(profile)).toEqual(['device', 'ai', 'editing', 'origin', 'content']);
   });
 
   it('scores low', () => {
@@ -207,21 +223,27 @@ describe('generateDigitalProfile: stripped messenger file', () => {
     expect(section(profile, 'device')).toMatchObject({ text: 'Saved from Telegram', leakPoints: 8, severity: 'medium' });
   });
 
-  it('time section says nothing was found', () => {
-    expect(section(profile, 'time')).toMatchObject({ leakPoints: 0, severity: 'low' });
+  it('the missing date is listed under the index instead of an empty card', () => {
+    expect(profile.missing).toEqual(['date', 'location']);
   });
 
-  it('origin names the messenger and cites the first sign', () => {
+  it('origin names the messenger and lists the grounds of the verdict', () => {
     const origin = section(profile, 'origin');
-    expect(origin.text).toContain('Telegram');
-    expect(origin).toMatchObject({ subtext: 'sign-1', leakPoints: 5, severity: 'medium' });
+    expect(origin.text).toBe('Confident: passed through Telegram');
+    expect(origin.subtext).toContain('the file name follows the Telegram pattern');
+    expect(origin).toMatchObject({ leakPoints: 5, severity: 'medium' });
   });
 
   it('origin without a known platform still reports the strip', () => {
-    const anonymous = generateDigitalProfile({ ...base(), stripped: STRIPPED_UNKNOWN });
+    const anonymous = generateDigitalProfile({ ...base(), stripped: STRIPPED_UNKNOWN, origin: ORIGIN_STRIPPED });
     const origin = section(anonymous, 'origin');
     expect(origin.text).not.toContain('Telegram');
-    expect(origin).toMatchObject({ subtext: 'sign-1', leakPoints: 5 });
+    expect(origin.text).toContain('removed');
+    expect(origin).toMatchObject({ leakPoints: 5 });
+  });
+
+  it('a camera original carries no origin points', () => {
+    expect(section(generateDigitalProfile(base()), 'origin')).toMatchObject({ leakPoints: 0, severity: 'low' });
   });
 });
 
@@ -234,14 +256,14 @@ describe('generateDigitalProfile: leak levels', () => {
     ['GPS + a person', { metadata: gpsOnly, detections: [box('person', 0.8)] }, 45, 'medium'],
     ['GPS + person + EXIF camera', { metadata: metadata({ gps: { lat: 1, lon: 2 }, cameraModel: 'X100V' }), detections: [box('person', 0.8)] }, 60, 'high'],
     [
-      'GPS + person + camera + hash + serial + night',
+      'GPS + person + camera + serial + night (the hash no longer counts)',
       {
         metadata: metadata({ gps: { lat: 1, lon: 2 }, cameraModel: 'X100V', groups: { exif: { BodySerialNumber: 'S1' }, xmp: {}, iptc: {}, icc: {} } }),
         detections: [box('person', 0.8)],
         hash: HASH,
         temporal: TEMPORAL_HIGH
       },
-      90,
+      85,
       'critical'
     ]
   ])('%s → %d (%s)', (_label, overrides, score, level) => {
@@ -250,8 +272,10 @@ describe('generateDigitalProfile: leak levels', () => {
     expect(profile.leakLevel.level).toBe(level);
   });
 
-  it('the always-on sections are present even for an empty input', () => {
-    expect(kinds(generateDigitalProfile(base()))).toEqual(['time', 'ai', 'editing', 'origin']);
+  it('the always-on sections are present even for an empty input; the missing date is listed, not carded', () => {
+    const empty = generateDigitalProfile(base());
+    expect(kinds(empty)).toEqual(['ai', 'editing', 'origin']);
+    expect(empty.missing).toEqual(['date', 'location', 'device']);
   });
 });
 

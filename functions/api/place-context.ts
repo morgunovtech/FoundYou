@@ -1,5 +1,5 @@
 import { defineHandler, getPosition, haversine, json, parseCoord, round4 } from './_geo';
-import { OVERPASS_TTL, loadOverpassSets, type OverpassElement } from './_overpass';
+import { loadOverpassSets, type OverpassElement } from './_overpass';
 
 /**
  * What kind of place this is, rather than what happens to be nearby.
@@ -63,7 +63,9 @@ export const onRequest = defineHandler(async ({ url, context }) => {
       sensitive.push({ kind: tags.amenity, name, distance });
       continue;
     }
-    if (tags.railway) transport.push({ kind: `railway:${tags.railway}`, name, distance });
+    // A metro station is `railway=station` + `station=subway`; «вокзал» for the Tashkent metro was wrong.
+    if (tags.railway === 'station' && tags.station === 'subway') transport.push({ kind: 'station:subway', name, distance });
+    else if (tags.railway) transport.push({ kind: `railway:${tags.railway}`, name, distance });
     else if (tags.aeroway) transport.push({ kind: 'aerodrome', name, distance });
     else if (tags.public_transport) transport.push({ kind: 'public_transport', name, distance });
   }
@@ -75,7 +77,8 @@ export const onRequest = defineHandler(async ({ url, context }) => {
     ...population(result.sets.poi, rlat, rlon)
   };
 
-  return json({ ok: true, data }, 200, { 'X-Cache': result.cache }, OVERPASS_TTL);
+  // Built after the shared Overpass cache, so this is the browser's copy: no TTL, never on disk.
+  return json({ ok: true, data }, 200, { 'X-Cache': result.cache });
 });
 
 function distanceOf(element: OverpassElement, lat: number, lon: number): number {

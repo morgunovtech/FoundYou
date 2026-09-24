@@ -1,22 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { UPSTREAM_TIMEOUT_MS, cacheKey } from '../../../functions/api/_geo';
 import { onRequest } from '../../../functions/api/landmarks';
 import type { ApiResponse, LandmarkResult } from '../../../src/types/api';
-import { call, callJson, fetchCall, installCaches, jsonResponse, mockFetch, urlOf } from './_harness';
+import { call, callJson, fetchCall, installCaches, jsonResponse, mockFetch, urlOf, waitForAbort, type FakeCaches } from './_harness';
 
 const PATH = '/api/landmarks';
+const TASHKENT = { lat: '41.3112', lon: '69.2797', country: 'UZ' };
+/** The edge copy for the Tashkent cell, as the endpoint keys it (uz, ru, en). */
+const TASHKENT_KEY = cacheKey('landmarks', '41.3112', '69.2797', 'uz-ru-en');
 
 const geosearch = (rows: Array<{ title: string; dist: number }>) => ({
   batchcomplete: '',
   query: { geosearch: rows.map((row, index) => ({ pageid: index + 1, ns: 0, ...row, lat: 41.3112, lon: 69.2797 })) }
 });
 
+let caches: FakeCaches;
+
 beforeEach(() => {
-  installCaches();
+  caches = installCaches();
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe('landmarks: guards', () => {
@@ -109,11 +116,13 @@ describe('landmarks: the answer', () => {
 
   it('an empty list is a real answer, not a failure', async () => {
     // Every edition answered and none knows this place: the point is somewhere unremarkable,
-    // which is exactly what the card should be able to say.
-    mockFetch(async () => jsonResponse(geosearch([])));
-    const { response, body } = await callJson<ApiResponse<LandmarkResult[]>>(onRequest, urlOf(PATH, { lat: '41.3112', lon: '69.2797', country: 'UZ' }));
+    // which is exactly what the card should be able to say — and it is kept for the week.
+    const fetch = mockFetch(async () => jsonResponse(geosearch([])));
+    const { response, body } = await callJson<ApiResponse<LandmarkResult[]>>(onRequest, urlOf(PATH, TASHKENT));
     expect(response.status).toBe(200);
     expect(body).toEqual({ ok: true, data: [] });
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(caches.store.get(TASHKENT_KEY)?.headers).toContainEqual(['cache-control', `public, max-age=${7 * 86_400}, s-maxage=${7 * 86_400}`]);
   });
 
   it('drops a row without a usable title or distance', async () => {
@@ -139,5 +148,89 @@ describe('landmarks: the answer', () => {
     mockFetch(async () => jsonResponse(geosearch(Array.from({ length: 12 }, (_, i) => ({ title: `Объект ${i}`, dist: i * 10 })))));
     const { body } = await callJson<ApiResponse<LandmarkResult[]>>(onRequest, urlOf(PATH, { lat: '41.3112', lon: '69.2797', country: 'UZ' }));
     expect(body.data!.length).toBeLessThanOrEqual(5);
+  });
+});
+
+describe('landmarks: when Wikipedia does not answer', () => {
+  it('every edition failing is an outage, not an unremarkable place: 502 and nothing cached', async () => {
+    // It used to answer `ok: []` and keep that for seven days, so a Wikipedia outage became
+    // «nothing here» for a week for every reader who asked about the cell.
+    const fetch = mockFetch(async () => jsonResponse({ error: 'SECRET maintenance' }, 503));
+    const { response, body, text } = await callJson(onRequest, urlOf(PATH, TASHKENT));
+    expect(response.status).toBe(502);
+    expect(body).toEqual({ ok: false, error: 'upstream-unavailable' });
+    expect(text).not.toContain('SECRET');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(caches.store.size).toBe(0);
+
+    await call(onRequest, urlOf(PATH, TASHKENT));
+    expect(fetch).toHaveBeenCalledTimes(6);
+  });
+
+  it('one edition down and the rest empty is still an empty answer, kept an hour rather than a week', async () => {
+    let call_ = 0;
+    mockFetch(async () => {
+      call_ += 1;
+      return call_ === 1 ? jsonResponse({}, 500) : jsonResponse(geosearch([]));
+    });
+    const { response, body } = await callJson<ApiResponse<LandmarkResult[]>>(onRequest, urlOf(PATH, TASHKENT));
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ ok: true, data: [] });
+    // The edition that was down may hold the article; the list is not the whole story.
+    expect(caches.store.get(TASHKENT_KEY)?.headers).toContainEqual(['cache-control', 'public, max-age=3600, s-maxage=3600']);
+  });
+
+  it('one deadline for the whole loop: an edition that eats the budget stops the rest being asked', async () => {
+    // Each edition used to get a fresh 8 s, so three could take 24 s against the page's 12 s
+    // timeout. Here the first answers empty at once and the second hangs: when it is aborted at
+    // the deadline there is nothing left for the third, which is never asked.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    let secondStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      secondStarted = resolve;
+    });
+    let call_ = 0;
+    const fetch = mockFetch((input, init) => {
+      call_ += 1;
+      if (call_ === 1) return Promise.resolve(jsonResponse(geosearch([])));
+      secondStarted();
+      return waitForAbort(input, init);
+    });
+
+    const pending = callJson<ApiResponse<LandmarkResult[]>>(onRequest, urlOf(PATH, TASHKENT));
+    await started;
+    await vi.advanceTimersByTimeAsync(UPSTREAM_TIMEOUT_MS);
+    const { response, body } = await pending;
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ ok: true, data: [] });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetchCall(fetch, 1).init?.signal?.aborted).toBe(true);
+    // The Uzbek edition answered, the Russian one never did and the English one was not asked:
+    // an empty answer with a hole in it is kept for an hour, not a week.
+    expect(caches.store.get(TASHKENT_KEY)?.headers).toContainEqual(['cache-control', 'public, max-age=3600, s-maxage=3600']);
+  });
+
+  it('the budget running out before anything answered is the outage case: 502, one fetch', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    let firstStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    const fetch = mockFetch((input, init) => {
+      firstStarted();
+      return waitForAbort(input, init);
+    });
+
+    const pending = callJson(onRequest, urlOf(PATH, TASHKENT));
+    await started;
+    await vi.advanceTimersByTimeAsync(UPSTREAM_TIMEOUT_MS);
+    const { response, body } = await pending;
+
+    expect(response.status).toBe(502);
+    expect(body).toEqual({ ok: false, error: 'upstream-unavailable' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(caches.store.size).toBe(0);
   });
 });

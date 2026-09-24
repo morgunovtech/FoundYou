@@ -52,7 +52,14 @@ export function bearing(lat1: number, lon1: number, lat2: number, lon2: number):
 
 /* ── input validation ─────────────────────────────────────── */
 
-const COORD_RE = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
+/**
+ * The alternatives must not overlap: `\d+\.?\d*` let the engine split one digit run between
+ * `\d+` and `\d*` in every possible place before giving up, which is quadratic — 16 000 digits
+ * cost ~137 ms of CPU. With `\d+(?:\.\d*)?` there is exactly one way to match a run.
+ */
+const COORD_RE = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+/** No real coordinate needs more; the cap is the first line of defence against a long digit run. */
+const COORD_MAX_LENGTH = 32;
 
 /**
  * Strict coordinate parser: `null`/empty → null (so `Number(null) === 0`
@@ -62,7 +69,7 @@ const COORD_RE = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
 export function parseCoord(raw: string | null, max: number): number | null {
   if (raw == null) return null;
   const trimmed = raw.trim();
-  if (!trimmed || !COORD_RE.test(trimmed)) return null;
+  if (!trimmed || trimmed.length > COORD_MAX_LENGTH || !COORD_RE.test(trimmed)) return null;
   const value = Number(trimmed);
   if (!Number.isFinite(value) || Math.abs(value) > max) return null;
   return value;
@@ -94,6 +101,10 @@ function isPubliclyCacheable(header: string | null): boolean {
  * JSON response with the security headers every /api/* answer needs
  * (`_headers` does not apply to Functions). `Cache-Control` is public for
  * `ttlSeconds` only when the payload is `ok`; every error is `no-store`.
+ *
+ * The public header is for the copy `withCache` stores at the edge. What reaches the browser is
+ * always `no-store` — see `forBrowser` — so a `ttlSeconds` on a response that is not produced
+ * inside `withCache` has no effect.
  */
 export function json(payload: Record<string, unknown>, status = 200, extra?: HeadersInit, ttlSeconds?: number): Response {
   const headers = new Headers();
@@ -105,10 +116,21 @@ export function json(payload: Record<string, unknown>, status = 200, extra?: Hea
   return new Response(JSON.stringify(payload), { status, headers });
 }
 
-function withHeader(response: Response, name: string, value: string): Response {
+function withHeaders(response: Response, set: Record<string, string>): Response {
   const headers = new Headers(response.headers);
-  headers.set(name, value);
+  for (const [name, value] of Object.entries(set)) headers.set(name, value);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+/**
+ * The copy that leaves for the browser. Every /api/* URL carries the rounded coordinates of a
+ * photograph, and an answer the browser's HTTP cache kept on disk — an address for a day, the
+ * landmarks for a week, the terrain for a month — would be a history of places on the reader's
+ * device, which invariant 2 forbids for map tiles for exactly this reason. So the browser gets
+ * `no-store` whatever the endpoint asked for; the public `max-age` is for the edge copy alone.
+ */
+function forBrowser(response: Response, extra: Record<string, string> = {}): Response {
+  return withHeaders(response, { ...extra, 'Cache-Control': 'no-store' });
 }
 
 /* ── origin check ─────────────────────────────────────────── */
@@ -126,10 +148,13 @@ function hostOf(value: string | null): string | null {
  * The functions are a proxy for the SPA only. Modern browsers send
  * `Sec-Fetch-Site`; when it is absent we fall back to Origin/Referer, and
  * with none of them present the call is refused.
+ *
+ * Only `same-origin` passes: the SPA, the Vite dev server and every Pages preview call their own
+ * `/api`, so `same-site` — any other host under the registrable domain — has no legitimate caller.
  */
 export function isSameSite(request: Request): boolean {
   const site = request.headers.get('sec-fetch-site');
-  if (site) return site === 'same-origin' || site === 'same-site';
+  if (site) return site === 'same-origin';
   const host = new URL(request.url).host;
   const origin = hostOf(request.headers.get('origin'));
   if (origin) return origin === host;
@@ -141,14 +166,40 @@ export function isSameSite(request: Request): boolean {
 /* ── upstream fetch ───────────────────────────────────────── */
 
 export type UpstreamResult =
-  | { ok: true; response: Response; status: number }
+  /** `text` is the whole upstream body, read under the same deadline as the headers. */
+  | { ok: true; text: string; status: number }
   /** `error` is the client-facing Response; `status` is the upstream status or null for timeout/network. */
   | { ok: false; error: Response; status: number | null };
+
+/**
+ * The body, or an AbortError the moment the deadline fires. A hand-built `Response` (a test
+ * double, a cached copy) has no link to the controller, so the read has to be raced against the
+ * signal rather than trusted to reject on its own; a real fetch body rejects either way.
+ */
+function readBody(response: Response, signal: AbortSignal): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      void response.body?.cancel().catch(() => undefined);
+      reject(signal.reason ?? new DOMException('The operation was aborted.', 'AbortError'));
+    };
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+    response.text().then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort));
+  });
+}
 
 /**
  * fetch() with UA, `Accept: application/json`, an AbortController timeout
  * and a normalised failure → Response mapping. Upstream error text and
  * `error.message` never reach the client.
+ *
+ * The body is read here, under the same timer as the headers. It used to be handed back as a
+ * `Response` with the timer already cleared, so the `.json()` every caller then awaited had no
+ * deadline at all: an upstream that sent its headers and then stalled held the request open
+ * for as long as it liked.
  */
 export async function fetchUpstream(url: string, init: RequestInit = {}, timeoutMs = UPSTREAM_TIMEOUT_MS): Promise<UpstreamResult> {
   const controller = new AbortController();
@@ -163,7 +214,8 @@ export async function fetchUpstream(url: string, init: RequestInit = {}, timeout
       const status = response.status;
       return { ok: false, status, error: json({ ok: false, error: `upstream-${status}` }, status === 429 ? 429 : 502) };
     }
-    return { ok: true, response, status: response.status };
+    const text = await readBody(response, controller.signal);
+    return { ok: true, text, status: response.status };
   } catch (error) {
     const aborted = controller.signal.aborted || (error as { name?: string } | null)?.name === 'AbortError';
     return aborted
@@ -194,6 +246,11 @@ export function cacheKey(name: string, ...parts: Array<string | number>): string
  * `ok` responses are stored; a stored copy without a public Cache-Control
  * gets `ttlSeconds`. Outside Cloudflare (Vite dev proxy) there is no
  * `caches`, so this degrades to calling `produce()` every time.
+ *
+ * Two copies with two headers: the one put in the edge cache keeps its public `max-age`,
+ * because Cloudflare stores nothing without one; the one returned to the caller is `no-store`
+ * on the HIT and the MISS path alike, so the browser never keeps `/api/…?lat=…&lon=…` on disk
+ * (see `forBrowser`).
  */
 export async function withCache(context: CacheContext, key: string, ttlSeconds: number, produce: () => Promise<Response>): Promise<Response> {
   const cache = edgeCache();
@@ -202,7 +259,7 @@ export async function withCache(context: CacheContext, key: string, ttlSeconds: 
   if (cache) {
     try {
       const hit = await cache.match(cacheRequest);
-      if (hit) return withHeader(hit, 'X-Cache', 'HIT');
+      if (hit) return forBrowser(hit, { 'X-Cache': 'HIT' });
     } catch (error) {
       console.warn('cache-match-failed', error);
     }
@@ -220,7 +277,7 @@ export async function withCache(context: CacheContext, key: string, ttlSeconds: 
     else await put;
   }
 
-  return withHeader(fresh, 'X-Cache', 'MISS');
+  return forBrowser(fresh, { 'X-Cache': 'MISS' });
 }
 
 /* ── handler wrapper ──────────────────────────────────────── */
@@ -236,7 +293,11 @@ export type Handler = (args: HandlerArgs) => Promise<Response>;
 /**
  * Common guard for every endpoint: GET/HEAD only (405 otherwise), same-site
  * only (403 otherwise), unexpected throws → 500 without leaking the message,
- * HEAD → same headers with an empty body.
+ * HEAD → same headers with an empty body, and `Cache-Control: no-store` on
+ * whatever the handler answered — the endpoints that build their own answer
+ * after `withCache` (the Overpass three, holidays) pass through here too, so
+ * the «no history of places on the device» rule holds by construction rather
+ * than by every endpoint remembering it.
  */
 export function defineHandler(handler: Handler): (context: PagesEventContext) => Promise<Response> {
   return async (context) => {
@@ -250,7 +311,7 @@ export function defineHandler(handler: Handler): (context: PagesEventContext) =>
 
     let response: Response;
     try {
-      response = await handler({ request, url: new URL(request.url), context });
+      response = forBrowser(await handler({ request, url: new URL(request.url), context }));
     } catch (error) {
       console.error('api-handler-failed', error);
       response = json({ ok: false, error: 'internal-error' }, 500);

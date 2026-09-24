@@ -259,6 +259,22 @@ describe('selectPlausibleFaces', () => {
     return candidate(box, kp, score);
   }
 
+  it('a face inside an animal box and no person box is the animal’s and is dropped', () => {
+    /*
+     * The sample photograph: a dog beside a person. BlazeFace answered «face» for the dog's
+     * muzzle at 0.63, the person's face vouched for it as a neighbour of comparable size, and the
+     * page drew «ЛИЦО» on the dog. The person box is checked first, so someone holding a cat
+     * keeps their face.
+     */
+    const person = faceAt(400, 100, 120, 0.95);
+    const dogFace = faceAt(160, 240, 110, 0.63);
+    const dogBox: Rect = { x: 40, y: 150, width: 260, height: 300 };
+    expect(selectPlausibleFaces([person, dogFace], [], [dogBox])).toEqual([0]);
+    // Held in someone's arms: the face sits in a person box too, and stays.
+    const personBox: Rect = { x: 0, y: 0, width: 600, height: 600 };
+    expect(selectPlausibleFaces([person, dogFace], [personBox], [dogBox])).toEqual([0, 1]);
+  });
+
   it('admits a mid-confidence face when a sure one stands beside it', () => {
     /*
      * The reported case: a tight selfie of five where EfficientDet named two people, so three

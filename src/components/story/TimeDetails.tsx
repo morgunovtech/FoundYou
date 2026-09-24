@@ -54,7 +54,11 @@ export const TimeDetails: React.FC<TimeDetailsProps> = ({ timeProfile: tp, geo, 
               <>
                 <span className="fy-mono">{`UTC${formatOffset(tp.camera.offsetMinutes)}`}</span>
                 <span className="fy-muted">
-                  {tp.camera.source === 'exif-offset' ? t('timeCameraZoneExif') : t('timeCameraZoneGps')}
+                  {tp.camera.source === 'exif-offset'
+                    ? t('timeCameraZoneExif')
+                    : tp.camera.assumed
+                      ? t('timeCameraZoneAssumed')
+                      : t('timeCameraZoneGps')}
                 </span>
               </>
             ) : (

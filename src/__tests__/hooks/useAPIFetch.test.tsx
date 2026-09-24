@@ -205,7 +205,39 @@ describe('useAPIFetch: retries', () => {
     expect(fetch).toHaveBeenCalledTimes(3); // no fourth attempt
   });
 
-  it.each([429, 500, 502, 504])('%d is retried', async (status) => {
+  it('429 is not retried on the hook’s own initiative, but stays retryable for the button', async () => {
+    // Nominatim and Overpass answer 429 when a client is already asking too often; asking again
+    // 300 ms later is exactly what those public servers ban an address for.
+    useDeterministicTimers();
+    const fetch = mockFetch(async () => jsonResponse({ ok: false, error: 'upstream-429' }, 429));
+    const { result } = renderHook(() => useAPIFetch<Hello>());
+    let promise!: Promise<ApiResult<Hello>>;
+    act(() => {
+      promise = result.current.request('/api/busy');
+    });
+    await flush();
+    await advance(300);
+    await flush();
+    await advance(600);
+    let outcome!: ApiResult<Hello>;
+    await act(async () => {
+      outcome = await promise;
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(outcome).toEqual({ ok: false, error: 'status-429', code: 'upstream-429', status: 429, retryable: true });
+    expect(result.current).toMatchObject({ error: 'status-429', status: 429, retryable: true, loading: false });
+
+    // The reader may still press «Повторить»: that is one request, on their say-so.
+    fetch.mockImplementation(async () => jsonResponse({ ok: true, data: HELLO }));
+    act(() => {
+      result.current.retry();
+    });
+    await flush();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(result.current).toMatchObject({ data: HELLO, error: null, status: 200, retryable: false });
+  });
+
+  it.each([500, 502, 504])('%d is retried', async (status) => {
     useDeterministicTimers();
     const fetch = mockFetch(async () => jsonResponse({ ok: false, error: `upstream-${status}` }, status));
     const { result } = renderHook(() => useAPIFetch<Hello>());

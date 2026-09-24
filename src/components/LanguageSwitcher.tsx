@@ -15,8 +15,8 @@ export const LanguageSwitcher: React.FC = () => {
 
   return (
     <Dropdown
-      className="v4-lang"
-      toggleClassName="v4-bar-btn v4-lang-btn"
+      className="fy-lang"
+      toggleClassName="v4-bar-btn"
       toggleLabel={`${lang.toUpperCase()} — ${t('langMenuLabel')}`}
       items={LANGUAGES.map((entry) => ({
         value: entry.code,

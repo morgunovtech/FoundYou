@@ -130,8 +130,13 @@ function parseItemLocations(bytes: Uint8Array, iloc: Box): Map<number, ItemLocat
     at += baseOffsetSize;
     const extentCount = view.getUint16(at);
     at += 2;
+    // An Exif item has one extent, two at most; a box that declares 65 535 per item with zero-byte
+    // offsets and lengths never advances the cursor and used to allocate an object per extent —
+    // measured, 40 such items in a 319-byte file took 154 MB of heap. Bound both, and stop at the
+    // end of the box inside the loop as well as outside it.
+    if (extentCount > ILOC_MAX_EXTENTS || locations.size >= ILOC_MAX_ITEMS) break;
     const extents: ItemLocation['extents'] = [];
-    for (let e = 0; e < extentCount; e++) {
+    for (let e = 0; e < extentCount && at < iloc.end; e++) {
       at += indexSize; // extent_index — unused (only meaningful for construction_method 2)
       const offset = readSized(view, at, offsetSize);
       at += offsetSize;
@@ -143,6 +148,10 @@ function parseItemLocations(bytes: Uint8Array, iloc: Box): Map<number, ItemLocat
   }
   return locations;
 }
+
+/** More extents than any still image needs, and more items than a HEIC of one picture carries. */
+const ILOC_MAX_EXTENTS = 64;
+const ILOC_MAX_ITEMS = 4096;
 
 /** Concatenates the Exif item's extents; a single extent is returned as a view (no copy). */
 function readItemBytes(bytes: Uint8Array, location: ItemLocation, idat: Box | null): Uint8Array | null {
@@ -587,12 +596,42 @@ async function decodePngTextChunk(
   return text ? { key, value: utf8.decode(text) } : null;
 }
 
-/** zlib-inflate via the platform stream API; null when the browser has none. */
+/**
+ * The most text one chunk may inflate to. `PNG_TEXT_MAX_CHUNK` bounds the *compressed* size,
+ * and deflate compresses a run of zeros about a thousandfold, so a 4 MB chunk could ask for
+ * ~4 GB in one `arrayBuffer()`; a prompt or a ComfyUI workflow is a few hundred KB at most.
+ */
+const PNG_TEXT_MAX_INFLATED = 8 * 1024 * 1024;
+
+/** zlib-inflate via the platform stream API; null when the browser has none or the text is past the budget. */
 async function inflate(data: Uint8Array): Promise<Uint8Array | null> {
   if (typeof DecompressionStream === 'undefined') return null;
   // `slice()` copies onto a plain ArrayBuffer — Blob refuses a view over a SharedArrayBuffer-typed buffer.
   const stream = new Blob([data.slice()]).stream().pipeThrough(new DecompressionStream('deflate'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+  const reader = stream.getReader();
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > PNG_TEXT_MAX_INFLATED) {
+        await reader.cancel();
+        return null;
+      }
+      parts.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const out = new Uint8Array(total);
+  let position = 0;
+  for (const part of parts) {
+    out.set(part, position);
+    position += part.length;
+  }
+  return out;
 }
 
 type HeicDecodeResult = {

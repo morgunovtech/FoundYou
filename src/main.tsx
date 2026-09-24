@@ -1,10 +1,15 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { installNetworkGuard } from './utils/networkGuard';
 import App from './App';
 import { I18nProvider } from './i18n';
 import { ThemeProvider } from './theme';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './styles.css';
+
+// Before anything that could open a connection: the page talks to its own origin and the map
+// tiles, and to nothing else (see utils/networkGuard.ts for the dependency that would).
+installNetworkGuard();
 
 // Design-system conventions (see public/ds/v1/USAGE.md):
 // `data-js` on <html> tells components.css that the dropdown controller is

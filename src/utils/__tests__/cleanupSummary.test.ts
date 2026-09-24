@@ -71,3 +71,22 @@ describe('buildCleanupSummary', () => {
     expect(items.some((item) => item.startsWith('privacyDiffAntiSearchOn'))).toBe(false);
   });
 });
+
+describe('buildCleanupSummary: the lines added on 2026-09-24', () => {
+  it('a match-quality export names the source quality once, not twice', () => {
+    const items = buildCleanupSummary({ ...base, qualityMode: 'match', qualityPercent: 86 });
+    expect(items).toContain('privacyDiffQualityMatch[percent=86]');
+    expect(items.some((item) => item.startsWith('privacyDiffQualityMode'))).toBe(false);
+  });
+
+  it('a lossless copy has no quality line at all', () => {
+    const items = buildCleanupSummary({ ...base, losslessFormat: true });
+    expect(items).toContain('privacyDiffFormatLossless');
+    expect(items.some((item) => item.startsWith('privacyDiffQualityMode'))).toBe(false);
+  });
+
+  it('the leak index line needs both numbers', () => {
+    expect(buildCleanupSummary({ ...base, leakBefore: 73 })).not.toContain('privacyDiffLeakIndex[before=73,after=20]');
+    expect(buildCleanupSummary({ ...base, leakBefore: 73, leakAfter: 20 })).toContain('privacyDiffLeakIndex[before=73,after=20]');
+  });
+});

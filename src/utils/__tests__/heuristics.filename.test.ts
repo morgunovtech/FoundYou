@@ -41,6 +41,10 @@ describe('analyzeFilename: platform table', () => {
     ['DJI_0001.JPG', 'Drone', 0.95],
     // Messengers
     ['photo_2024-06-14_18-30-12.jpg', 'Telegram', 0.95],
+    // Telegram on macOS / iOS (a space and dots, a Finder duplicate counter) and Telegram Desktop.
+    ['photo_2022-03-08 13.33.59.jpeg', 'Telegram', 0.95],
+    ['photo_2022-03-08 13.33.59 2.jpeg', 'Telegram', 0.95],
+    ['photo_12@08-03-2022_13-33-59.jpg', 'Telegram', 0.95],
     ['signal-2024-06-14-183012.jpg', 'Signal', 0.95],
     ['received_123.jpeg', 'Facebook Messenger', 0.9],
     ['received_1234567890123456.jpeg', 'Facebook Messenger', 0.9],

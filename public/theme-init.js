@@ -18,8 +18,21 @@
     var m = document.querySelectorAll('meta[name="theme-color"]');
     for (var i = 0; i < m.length; i++) m[i].setAttribute('content', c);
   }
-  try {
-    var l = localStorage.getItem('meta-data-lang');
-    if (l === 'ru' || l === 'en' || l === 'uz') d.lang = l;
-  } catch (e) { /* storage unavailable: keep the html lang attribute */ }
+  // The same choice `initialLanguage` in src/i18n/index.tsx makes, so the `lang` attribute is
+  // right before the first paint: the saved language, else the browser's list — the first of
+  // uz / ru / en it names, else ru for kk / ky / tg / be, else en. Keep the two in step.
+  var l = null;
+  try { l = localStorage.getItem('meta-data-lang'); } catch (e) { /* storage unavailable */ }
+  if (l !== 'ru' && l !== 'en' && l !== 'uz') {
+    l = null;
+    var tags = navigator.languages || [navigator.language];
+    var bases = [];
+    for (var j = 0; j < tags.length; j++) { var b = String(tags[j] || '').toLowerCase().split('-')[0]; if (b) bases.push(b); }
+    for (var k = 0; k < bases.length && !l; k++) { if (bases[k] === 'uz' || bases[k] === 'ru' || bases[k] === 'en') l = bases[k]; }
+    if (!l) {
+      for (var q = 0; q < bases.length && !l; q++) { if (bases[q] === 'kk' || bases[q] === 'ky' || bases[q] === 'tg' || bases[q] === 'be') l = 'ru'; }
+    }
+    if (!l) l = bases.length > 0 ? 'en' : 'ru';
+  }
+  d.lang = l;
 })();

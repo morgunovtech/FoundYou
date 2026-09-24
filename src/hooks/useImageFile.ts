@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useT } from '../i18n';
 import type { BasicFileInfo } from '../types/metadata';
 import { decodeHeicToJpegForPreview } from '../utils/heic';
 import { maxUploadPixels, megapixels } from '../utils/platform';
@@ -75,16 +74,34 @@ async function makeThumbnail(
   return { url, width: image.width, height: image.height };
 }
 
+/** Why a file was refused; `App.tsx` maps each code to its dictionary key (hooks stay free of i18n). */
+export type FileErrorCode =
+  | 'file-too-large'
+  | 'file-too-large-resolution'
+  | 'unsupported-format'
+  | 'heic-conversion-failed'
+  | 'browser-format-unsupported'
+  | 'corrupted-file';
+
+export interface FileError {
+  code: FileErrorCode;
+  /** The numbers the message quotes (the limit, the actual size). */
+  params?: Record<string, string | number>;
+}
+
+/** The file was accepted, but something about it has to be said before the reader trusts the frame. */
+export type FileWarningCode = 'jpeg-truncated' | 'png-truncated';
+
 export function useImageFile() {
-  const t = useT();
   const [fileInfo, setFileInfo] = useState<BasicFileInfo | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FileError | null>(null);
   /*
    * A second, non-blocking channel. An error means nothing is shown; a warning means the file was
    * accepted and analysed, and something about it has to be said before the reader trusts the
-   * frame — today that is only «the file is cut short».
+   * frame — today that is only «the file is cut short». Both are codes, not text: a translated
+   * string in state stays in the language it was made in when the reader switches.
    */
-  const [warning, setWarning] = useState<string | null>(null);
+  const [warning, setWarning] = useState<FileWarningCode | null>(null);
   const [loading, setLoading] = useState(false);
   const objectUrlRef = useRef<string | null>(null);
   // Monotonic counter: a slow earlier file must never overwrite a newer one.
@@ -98,15 +115,6 @@ export function useImageFile() {
   }, []);
 
   useEffect(() => revokeObjectUrl, [revokeObjectUrl]);
-
-  const reset = useCallback(() => {
-    generationRef.current += 1;
-    setFileInfo(null);
-    setError(null);
-    setWarning(null);
-    setLoading(false);
-    revokeObjectUrl();
-  }, [revokeObjectUrl]);
 
   const processFile = useCallback(
     async (file: File) => {
@@ -132,11 +140,11 @@ export function useImageFile() {
         if (!isCurrent()) return;
 
         if (file.size > MAX_SIZE_BYTES) {
-          setError(t('fileTooLarge', { limit: MAX_FILE_SIZE_MB }));
+          setError({ code: 'file-too-large', params: { limit: MAX_FILE_SIZE_MB } });
           return;
         }
         if (!SUPPORTED_TYPES.includes(inferredType)) {
-          setError(t('unsupportedFormat'));
+          setError({ code: 'unsupported-format' });
           return;
         }
 
@@ -158,9 +166,10 @@ export function useImageFile() {
           URL.revokeObjectURL(pendingObjectUrl);
           pendingObjectUrl = null;
           // Name both numbers: «слишком высокое» alone leaves no idea by how much or what to do.
-          setError(
-            t('fileTooLargeResolution', { actual: megapixels(pixelCount), limit: megapixels(maxUploadPixels()) })
-          );
+          setError({
+            code: 'file-too-large-resolution',
+            params: { actual: megapixels(pixelCount), limit: megapixels(maxUploadPixels()) }
+          });
           return;
         }
         const info: BasicFileInfo = {
@@ -189,8 +198,7 @@ export function useImageFile() {
           pendingObjectUrl = null;
           return;
         }
-        if (truncation === 'jpeg-truncated') setWarning(t('truncatedJpeg'));
-        else if (truncation === 'png-truncated') setWarning(t('truncatedPng'));
+        if (truncation === 'jpeg-truncated' || truncation === 'png-truncated') setWarning(truncation);
 
         // Commit: the new file passed every check, so the previous one can go.
         revokeObjectUrl();
@@ -212,11 +220,11 @@ export function useImageFile() {
         }
         if (!isCurrent()) return;
         if (HEIC_TYPES.includes(inferredType)) {
-          setError(t('heicConversionFailed'));
+          setError({ code: 'heic-conversion-failed' });
         } else if (inferredType === 'image/avif') {
-          setError(t('browserFormatUnsupported'));
+          setError({ code: 'browser-format-unsupported' });
         } else {
-          setError(t('corruptedFile'));
+          setError({ code: 'corrupted-file' });
         }
       } finally {
         if (isCurrent()) {
@@ -224,7 +232,7 @@ export function useImageFile() {
         }
       }
     },
-    [revokeObjectUrl, t]
+    [revokeObjectUrl]
   );
 
   return {
@@ -232,7 +240,6 @@ export function useImageFile() {
     error,
     warning,
     loading,
-    processFile,
-    reset
+    processFile
   };
 }

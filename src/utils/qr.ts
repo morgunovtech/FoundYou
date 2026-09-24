@@ -37,8 +37,14 @@ function mask(value: string, keep = 2): string {
   return `${trimmed.slice(0, keep)}${'•'.repeat(Math.min(6, Math.max(3, trimmed.length - keep)))}`;
 }
 
+/**
+ * One `KEY:value` field of a `WIFI:` / `MECARD:` payload. The first field follows the type
+ * prefix's own colon (`WIFI:S:HomeNet;…`, which is the order Android's share sheet writes), so
+ * `:` is a separator too — a key preceded only by `;` or a line start missed the SSID whenever
+ * it came first.
+ */
 function field(text: string, key: string): string | null {
-  const match = new RegExp(`(?:^|[;\\n])\\s*${key}:([^;\\n]*)`, 'i').exec(text);
+  const match = new RegExp(`(?:^|[;:\\n])\\s*${key}:([^;\\n]*)`, 'i').exec(text);
   return match ? match[1].trim() : null;
 }
 

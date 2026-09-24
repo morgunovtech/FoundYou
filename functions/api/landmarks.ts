@@ -1,4 +1,4 @@
-import { DAY, cacheKey, coordKey, defineHandler, fetchUpstream, json, parseCoord, round4, withCache } from './_geo';
+import { DAY, HOUR, UPSTREAM_TIMEOUT_MS, cacheKey, coordKey, defineHandler, fetchUpstream, json, parseCoord, round4, withCache } from './_geo';
 
 /**
  * Wikipedia articles about places near the point.
@@ -21,6 +21,17 @@ import { DAY, cacheKey, coordKey, defineHandler, fetchUpstream, json, parseCoord
  */
 
 const TTL = 7 * DAY;
+/**
+ * An empty answer that is not the whole story — an edition unreachable, or never asked because
+ * the budget ran out — is kept only this long, so an outage at Wikipedia does not become
+ * «nothing here» for a week.
+ */
+const PARTIAL_TTL = HOUR;
+/**
+ * With less of the budget than this left, another edition is not worth asking: the request
+ * would be aborted before Wikipedia can answer, and the abort itself still costs a connection.
+ */
+const MIN_ASK_MS = 500;
 /** A landmark further than this is not «here» in any useful sense. */
 const RADIUS_METERS = 1000;
 const MAX_RESULTS = 5;
@@ -52,14 +63,34 @@ export const onRequest = defineHandler(async ({ url, context }) => {
   const [lat4, lon4] = coordKey(round4(lat), round4(lon));
 
   return withCache(context, cacheKey('landmarks', lat4, lon4, editions.join('-')), TTL, async () => {
+    // One deadline for the whole loop. Each edition used to get a fresh 8 s of its own, so three
+    // of them could take 24 s against the page's 12 s timeout — the browser had given up on an
+    // answer the Function then went on to compute and cache.
+    const deadline = Date.now() + UPSTREAM_TIMEOUT_MS;
+    let answered = false; // at least one edition gave a usable answer
+    let complete = true; // every edition was asked and every one of them answered
     for (const edition of editions) {
-      const found = await askWikipedia(edition, lat4, lon4);
-      if (found === null) continue; // upstream problem: try the next edition rather than fail
+      const remaining = deadline - Date.now();
+      if (remaining < MIN_ASK_MS) {
+        complete = false;
+        break;
+      }
+      const found = await askWikipedia(edition, lat4, lon4, remaining);
+      if (found === null) {
+        complete = false; // upstream problem: try the next edition rather than fail
+        continue;
+      }
+      answered = true;
       if (found.length > 0) return json({ ok: true, data: found }, 200, undefined, TTL);
     }
-    // Every edition answered and none knows this place. That is an answer, not a failure: it
-    // means the point is somewhere unremarkable, which is exactly what the card reports.
-    return json({ ok: true, data: [] }, 200, undefined, TTL);
+    // No edition answered at all. That is an outage, not a place nobody has written about, and
+    // it must not be cached as one; `withCache` never stores an error.
+    if (!answered) return json({ ok: false, error: 'upstream-unavailable' }, 502);
+    // At least one edition answered and none of those asked knows this place. That is an answer,
+    // not a failure: it means the point is somewhere unremarkable, which is exactly what the card
+    // reports. It is kept for the week only when every edition said so; when one was down or
+    // never asked, the list may be missing the article that exists, so it is kept for an hour.
+    return json({ ok: true, data: [] }, 200, undefined, complete ? TTL : PARTIAL_TTL);
   });
 });
 
@@ -69,17 +100,17 @@ interface Landmark {
   lang: string;
 }
 
-/** `null` when the edition could not be reached or did not answer usefully. */
-async function askWikipedia(edition: string, lat4: string, lon4: string): Promise<Landmark[] | null> {
+/** `null` when the edition could not be reached within `timeoutMs` or did not answer usefully. */
+async function askWikipedia(edition: string, lat4: string, lon4: string, timeoutMs: number): Promise<Landmark[] | null> {
   const query =
     `https://${edition}.wikipedia.org/w/api.php?action=query&list=geosearch&format=json&origin=*` +
     `&gscoord=${lat4}%7C${lon4}&gsradius=${RADIUS_METERS}&gslimit=${MAX_RESULTS}`;
-  const upstream = await fetchUpstream(query);
+  const upstream = await fetchUpstream(query, {}, timeoutMs);
   if (!upstream.ok) return null;
 
   let payload: any;
   try {
-    payload = await upstream.response.json();
+    payload = JSON.parse(upstream.text);
   } catch {
     return null;
   }

@@ -1,7 +1,7 @@
 {
   "name": "Found You — Photo Metadata Analyzer",
   "short_name": "Found You",
-  "description": "Analyze and remove metadata from photos. EXIF, GPS, OCR, face detection — all locally in your browser.",
+  "description": "Analyze and remove metadata from photos. EXIF, GPS, OCR, face detection — in your browser; for a geotagged photo, place context is looked up from rounded coordinates and disclosed next to the result.",
   "start_url": "/",
   "display": "browser",
   "theme_color": "#edeae5",

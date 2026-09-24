@@ -29,7 +29,9 @@ describe('surveillance-candidates: guards', () => {
     mockFetch(async () => jsonResponse(overpassPayload()));
     const url = urlOf(PATH, TASHKENT);
     expect((await call(onRequest, url, { headers: {} })).status).toBe(403);
-    expect((await call(onRequest, url, { headers: { 'Sec-Fetch-Site': 'same-site' } })).status).toBe(200);
+    expect((await call(onRequest, url, { headers: { 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(200);
+    // Another host under the same registrable domain is not the SPA: only same-origin passes.
+    expect((await call(onRequest, url, { headers: { 'Sec-Fetch-Site': 'same-site' } })).status).toBe(403);
     expect((await call(onRequest, url, { headers: { Referer: 'https://foundyou.test/' } })).status).toBe(200);
   });
 
@@ -53,7 +55,7 @@ describe('surveillance-candidates: success', () => {
     const { response, body } = await callJson<ApiResponse<PoiResult[]>>(onRequest, urlOf(PATH, TASHKENT));
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('Cache-Control')).toBe('public, max-age=86400, s-maxage=86400');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(response.headers.get('X-Cache')).toBe('MISS');
     expect(body.ok).toBe(true);
 
@@ -64,11 +66,11 @@ describe('surveillance-candidates: success', () => {
     expect(distances).toEqual([...distances].sort((a, b) => a - b));
     expect(distances.every(Number.isInteger)).toBe(true);
 
-    // category = surveillance || man_made || amenity || shop
+    // category = surveillance || man_made
     expect(data).toContainEqual({ name: '', category: 'public', distance: distanceFromCell(SURVEILLANCE_ELEMENTS[0]) });
-    expect(data).toContainEqual({ name: 'Kapitalbank ATM', category: 'atm', distance: distanceFromCell(SURVEILLANCE_ELEMENTS[1]) });
-    expect(data).toContainEqual({ name: 'NBU', category: 'bank', distance: distanceFromCell(SURVEILLANCE_ELEMENTS[2]) });
-    expect(data).toContainEqual({ name: 'Korzinka', category: 'supermarket', distance: distanceFromCell(SURVEILLANCE_ELEMENTS[3]) });
+    expect(data).toContainEqual({ name: 'Kapitalbank ATM', category: 'outdoor', distance: distanceFromCell(SURVEILLANCE_ELEMENTS[1]) });
+    expect(data).toContainEqual({ name: 'NBU', category: 'surveillance', distance: distanceFromCell(SURVEILLANCE_ELEMENTS[2]) });
+    expect(data).toContainEqual({ name: 'Korzinka', category: 'indoor', distance: distanceFromCell(SURVEILLANCE_ELEMENTS[3]) });
     expect(data).toContainEqual({ name: '', category: 'surveillance', distance: distanceFromCell(SURVEILLANCE_ELEMENTS[5]) });
 
     // Elements that only live in the .poi set never show up here.
