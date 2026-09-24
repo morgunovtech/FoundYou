@@ -33,6 +33,7 @@ const APARTMENTS = new Set(['apartments', 'residential', 'dormitory']);
 const COMMERCIAL = new Set(['office', 'commercial', 'retail', 'supermarket', 'kiosk', 'shop']);
 const INDUSTRIAL = new Set(['industrial', 'warehouse', 'factory', 'manufacture']);
 const VENUE_CATEGORIES = new Set(['amenity', 'shop', 'tourism', 'leisure', 'historic', 'natural', 'office', 'craft']);
+const STATION_TYPES = new Set(['station', 'halt', 'stop', 'stop_position', 'platform', 'subway_entrance', 'tram_stop', 'bus_station']);
 
 /**
  * What Nominatim's `category` / `type` / `addresstype` say the point is. A home
@@ -47,6 +48,16 @@ export function placeTypeLabel(
   const type = result.type?.toLowerCase() ?? '';
   const addressType = result.addressType?.toLowerCase() ?? '';
   if (!category && !type) return null;
+
+  // A station is a place people pass through, and a common one to stand at: the live answer for
+  // a point in central Tashkent was `railway/station` (the metro), which used to map to nothing
+  // and left the row without a type at all (checked against Nominatim on 2026-09-24).
+  if ((category === 'railway' || category === 'public_transport') && STATION_TYPES.has(type)) {
+    return { key: 'placeType_station' };
+  }
+  if (category === 'aeroway' && (type === 'aerodrome' || type === 'terminal')) {
+    return { key: 'placeType_aerodrome' };
+  }
 
   if (category === 'building' || addressType === 'building') {
     if (HOUSE.has(type)) return { key: 'placeType_house' };

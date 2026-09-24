@@ -227,7 +227,12 @@ export function judgeCompression(signals: JpegSignals, cameraMake: string | null
         : 'standard-low';
   const make = (cameraMake ?? '').trim();
   let conflict: VendorConflict = null;
-  if (/^apple/i.test(make) && exact) conflict = 'apple-standard';
+  // Not at quality 100: the IJG table scaled to 100 is all ones, which is what *every* encoder
+  // writes at its top setting, so an exact match there says nothing about libjpeg. Measured on
+  // 2026-09-24 over 74 real iPhone JPEGs (X, 11, 12 mini, 13, 13 Pro, 15 Pro Max): every camera
+  // original has its own tables and no conflict; the one file the rule caught was an iPhone 13
+  // Pro re-save at quality 100, 4:4:4, which is not evidence of another program either way.
+  if (/^apple/i.test(make) && exact && quality < 100) conflict = 'apple-standard';
   else if (ANDROID_STANDARD_MAKERS.test(make) && exact && quality < 90) conflict = 'android-low';
   return { code, quality, exact, subsampling: signals.subsampling, conflict };
 }

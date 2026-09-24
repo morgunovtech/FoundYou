@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { useT } from '../i18n';
 import type { BasicFileInfo, MetadataGroups, StructuredMetadata } from '../types/metadata';
 import { inferOrientation } from '../utils/orientation';
 import { computeMetadataCompleteness } from '../utils/metadataScore';
@@ -11,17 +10,25 @@ import { readEmbeddedThumbnail } from '../utils/heic';
 import { findShotDateFault } from '../utils/exifDateSanity';
 import type { EmbeddedThumbnail } from '../utils/fileHistory';
 
+/** The one way the parse fails as a whole; the components map it to a dictionary key. */
+export type ExifErrorCode = 'corrupted-file';
+
 interface UseExifMetadataResult {
   metadata: StructuredMetadata | null;
   loading: boolean;
-  error: string | null;
+  error: ExifErrorCode | null;
 }
 
+/*
+ * No `useT` here, and no translated string in state. The hook used to take `t` and list it in
+ * the effect's dependencies, so switching the UI language re-read the whole file (two exifr
+ * passes, the Samsung trailer, the thumbnail hash), blanked `metadata` for a render and, since
+ * that yields a new `gps` object, re-issued every place-context request. Hooks return codes.
+ */
 export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadataResult {
-  const t = useT();
   const [metadata, setMetadata] = useState<StructuredMetadata | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ExifErrorCode | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -156,7 +163,7 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
       } catch (err) {
         console.error('metadata-parse', err);
         if (active) {
-          setError(t('corruptedFile'));
+          setError('corrupted-file');
           setMetadata(null);
         }
       } finally {
@@ -173,7 +180,7 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
       // The thumbnail's blob URL belongs to this file; drop it when the file is replaced.
       if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl);
     };
-  }, [fileInfo, t]);
+  }, [fileInfo]);
 
   return { metadata, loading, error };
 }

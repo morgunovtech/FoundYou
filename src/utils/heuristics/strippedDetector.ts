@@ -55,6 +55,44 @@ const EVIDENCE: Record<string, Record<Lang, string>> = {
 const CAMERA_NAME_REGEX = /^(IMG|DSC|PXL|GOPR|DJI|DCIM|photo|_DSC|GX)/i;
 
 /**
+ * The EXIF fields only a camera (or a program copying a camera's block) writes. A file out of
+ * Telegram still carries six fields — XResolution, YResolution, ResolutionUnit, ColorSpace and
+ * the two pixel sizes — because every re-encoder writes that stub, and «more than two EXIF keys»
+ * used to count it as «metadata preserved, the file was not re-compressed». The stub says the
+ * opposite: a camera block was here and this is what is left of it.
+ */
+const CAMERA_EXIF_KEYS = [
+  'Make',
+  'Model',
+  'DateTimeOriginal',
+  'LensModel',
+  'LensMake',
+  'ExposureTime',
+  'FNumber',
+  'ISO',
+  'ISOSpeedRatings',
+  'FocalLength',
+  'FocalLengthIn35mmFormat',
+  'GPSLatitude',
+  'GPSLongitude',
+  'MakerNote',
+  'SerialNumber',
+  'BodySerialNumber',
+  'Flash',
+  'WhiteBalance',
+  'ExposureProgram'
+];
+
+/** Whether the EXIF group holds anything a camera wrote, as opposed to the resolution stub every encoder leaves. */
+export function hasCameraExif(exif: Record<string, unknown> | null | undefined): boolean {
+  if (!exif) return false;
+  return CAMERA_EXIF_KEYS.some((key) => {
+    const value = exif[key] ?? exif[key.charAt(0).toLowerCase() + key.slice(1)];
+    return value != null && value !== '';
+  });
+}
+
+/**
  * Platforms that re-encode uploads and drop EXIF. Only these may be named in `strippedBy`;
  * a camera/vendor platform inferred from the filename (Apple iOS, Android, Camera…) is where
  * the photo was *taken*, not what removed its metadata.

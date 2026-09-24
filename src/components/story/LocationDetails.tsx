@@ -67,6 +67,9 @@ interface LocationDetailsProps {
   /** Weekday / weekend / holiday and the capture hour, for the «is this where you live» guess. */
   dayKind?: 'weekday' | 'weekend' | 'holiday';
   hour?: number;
+  /** Camera heading and field of view from the stance, for the cone on the map. */
+  heading?: number | null;
+  fieldOfView?: number | null;
 }
 
 /**
@@ -74,7 +77,7 @@ interface LocationDetailsProps {
  * weather and the holiday at that hour, the map and its links, the places and cameras nearby,
  * the device-specific tip on switching geotags off, and the disclosure of what was sent.
  */
-export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata, ocrResult, platform, remote, accuracyLabel, dayKind, hour }) => {
+export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata, ocrResult, platform, remote, accuracyLabel, dayKind, hour, heading, fieldOfView }) => {
   const t = useT();
   const { lang } = useI18n();
   const [copied, setCopied] = useState(false);
@@ -400,7 +403,9 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
           </div>
         ) : null}
         <div>
-          {remote ? <MapBlock lat={coords.lat} lon={coords.lon} accuracy={geo.accuracyMeters ?? undefined} /> : null}
+          {remote ? (
+            <MapBlock lat={coords.lat} lon={coords.lon} accuracy={geo.accuracyMeters ?? undefined} heading={heading} fieldOfView={fieldOfView} />
+          ) : null}
           <div className="fy-map-actions">
             <button type="button" className="v4-btn fy-btn-sm" onClick={handleCopyCoords}>
               {copied ? t('coordinatesCopied') : t('insightCompactCopyCoordinates')}
@@ -414,6 +419,8 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
             <a className="v4-btn fy-btn-sm" href={streetViewLink(coords.lat, coords.lon, metadata?.gps?.heading)} target="_blank" rel="noreferrer">
               {t('openStreetView')}
             </a>
+            {/* The map is behind a gate that explains what OSM would learn; the Google links deserve the same one line. */}
+            <p className="fy-hint">{t('mapLinksNote')}</p>
           </div>
         </div>
       </div>
@@ -425,13 +432,22 @@ export const LocationDetails: React.FC<LocationDetailsProps> = ({ geo, metadata,
               poi.name?.trim() ? poi.name : localizeCategoryKey(poi.category, t)
             )}
           </div>
-          <div>
-            <h4 className="v4-h3">{t('insightSurveillanceTitle')}</h4>
-            {geo.surveillance.items.length > 0 ? <p className="fy-hint">{t('insightSurveillanceHelper')}</p> : null}
-            {renderList(geo.surveillance.status, geo.surveillance.items, 'insightSurveillanceError', 'insightSurveillanceEmpty', (poi) =>
-              localizeCategoryKey(poi.category, t)
-            )}
-          </div>
+          {/* Only cameras someone mapped, and only when there are any: a list of shops «that may
+              have a camera» answered no question, and an empty block is noise. */}
+          {geo.surveillance.items.length > 0 ? (
+            <div>
+              <h4 className="v4-h3">{t('insightSurveillanceTitle')}</h4>
+              <p className="fy-hint">{t('insightSurveillanceHelper')}</p>
+              <ul className="fy-rows">
+                {geo.surveillance.items.map((poi, index) => (
+                  <li key={`${poi.category}-${poi.distance}-${index}`}>
+                    <span>{poi.name?.trim() ? poi.name : localizeCategoryKey(poi.category, t)}</span>
+                    <span className="fy-mono">{formatPoiDistance(poi.distance)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       ) : null}
       <details className="fy-tip">

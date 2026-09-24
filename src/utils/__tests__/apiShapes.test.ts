@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isElevation, isHistoricalWeather, isHolidays, isPoiList, isReverseGeocode } from '../apiShapes';
+import { isElevation, isHistoricalWeather, isHolidays, isPlaceContext, isPoiList, isReverseGeocode } from '../apiShapes';
 
 const POI = { name: 'Чайхана «Пскент»', category: 'cafe', distance: 320 };
 const REVERSE = {
@@ -41,18 +41,62 @@ describe('isReverseGeocode', () => {
   it('accepts the endpoint answer, with the optional fields missing', () => {
     expect(isReverseGeocode(REVERSE)).toBe(true);
     expect(isReverseGeocode({ address: 'x', country: 'y', lat: 1, lon: 2 })).toBe(true);
+    expect(
+      isReverseGeocode({ ...REVERSE, neighbourhood: 'Мирзо Улугбек МФЙ', localName: 'Amir Temur xiyoboni', placeRank: 30, buildingLevels: 9 })
+    ).toBe(true);
   });
 
-  it('rejects an answer whose coordinates or address are not there', () => {
+  it('accepts the answer for a point Nominatim cannot geocode: coordinates and nothing invented', () => {
+    // Open sea, the poles: the endpoint no longer fills in «Unknown address» / «Unknown», so the
+    // page can fall back to its own dictionary instead of printing English in a Russian card.
+    expect(isReverseGeocode({ lat: 41.3112, lon: 69.2797 })).toBe(true);
+    expect(isReverseGeocode({ ...REVERSE, address: undefined, country: undefined })).toBe(true);
+  });
+
+  it('rejects an answer whose coordinates are not there', () => {
     expect(isReverseGeocode({ ...REVERSE, lat: 'north' })).toBe(false);
-    expect(isReverseGeocode({ ...REVERSE, address: undefined })).toBe(false);
+    expect(isReverseGeocode({ ...REVERSE, lon: undefined })).toBe(false);
     expect(isReverseGeocode([REVERSE])).toBe(false);
     expect(isReverseGeocode(null)).toBe(false);
   });
 
   it('rejects a field the page would print as text but is not', () => {
+    expect(isReverseGeocode({ ...REVERSE, address: 42 })).toBe(false);
+    expect(isReverseGeocode({ ...REVERSE, country: ['Uzbekistan'] })).toBe(false);
     expect(isReverseGeocode({ ...REVERSE, city: { name: 'Tashkent' } })).toBe(false);
+    // Rendered as JSX children: an object in either throws inside React and blanks section 02.
+    expect(isReverseGeocode({ ...REVERSE, neighbourhood: { name: 'МФЙ' } })).toBe(false);
+    expect(isReverseGeocode({ ...REVERSE, localName: 7 })).toBe(false);
+  });
+
+  it('rejects a field the page would read as a number but is not', () => {
     expect(isReverseGeocode({ ...REVERSE, distanceMeters: 'far' })).toBe(false);
+    expect(isReverseGeocode({ ...REVERSE, placeRank: 'high' })).toBe(false);
+    expect(isReverseGeocode({ ...REVERSE, buildingLevels: '9' })).toBe(false);
+  });
+});
+
+describe('isPlaceContext', () => {
+  const ITEM = { kind: 'school', name: 'Школа № 50', distance: 180 };
+  const CONTEXT = { landuse: 'residential', sensitive: [ITEM], transport: [], placeName: 'Ташкент', placeKind: 'city', population: 2_860_000 };
+
+  it('accepts the endpoint answer, with everything OSM did not have left out', () => {
+    expect(isPlaceContext(CONTEXT)).toBe(true);
+    expect(isPlaceContext({ sensitive: [], transport: [] })).toBe(true);
+  });
+
+  it('rejects the wrong container and a list entry the card would throw on', () => {
+    expect(isPlaceContext([CONTEXT])).toBe(false);
+    expect(isPlaceContext({ ...CONTEXT, sensitive: { items: [ITEM] } })).toBe(false);
+    expect(isPlaceContext({ ...CONTEXT, transport: [{ kind: 'railway:station', distance: 400 }] })).toBe(false);
+    expect(isPlaceContext({ ...CONTEXT, sensitive: [{ ...ITEM, distance: 'near' }] })).toBe(false);
+  });
+
+  it('rejects a field the card prints or formats but that is the wrong kind of thing', () => {
+    expect(isPlaceContext({ ...CONTEXT, landuse: { osm: 'residential' } })).toBe(false);
+    expect(isPlaceContext({ ...CONTEXT, placeName: ['Ташкент'] })).toBe(false);
+    expect(isPlaceContext({ ...CONTEXT, placeKind: 4 })).toBe(false);
+    expect(isPlaceContext({ ...CONTEXT, population: '2 860 000' })).toBe(false);
   });
 });
 

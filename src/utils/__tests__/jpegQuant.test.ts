@@ -117,6 +117,10 @@ describe('judgeCompression', () => {
 
   it('flags libjpeg tables on an «Apple» file and a low libjpeg quality on a Samsung / Google file', () => {
     expect(judgeCompression(signals(92), 'Apple').conflict).toBe('apple-standard');
+    // Quality 100 is all-ones tables, which every encoder writes at its top setting: no evidence.
+    // Measured 2026-09-24 on 74 real iPhone JPEGs — the only «conflict» the rule raised was one
+    // such file, an iPhone 13 Pro re-save at 100 / 4:4:4.
+    expect(judgeCompression(signals(100), 'Apple').conflict).toBeNull();
     expect(judgeCompression(signals(75), 'samsung').conflict).toBe('android-low');
     expect(judgeCompression(signals(75), 'Google').conflict).toBe('android-low');
     expect(judgeCompression(signals(97), 'Google').conflict).toBeNull();

@@ -10,6 +10,11 @@ interface ErrorBoundaryProps {
   variant?: 'page' | 'inline';
   /** When this value changes, a caught error is cleared (e.g. pass the current file). */
   resetKey?: unknown;
+  /**
+   * Labels from the dictionary, for the inline variant, which always mounts inside
+   * `I18nProvider`; only the page variant has to carry its own three languages.
+   */
+  labels?: { inlineTitle: string; retry: string };
 }
 
 interface ErrorBoundaryState {
@@ -82,7 +87,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   render() {
     if (this.state.hasError) {
-      const labels = getLabels();
+      const labels = this.props.labels ? { ...getLabels(), ...this.props.labels } : getLabels();
       if (this.props.variant === 'inline') {
         return (
           <div className="v4-section">

@@ -4,7 +4,7 @@ import {
   formatCoords,
   formatDistance,
   dedupeByNameAndDistance,
-  localizeCategoryKey, withoutPlaceEchoes } from '../insightsCompact';
+  localizeCategoryKey, localizePlaceParts, withoutPlaceEchoes } from '../insightsCompact';
 
 describe('formatCoords', () => {
   it('formats coordinates', () => {
@@ -24,6 +24,31 @@ describe('formatDistance', () => {
   it('formats small distances', () => {
     const result = formatDistance(50, 'en');
     expect(result).toContain('50');
+  });
+});
+
+describe('localizePlaceParts', () => {
+  it('joins country, city and district, localising the known names for ru', () => {
+    const { place } = localizePlaceParts({ country: 'Uzbekistan', city: 'Tashkent', district: 'Yunusobod', lat: 41.3112, lon: 69.2797 }, 'ru');
+    expect(place).toBe('Узбекистан, Ташкент, Yunusobod');
+  });
+
+  it('gives an empty place when the endpoint had no address to give, so the page uses its own fallback line', () => {
+    // A point Nominatim cannot geocode comes back with the coordinates and nothing else; the
+    // component then shows `insightCompactLocationUnknown` rather than an English placeholder.
+    expect(localizePlaceParts({ lat: 41.3112, lon: 69.2797 }, 'ru')).toEqual({ place: '', accuracy: null });
+    expect(localizePlaceParts({ lat: 41.3112, lon: 69.2797 }, 'en')).toEqual({ place: '', accuracy: null });
+    expect(localizePlaceParts(null, 'ru')).toEqual({ place: '', accuracy: null });
+  });
+
+  it('uses whatever parts exist when the address is partial', () => {
+    expect(localizePlaceParts({ city: 'Qishloq', lat: 1, lon: 2 }, 'en').place).toBe('Qishloq');
+    expect(localizePlaceParts({ country: 'Uzbekistan', state: 'Tashkent Region', lat: 1, lon: 2 }, 'en').place).toBe('Uzbekistan, Tashkent Region');
+  });
+
+  it('reports the precision as a distance when the endpoint measured one', () => {
+    const { accuracy } = localizePlaceParts({ precisionMeters: 220, lat: 1, lon: 2 }, 'en');
+    expect(accuracy).toContain('220');
   });
 });
 

@@ -1,5 +1,5 @@
 import { bearing, defineHandler, getPosition, haversine, json, parseCoord, round4 } from './_geo';
-import { OVERPASS_TTL, loadOverpassSets } from './_overpass';
+import { loadOverpassSets } from './_overpass';
 
 export const onRequest = defineHandler(async ({ url, context }) => {
   const lat = parseCoord(url.searchParams.get('lat'), 90);
@@ -41,5 +41,6 @@ export const onRequest = defineHandler(async ({ url, context }) => {
     .slice(0, 5)
     .map((item) => ({ ...item, distance: Math.round(item.distance), bearing: Math.round(item.bearing) }));
 
-  return json({ ok: true, data }, 200, { 'X-Cache': result.cache }, OVERPASS_TTL);
+  // Built after the shared Overpass cache, so this is the browser's copy: no TTL, never on disk.
+  return json({ ok: true, data }, 200, { 'X-Cache': result.cache });
 });

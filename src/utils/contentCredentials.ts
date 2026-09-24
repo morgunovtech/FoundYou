@@ -1,3 +1,4 @@
+import { C2PA_BASE } from '../assetPaths';
 /**
  * Content Credentials (C2PA) — the signed provenance manifest some cameras, editors and AI
  * generators embed. Presence is detected by walking the container ourselves (a few bytes,
@@ -277,8 +278,8 @@ export function summarizeManifestStore(store: ManifestStoreLike): ContentCredent
 
 /* ── toolkit loading (lazy, self-hosted) ─────────────────── */
 
-export const C2PA_WASM_URL = '/c2pa/toolkit_bg.wasm';
-export const C2PA_WORKER_URL = '/c2pa/c2pa.worker.min.js';
+export const C2PA_WASM_URL = `${C2PA_BASE}/toolkit_bg.wasm`;
+export const C2PA_WORKER_URL = `${C2PA_BASE}/c2pa.worker.min.js`;
 
 type C2paInstance = { read(input: Blob): Promise<{ manifestStore: unknown | null }> };
 let instance: Promise<C2paInstance> | null = null;
@@ -286,7 +287,13 @@ let instance: Promise<C2paInstance> | null = null;
 function getToolkit(): Promise<C2paInstance> {
   if (!instance) {
     instance = import('c2pa')
-      .then(({ createC2pa }) => createC2pa({ wasmSrc: C2PA_WASM_URL, workerSrc: C2PA_WORKER_URL }) as unknown as Promise<C2paInstance>)
+      .then(
+        ({ createC2pa }) =>
+          // A manifest may point at a copy of itself on a server; the library fetches it by
+          // default, and a URL unique to one file is a beacon that says this photo was opened,
+          // from this IP. Privacy invariant 1: nothing about the file leaves the device.
+          createC2pa({ wasmSrc: C2PA_WASM_URL, workerSrc: C2PA_WORKER_URL, fetchRemoteManifests: false }) as unknown as Promise<C2paInstance>
+      )
       .catch((err: unknown) => {
         instance = null;
         throw err;

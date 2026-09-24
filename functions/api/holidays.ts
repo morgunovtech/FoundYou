@@ -2,7 +2,6 @@ import { DAY, cacheControl, cacheKey, defineHandler, fetchUpstream, json, withCa
 
 const RAW_TTL = 30 * DAY; // Nager list per country+year
 const MISS_TTL = DAY; // country unknown to Nager → empty list, retried daily
-const RESPONSE_TTL = DAY;
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export const onRequest = defineHandler(async ({ url, context }) => {
@@ -37,7 +36,10 @@ export const onRequest = defineHandler(async ({ url, context }) => {
       ...(entry.approximate === true ? { approximate: true } : {})
     }));
 
-  return json({ ok: true, data: { isHoliday: holidays.length > 0, holidays } }, 200, { 'X-Cache': cache }, RESPONSE_TTL);
+  // The per-day answer is built after the cache, so it is the browser's copy and carries no TTL:
+  // only the raw per-year list is cached, at the edge. A country and a date say less than a
+  // coordinate, but they are still the reader's photograph, and `/api/*` is never kept on disk.
+  return json({ ok: true, data: { isHoliday: holidays.length > 0, holidays } }, 200, { 'X-Cache': cache });
 });
 
 /** Valid calendar date in YYYY-MM-DD within a range Nager can answer for; returns the year. */
@@ -151,7 +153,7 @@ async function produce(country: string, year: number): Promise<Response> {
   // 204 = country not covered by Nager (UZ today): same fallback.
   if (upstream.status === 204) return rawList(staticList(country, year), STATIC_HOLIDAYS[country] ? RAW_TTL : MISS_TTL);
 
-  const text = await upstream.response.text();
+  const text = upstream.text;
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);

@@ -4,7 +4,9 @@
  * a canvas, then extended by the fixture script) goes through the file input, the three
  * sections appear, the facts are gathered, the «metadata only» export produces a file the
  * page verifies as «0 fields left» and that carries neither an Exif segment nor the Samsung
- * trailer the fixture had.
+ * trailer the fixture had, and the «apply all» export re-encodes the picture into a JPEG with
+ * no Exif and a verification that names the fingerprint distance. A page error or a
+ * console.error the allowlist below does not name fails the run.
  *
  * Runs against an already running server (the Vite dev server by default):
  *
@@ -84,6 +86,23 @@ try {
   page.setDefaultTimeout(timeout);
   const errors = [];
   page.on('pageerror', (error) => errors.push(String(error)));
+  // console.error is where React, the hooks (`console.error('analysis', …)`) and the browser itself
+  // report what never becomes a pageerror: a failed render, a model that did not load, a resource
+  // that did not arrive. Two lines are expected and allowed: the browser's own line for the /api
+  // stubs below, which answer 502 on purpose, and the MediaPipe runtime announcing its CPU delegate
+  // — an INFO line the Emscripten build routes through `printErr`, once per detector (two face
+  // models and the object model, so three per photo). Anything else is a finding.
+  const ALLOWED_CONSOLE_ERRORS = [
+    /^Failed to load resource: the server responded with a status of 502/,
+    /^INFO: Created TensorFlow Lite XNNPACK delegate for CPU\.$/
+  ];
+  const consoleErrors = [];
+  page.on('console', (message) => {
+    if (message.type() !== 'error') return;
+    const text = message.text();
+    if (ALLOWED_CONSOLE_ERRORS.some((pattern) => pattern.test(text))) return;
+    consoleErrors.push(text);
+  });
   // No upstream calls: every Function answers as if the upstream failed, the UI shows «unavailable».
   await page.route('**/api/**', (route) =>
     route.fulfill({ status: 502, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'upstream-failed' }) })
@@ -121,8 +140,34 @@ try {
   const text = (await verify.textContent()) ?? '';
   if (!/осталось 0|0 left|0 ta|0 qoldi/.test(text)) fail(`unexpected verification text: ${text}`);
 
+  // «Apply all» takes the other path: blur, PRNU, anti-search at level 3, a 1920 px cap and a new
+  // name, so the picture is re-encoded through the canvas. The source was a JPEG and the format is
+  // «original», so the export must be a JPEG again, with no Exif, new entropy data, a clean
+  // verification and the fingerprint-distance line the anti-search step is judged by. The buttons
+  // are found by their visible text, in whichever language the page is in.
+  await page.getByRole('button', { name: /Применить всё|Apply all|Barchasini qo‘llash/ }).click();
+  // The settings changed, so the page withdraws the previous verification until the next export.
+  await verify.waitFor({ state: 'hidden' });
+  const fullDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: /Очистить и скачать|Clean and download|Tozalash va yuklab olish/ }).click();
+  const fullPath = await (await fullDownload).path();
+  if (!fullPath) fail('no download path for the «apply all» export');
+  const fullBytes = readFileSync(fullPath);
+  if (fullBytes[0] !== 0xff || fullBytes[1] !== 0xd8) fail('the «apply all» download is not a JPEG');
+  if (fullBytes.includes(Buffer.from('Exif\0\0', 'latin1'))) fail('an Exif segment survived the «apply all» export');
+  if (fullBytes.includes(tail)) fail('the «apply all» export kept the original picture bytes instead of re-encoding them');
+  await verify.waitFor();
+  const fullText = (await verify.textContent()) ?? '';
+  if (!/осталось 0|0 left|0 ta|0 qoldi/.test(fullText)) fail(`unexpected verification text after «apply all»: ${fullText}`);
+  const phashLine = page.locator('.fy-hint[role="status"]', { hasText: /из 64 бит|of 64 bits|64 bitdan/ });
+  await phashLine.waitFor();
+  const phashText = (await phashLine.textContent()) ?? '';
+
   if (errors.length > 0) fail(`page errors: ${errors.join('; ')}`);
-  console.log(`SMOKE PASS: ${bytes.length} bytes exported; "${text.trim()}"`);
+  if (consoleErrors.length > 0) fail(`console errors: ${consoleErrors.join(' | ')}`);
+  console.log(
+    `SMOKE PASS: ${bytes.length} bytes (metadata only), ${fullBytes.length} bytes (apply all); "${text.trim()}" / "${fullText.trim()}" / "${phashText.trim()}"`
+  );
 } finally {
   await browser.close();
 }

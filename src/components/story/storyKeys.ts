@@ -116,7 +116,8 @@ export const PII_KIND_KEYS: Record<PiiKind, MessageKey> = {
   phone: 'piiKind_phone',
   email: 'piiKind_email',
   handle: 'piiKind_handle',
-  document: 'piiKind_document'
+  document: 'piiKind_document',
+  name: 'piiKind_name'
 };
 
 export const CAPTURE_TYPE_KEYS: Record<AppleCaptureType, MessageKey> = {

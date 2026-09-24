@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import exifr from 'exifr';
-import { stripContainerMetadata } from './utils/containerMetadata';
+import { sniffContainer, stripContainerMetadata } from './utils/containerMetadata';
 import { hammingDistance, phashFromBlob } from './utils/phash';
 import { usePrefersReducedMotion } from './hooks/usePrefersReducedMotion';
 import { extensionForMime } from './utils/format';
@@ -11,9 +11,11 @@ import { SiteHeader } from './components/SiteHeader';
 import { SiteFooter } from './components/SiteFooter';
 import { UploadZone } from './components/UploadZone';
 import { StickyActions } from './components/StickyActions';
+import { VerifyBlock } from './components/VerifyBlock';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { useImageFile } from './hooks/useImageFile';
+import { useImageFile, type FileErrorCode, type FileWarningCode } from './hooks/useImageFile';
 import { useExifMetadata } from './hooks/useExifMetadata';
+import { maxExportPixels, megapixels } from './utils/platform';
 import { StoryBlock } from './components/StoryBlock';
 import { SceneBlock } from './components/SceneBlock';
 import { CleanupDownloadBlock } from './components/CleanupDownloadBlock';
@@ -39,11 +41,17 @@ import type { BasicFileInfo } from './types/metadata';
 import { generateSceneNarrative } from './utils/sceneNarrative';
 import { analyzeFilename } from './utils/heuristics/filenameAnalyzer';
 import { analyzeResolution } from './utils/heuristics/resolutionAnalyzer';
-import { detectStrippedMetadata } from './utils/heuristics/strippedDetector';
+import { detectStrippedMetadata, hasCameraExif } from './utils/heuristics/strippedDetector';
+import { judgeOrigin, type OriginJudgement } from './utils/originJudge';
+import { judgeCompression, type CompressionVerdict } from './utils/jpegQuant';
+import { scoreScreenshot, type ScreenshotScore } from './utils/screenshot';
+import { buildFileHistory, type FileEvent } from './utils/fileHistory';
+import { useContainerSignals } from './hooks/useContainerSignals';
+import { useFrameStats } from './hooks/useFrameStats';
 import { analyzeEditingHistory } from './utils/heuristics/editingHistory';
 import { generateFileHash } from './utils/heuristics/hashAnalyzer';
 import { analyzeDateTime } from './utils/heuristics/temporalAnalyzer';
-import { generateDigitalProfile, type DigitalProfile } from './utils/heuristics/digitalProfile';
+import { generateDigitalProfile, predictLeakAfter, type DigitalProfile } from './utils/heuristics/digitalProfile';
 import type { FilenameAnalysis } from './utils/heuristics/filenameAnalyzer';
 import type { ResolutionAnalysis } from './utils/heuristics/resolutionAnalyzer';
 import type { StrippedAnalysis } from './utils/heuristics/strippedDetector';
@@ -58,6 +66,14 @@ export interface ProData {
   editing: EditingAnalysis;
   hash: HashResult | null;
   temporal: TemporalInsight[];
+  /** The one verdict on where the file has been since the shutter, with its grounds. */
+  origin: OriginJudgement;
+  /** The JPEG tables against the maker in EXIF; null for other containers. */
+  compression: CompressionVerdict | null;
+  /** The screenshot probability with its reasons. */
+  screenshot: ScreenshotScore;
+  /** What happened to the file after the shutter, as dated events. */
+  history: FileEvent[];
 }
 import {
   applyAntiSearch,
@@ -132,33 +148,62 @@ const DETECTION_ERROR_KEYS: Record<DetectionErrorCode, MessageKey> = {
   'content-unavailable': 'contentUnavailable'
 };
 
+const FILE_ERROR_KEYS: Record<FileErrorCode, MessageKey> = {
+  'file-too-large': 'fileTooLarge',
+  'file-too-large-resolution': 'fileTooLargeResolution',
+  'unsupported-format': 'unsupportedFormat',
+  'heic-conversion-failed': 'heicConversionFailed',
+  'browser-format-unsupported': 'browserFormatUnsupported',
+  'corrupted-file': 'corruptedFile'
+};
+
+const FILE_WARNING_KEYS: Record<FileWarningCode, MessageKey> = {
+  'jpeg-truncated': 'truncatedJpeg',
+  'png-truncated': 'truncatedPng'
+};
+
 /** Formats `canvas.toBlob` can actually produce; anything else falls back to JPEG. */
 const ENCODABLE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
-/**
- * iOS/iPadOS Safari refuses (or silently blanks) canvas backing stores above
- * ~16 Mpx; iPadOS 13+ ships a desktop UA, hence the touch-point check.
- */
-function isAppleMobile(): boolean {
-  if (typeof navigator === 'undefined') return false;
-  const ua = navigator.userAgent || '';
-  if (/iPhone|iPad|iPod/i.test(ua)) return true;
-  return /Macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 1;
+/** The per-platform export ceiling lives in `utils/platform.ts`, next to the measurement behind it. */
+const MAX_EXPORT_PIXELS = maxExportPixels();
+const MAX_EXPORT_MEGAPIXELS = megapixels(MAX_EXPORT_PIXELS);
+
+/** Nothing to blur: one shared empty list, so an option that is off never changes the pipeline's identity. */
+const NO_BOXES: never[] = [];
+
+/** The byte count of the «metadata only» export: the container rewrite is cheap enough to run for the summary. */
+async function losslessSize(info: BasicFileInfo): Promise<number> {
+  const source = info.originalFile ?? info.file;
+  const bytes = await source.arrayBuffer();
+  const container = sniffContainer(new Uint8Array(bytes));
+  if (!container) return source.size;
+  return (await stripContainerMetadata(new Blob([bytes], { type: container }))).size;
 }
 
-const MAX_EXPORT_PIXELS = isAppleMobile() ? 16_000_000 : 40_000_000;
-const MAX_EXPORT_MEGAPIXELS = Math.round(MAX_EXPORT_PIXELS / 1_000_000);
-
-function qualityForMode(mode: QualityMode): number {
+/**
+ * The encoder quality for a mode. «match» re-encodes at the quality the source was written
+ * with (its tables say so, exactly for libjpeg and roughly otherwise), clamped to what is
+ * sensible: a 90 % copy of an 80 % original was bigger than the original, which no one
+ * pressing «clean» asked for.
+ */
+function qualityForMode(mode: QualityMode, sourceQuality: number | null): number {
   switch (mode) {
     case 'low':
       return 0.82;
     case 'medium':
       return 0.9;
+    case 'match':
+      return sourceQuality != null ? Math.min(0.95, Math.max(0.5, sourceQuality / 100)) : 0.9;
     case 'original':
     default:
       return 0.98;
   }
+}
+
+/** A PNG or a screenshot-named file: no sensor noise to weaken, no quality knob, nothing to re-encode for. */
+function isScreenLikeFile(name: string, mimeType: string, lang: 'ru' | 'en' | 'uz'): boolean {
+  return mimeType === 'image/png' || analyzeFilename(name, lang).isScreenshot;
 }
 
 function createAnonymisedName(extension: string): string {
@@ -220,16 +265,29 @@ interface ProcessedResult {
   platformCapped: boolean;
 }
 
+/** An identity for the settings a prepared share file was made with; a change in any of them makes a new one. */
+type ShareToken = Record<string, never>;
+
+/** What `exportCleanFile` hands back; the caller decides whether the page still shows the photo it was made for. */
+interface CleanExport {
+  file: File;
+  requested: string;
+  actualMime: string;
+  verify: VerifyResult;
+  platformCapped: boolean;
+}
+
 const SEO_DESCRIPTIONS: Record<string, string> = {
-  ru: 'Бесплатный онлайн-инструмент для анализа и удаления метаданных из фотографий. EXIF, GPS, OCR, поиск людей и объектов. Фото не покидает браузер; контекст места — только по округлённым координатам, с раскрытием и выключателем.',
-  en: 'Free browser-based tool to analyze and remove photo metadata. EXIF, GPS, OCR, people and object detection. The photo never leaves your browser; place context from rounded coordinates only, disclosed and switchable off.',
-  uz: "Fotosuratlar metama'lumotlarini tahlil qilish va olib tashlash uchun bepul vosita. EXIF, GPS, OCR, odamlar va obyektlarni aniqlash. Surat brauzerdan chiqmaydi; joy konteksti faqat yaxlitlangan koordinatalar asosida, ochiq ko‘rsatiladi va o‘chirib qo‘yiladi.",
+  ru: 'Бесплатный онлайн-инструмент для анализа и удаления метаданных из фотографий. EXIF, GPS, OCR, поиск людей и объектов. Фото не покидает браузер; контекст места — только по округлённым координатам, с раскрытием под результатом.',
+  en: 'Free browser-based tool to analyze and remove photo metadata. EXIF, GPS, OCR, people and object detection. The photo never leaves your browser; place context from rounded coordinates only, disclosed next to the result.',
+  uz: "Fotosuratlar metama'lumotlarini tahlil qilish va olib tashlash uchun bepul vosita. EXIF, GPS, OCR, odamlar va obyektlarni aniqlash. Surat brauzerdan chiqmaydi; joy konteksti faqat yaxlitlangan koordinatalar asosida va natija ostida ochiq ko‘rsatiladi.",
 };
 
+// «Анализ метаданных» sold a third of the product: the pixels, the place and the cleanup are the rest.
 const SEO_TITLES: Record<string, string> = {
-  ru: 'Found You — Анализ метаданных фото',
-  en: 'Found You — Photo Metadata Analyzer',
-  uz: 'Found You — Foto metadata tahlili',
+  ru: 'Found You — проверьте фото перед тем, как делиться',
+  en: 'Found You — check a photo before you share it',
+  uz: 'Found You — fotoni ulashishdan oldin tekshiring',
 };
 
 const App: React.FC = () => {
@@ -247,7 +305,17 @@ const App: React.FC = () => {
   const reducedMotion = usePrefersReducedMotion();
   /** «Open the picker» of the drop zone, for the sticky «new photo» button. */
   const pickerRef = useRef<(() => void) | null>(null);
-  const { fileInfo, error, warning: fileWarning, loading, processFile } = useImageFile();
+  const { fileInfo, error: fileError, warning: fileWarning, loading, processFile } = useImageFile();
+  /** The photo on the page right now, for work that started under an earlier one. */
+  const latestFileRef = useRef<BasicFileInfo | null>(null);
+  // Authenticity inputs read once per file: the JPEG tables from the bytes, the flat-pixel share
+  // from the pixels. Both feed the origin judge in the profile below and the cards in section 02.
+  const jpeg = useContainerSignals(fileInfo);
+  const frame = useFrameStats(fileInfo);
+  useEffect(() => {
+    latestFileRef.current = fileInfo;
+  }, [fileInfo]);
+  const inlineErrorLabels = useMemo(() => ({ inlineTitle: t('errorInlineTitle'), retry: t('errorRetry') }), [t]);
   const { metadata } = useExifMetadata(fileInfo);
   const credentials = useContentCredentials(fileInfo);
   const { loading: analysisLoading, error: analysisError, detectionStatus, detections, modelUnavailable, settledFile } =
@@ -276,7 +344,13 @@ const App: React.FC = () => {
 
   const { codes: qrCodes, loading: qrLoading } = useQrCodes(fileInfo, getSourceImage);
   // Plates are OCR tokens that read like a plate or sit on a detected vehicle; shared by the profile and the blur.
-  const piiFindings = useMemo(() => findPii(ocrResult), [ocrResult]);
+  // Names in a chat are only looked for on a screen capture; the flag comes from the file alone,
+  // not from the profile, because the profile depends on these findings in turn.
+  const screenLike = useMemo(
+    () => (fileInfo ? isScreenLikeFile(fileInfo.originalName ?? fileInfo.file.name, fileInfo.originalMimeType ?? fileInfo.mimeType, lang) : false),
+    [fileInfo, lang]
+  );
+  const piiFindings = useMemo(() => findPii(ocrResult, { screenLike }), [ocrResult, screenLike]);
   /** OCR boxes a document or contact was read from: what «Скрыть документы» blurs. */
   const documentBoxes = useMemo(() => {
     if (!ocrResult) return [];
@@ -297,10 +371,38 @@ const App: React.FC = () => {
   const digitalProfile = profileEntry && profileEntry.file === fileInfo ? profileEntry.profile : null;
   const proData = profileEntry && profileEntry.file === fileInfo ? profileEntry.proData : null;
 
+  /**
+   * The byte hash and the perceptual hash, once per file. They used to be recomputed inside the
+   * profile effect, which runs three to five times per photo as detection, credentials, QR and
+   * OCR land — each time re-reading up to 50 MB and hashing it — and a rejection there (an
+   * expired Android content URI, `crypto.subtle` missing on an insecure LAN origin) left
+   * section 02 on «factsPending» for good. A failure is `hash: null`, which `ProData` allows.
+   */
+  const [hashEntry, setHashEntry] = useState<{ file: BasicFileInfo; hash: HashResult | null } | null>(null);
+  useEffect(() => {
+    if (!fileInfo) return;
+    let cancelled = false;
+    (async () => {
+      let hash: HashResult | null = null;
+      try {
+        const decoded = await getSourceImage(fileInfo).catch(() => null);
+        hash = await generateFileHash(fileInfo.originalFile ?? fileInfo.file, decoded);
+      } catch (err) {
+        console.warn('file-hash', err);
+      }
+      if (!cancelled) setHashEntry({ file: fileInfo, hash });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [fileInfo, getSourceImage]);
+  const fileHash = hashEntry && hashEntry.file === fileInfo ? hashEntry : null;
+
   // Compute digital profile when analysis completes
   useEffect(() => {
     if (!fileInfo) return;
     if (analysisLoading) return; // OCR joins later: the profile is recomputed when ocrResult arrives
+    if (!fileHash) return; // the hashes arrive once per file (above); the profile follows them
 
     let cancelled = false;
     (async () => {
@@ -310,13 +412,16 @@ const App: React.FC = () => {
       const exif = metadata?.groups?.exif ?? {};
       const xmp = metadata?.groups?.xmp ?? {};
       const editingResult = analyzeEditingHistory(exif, xmp, lang, metadata?.groups?.png ?? null, metadata?.groups?.iptc ?? null);
+      // Make / Model / DateTimeOriginal, not the six-field resolution stub every re-encoder
+      // writes: a Telegram file carries that stub and used to count as «metadata preserved».
+      const cameraExif = hasCameraExif(exif);
       const strippedResult = detectStrippedMetadata({
         filename: originalName,
         filenameAnalysis: filenameResult,
         mimeType: fileInfo.mimeType,
         width: fileInfo.width,
         height: fileInfo.height,
-        hasExif: Object.keys(exif).length > 2,
+        hasExif: cameraExif,
         hasSoftwareTag: !!(exif.Software ?? exif.software ?? xmp.CreatorTool ?? xmp.creatorTool),
         // PNG text chunks, XMP and IPTC are metadata too: a generator's «parameters» chunk is
         // exactly the thing the card used to call «метаданные были удалены».
@@ -328,9 +433,46 @@ const App: React.FC = () => {
       });
       // Wall-clock of the camera, not the viewer's zone: "night photo" must be night where it was taken.
       const temporalResult = analyzeDateTime(metadata?.shotDateLocal ?? metadata?.shotDate, lang);
-      // The perceptual hash needs the decoded picture; the byte hash needs the original bytes.
-      const decoded = await getSourceImage(fileInfo).catch(() => null);
-      const hashResult = await generateFileHash(fileInfo.originalFile ?? fileInfo.file, decoded);
+      const hashResult = fileHash.hash;
+      const originalMime = fileInfo.originalMimeType ?? fileInfo.mimeType;
+      const compression = jpeg ? judgeCompression(jpeg, metadata?.cameraMake) : null;
+      const screenshot = scoreScreenshot({
+        filenameScreenshot: filenameResult.isScreenshot,
+        knownScreenSize: resolutionResult.isScreenshot,
+        hasCameraExif: Boolean(metadata?.cameraMake || metadata?.cameraModel),
+        hasShotDate: Boolean(metadata?.shotDateLocal),
+        mimeType: originalMime,
+        flatRatio: frame?.flatRatio ?? null
+      });
+      const history = buildFileHistory({
+        metadata: metadata ?? null,
+        editing: editingResult,
+        stripped: strippedResult,
+        credentials: credentials.data ?? null,
+        lastModified: (fileInfo.originalFile ?? fileInfo.file).lastModified || null,
+        width: fileInfo.originalWidth ?? fileInfo.width,
+        height: fileInfo.originalHeight ?? fileInfo.height,
+        phash: hashResult?.phash ?? null
+      });
+      // One verdict over every sign, so the rows of the origin card stop contradicting each other.
+      const origin = judgeOrigin({
+        mimeType: originalMime,
+        width: fileInfo.width,
+        height: fileInfo.height,
+        hasCameraExif: cameraExif,
+        filename: filenameResult,
+        stripped: strippedResult,
+        editing: editingResult,
+        compression,
+        livePhoto: Boolean(metadata?.apple?.livePhoto),
+        motionPhoto: metadata?.samsung?.motionPhotoBytes != null,
+        modifiedLater: history.some((event) => event.kind === 'modified' && event.at != null),
+        resized: history.some((event) => event.kind === 'resized'),
+        thumbnailDiffers: history.some((event) => event.kind === 'thumbnail' && event.same === false),
+        screenshotLikely: filenameResult.isScreenshot || screenshot.level === 'likely' || screenshot.level === 'certain'
+      });
+      // Yield once so a burst of arrivals (OCR, then plates and documents) coalesces into one profile.
+      await Promise.resolve();
 
       if (cancelled) return;
 
@@ -341,6 +483,7 @@ const App: React.FC = () => {
         editing: editingResult,
         hash: hashResult,
         temporal: temporalResult,
+        origin,
         metadata: metadata ?? null,
         detections,
         ocrResult: ocrResult ?? null,
@@ -355,11 +498,22 @@ const App: React.FC = () => {
       setProfileEntry({
         file: fileInfo,
         profile,
-        proData: { filename: filenameResult, resolution: resolutionResult, stripped: strippedResult, editing: editingResult, hash: hashResult, temporal: temporalResult }
+        proData: {
+          filename: filenameResult,
+          resolution: resolutionResult,
+          stripped: strippedResult,
+          editing: editingResult,
+          hash: hashResult,
+          temporal: temporalResult,
+          origin,
+          compression,
+          screenshot,
+          history
+        }
       });
     })();
     return () => { cancelled = true; };
-  }, [fileInfo, metadata, detections, ocrResult, plateCandidates, qrCodes, piiFindings, credentials.data, credentials.status, analysisLoading, ocrLoading, lang, getSourceImage]);
+  }, [fileInfo, metadata, detections, ocrResult, plateCandidates, qrCodes, piiFindings, credentials.data, credentials.status, analysisLoading, ocrLoading, lang, fileHash, jpeg, frame]);
 
   type NoticeState = { type: 'success' | 'error' | 'info'; message: string };
 
@@ -383,7 +537,7 @@ const App: React.FC = () => {
    * Cleaned file kept for a second tap when the share sheet needs a fresh user gesture. It is
    * stored with the settings it was made for, so any change simply makes it stale.
    */
-  const [shareEntry, setShareEntry] = useState<{ file: File; token: object } | null>(null);
+  const [shareEntry, setShareEntry] = useState<{ file: File; token: ShareToken } | null>(null);
   const [mirrorEnabled, setMirrorEnabled] = useState(false);
   const [downscaleMax, setDownscaleMax] = useState<number>(0); // 0 = off
   const [outputFormat, setOutputFormat] = useState<OutputFormat>('original');
@@ -395,6 +549,25 @@ const App: React.FC = () => {
   const [previewDimensions, setPreviewDimensions] = useState<CleanupPreviewDimensions | null>(null);
   const [platformCapped, setPlatformCapped] = useState(false);
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
+  /** The quality the source JPEG was written with, from its tables; null for other containers or before they are read. */
+  const sourceQuality = useMemo(() => (jpeg ? jpeg.ijgQuality ?? jpeg.estimatedQuality : null), [jpeg]);
+  /*
+   * Defaults that depend on what the file is, once per file, when the tables have been read: a
+   * JPEG written below 90 % is re-encoded at its own quality rather than blown up to 90 %.
+   */
+  const defaultsAppliedFor = useRef<BasicFileInfo | null>(null);
+  useEffect(() => {
+    if (!fileInfo || defaultsAppliedFor.current === fileInfo) return;
+    const isJpeg = /jpe?g/i.test(fileInfo.originalMimeType ?? fileInfo.mimeType);
+    if (isJpeg && jpeg === null) return; // the tables are still being read
+    defaultsAppliedFor.current = fileInfo;
+    if (sourceQuality != null && sourceQuality < 90) setQualityMode('match');
+  }, [fileInfo, jpeg, sourceQuality]);
+  /** The index the copy would have with the current settings: the same arithmetic as the index itself. */
+  const leakAfter = useMemo(
+    () => (digitalProfile ? predictLeakAfter(digitalProfile, { blurFaces, blurText, blurPlates, blurQr, blurDocuments }) : null),
+    [digitalProfile, blurFaces, blurText, blurPlates, blurQr, blurDocuments]
+  );
   const reduceColor = antiSearchEnabled && antiSearchLevel === 3;
   const watermark = watermarkEnabled;
   /**
@@ -470,9 +643,12 @@ const App: React.FC = () => {
     []
   );
 
-  // New file (or none): drop the decoded source and every derived preview artefact.
+  // New file (or none): drop the decoded source and every derived preview artefact. The cache is
+  // keyed by the file's URL, so it is cleared only when it holds another file's picture: the QR
+  // effect runs before this one and has already primed it for the new file, and nulling it here
+  // used to decode every picture twice.
   useEffect(() => {
-    sourceImageRef.current = null;
+    if (sourceImageRef.current && sourceImageRef.current.url !== fileInfo?.dataUrl) sourceImageRef.current = null;
     replacePreviewUrl(null);
     setEstimatedSize(null);
     setPreviewDimensions(null);
@@ -494,13 +670,24 @@ const App: React.FC = () => {
     heading.focus({ preventScroll: true });
   }, [fileInfo, reducedMotion]);
 
+  // A rejected file: the picker may have been opened from the sticky button at the bottom of a
+  // long page, and the message lives in the drop zone at the top — bring it into view.
+  useEffect(() => {
+    if (!fileError) return;
+    document.getElementById('upload-zone')?.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'auto' : 'smooth' });
+  }, [fileError, reducedMotion]);
+
   const handleFile = useCallback(
     async (file: File) => {
-      setPrnuCleanup(true);
+      // A screenshot or a PNG has no sensor noise to weaken and nothing to re-encode for: the
+      // defaults take the lossless path (container rewritten, pixels kept), the same as «Только
+      // метаданные». PRNU on a screenshot only added noise to interface pixels.
+      const screenLikeFile = isScreenLikeFile(file.name, file.type, lang);
+      setPrnuCleanup(!screenLikeFile);
       setBlurFaces(false);
       setBlurStrength(blurDefault);
       setNotice(null);
-      setQualityMode('medium');
+      setQualityMode(screenLikeFile ? 'original' : 'medium');
       setRenameFile(true);
       setManualMasks([]);
       setManualMaskMode(false);
@@ -517,8 +704,17 @@ const App: React.FC = () => {
       setOutputFormat('original');
       await processFile(file);
     },
-    [processFile]
+    [processFile, lang]
   );
+
+  // Only the inputs a switched-on option reads may re-run the pipeline: OCR, plates, QR codes and
+  // document boxes arrive at different moments, and each used to cost a full preview (a per-pixel
+  // PRNU pass, an encode, four sample windows) whether or not anything read them.
+  const facesToBlur = useMemo(() => (blurFaces ? blurCandidates : NO_BOXES), [blurFaces, blurCandidates]);
+  const textToBlur = useMemo(() => (blurText ? ocrResult : null), [blurText, ocrResult]);
+  const platesToBlur = useMemo(() => (blurPlates ? plateCandidates : NO_BOXES), [blurPlates, plateCandidates]);
+  const qrToBlur = useMemo(() => (blurQr ? qrCodes : NO_BOXES), [blurQr, qrCodes]);
+  const documentsToBlur = useMemo(() => (blurDocuments ? documentBoxes : NO_BOXES), [blurDocuments, documentBoxes]);
 
   const createProcessedCanvas = useCallback(
     async (options?: { maxDimension?: number }): Promise<ProcessedResult | null> => {
@@ -550,7 +746,7 @@ const App: React.FC = () => {
       }
       ctx.drawImage(image, 0, 0, targetWidth, targetHeight);
 
-      const scaledDetections = blurCandidates.map((det) => ({
+      const scaledDetections = facesToBlur.map((det) => ({
         ...det,
         x: det.x * scale,
         y: det.y * scale,
@@ -564,25 +760,25 @@ const App: React.FC = () => {
         radius: mask.radius * scale
       }));
 
-      if (blurFaces && scaledDetections.length > 0) {
+      if (scaledDetections.length > 0) {
         blurDetections(ctx, baseCanvas, scaledDetections, blurStrength);
       }
 
-      if (blurText && ocrResult && ocrResult.regions.length > 0) {
-        blurOcrRegions(ctx, baseCanvas, ocrResult.regions, blurStrength, scale);
+      if (textToBlur && textToBlur.regions.length > 0) {
+        blurOcrRegions(ctx, baseCanvas, textToBlur.regions, blurStrength, scale);
       }
 
-      if (blurPlates && plateCandidates.length > 0) {
-        blurPlateRegions(ctx, baseCanvas, plateCandidates, blurStrength, scale);
+      if (platesToBlur.length > 0) {
+        blurPlateRegions(ctx, baseCanvas, platesToBlur, blurStrength, scale);
       }
 
-      if (blurQr && qrCodes.length > 0) {
+      if (qrToBlur.length > 0) {
         // A QR box is blurred like a text region: the same padding, the same strength.
-        blurBoxes(ctx, baseCanvas, qrCodes, blurStrength, scale);
+        blurBoxes(ctx, baseCanvas, qrToBlur, blurStrength, scale);
       }
 
-      if (blurDocuments && documentBoxes.length > 0) {
-        blurBoxes(ctx, baseCanvas, documentBoxes, blurStrength, scale);
+      if (documentsToBlur.length > 0) {
+        blurBoxes(ctx, baseCanvas, documentsToBlur, blurStrength, scale);
       }
 
       if (scaledMasks.length > 0) {
@@ -630,16 +826,11 @@ const App: React.FC = () => {
     [
       fileInfo,
       getSourceImage,
-      blurFaces,
-      blurText,
-      blurPlates,
-      plateCandidates,
-      blurQr,
-      qrCodes,
-      blurDocuments,
-      documentBoxes,
-      ocrResult,
-      blurCandidates,
+      facesToBlur,
+      textToBlur,
+      platesToBlur,
+      qrToBlur,
+      documentsToBlur,
       blurStrength,
       manualMasks,
       antiSearchEnabled,
@@ -655,8 +846,13 @@ const App: React.FC = () => {
     ]
   );
 
-  /** Runs the pipeline and returns the verified clean file. Shared by download and share. */
-  const exportCleanFile = useCallback(async (): Promise<{ file: File; requested: string; actualMime: string }> => {
+  /**
+   * Runs the pipeline and returns the verified clean file. Shared by download and share. It
+   * changes no state of its own: the caller checks that the photo it started for is still the
+   * one on the page before applying `verify` and `platformCapped` — an export of A that finished
+   * after B was loaded used to stamp A's «было N полей, осталось 0» under B's preview.
+   */
+  const exportCleanFile = useCallback(async (): Promise<CleanExport> => {
     if (!fileInfo) {
       throw new Error('no-file');
     }
@@ -664,20 +860,25 @@ const App: React.FC = () => {
       console.info('[pipeline] export:start', { mime: fileInfo.mimeType, qualityMode, outputFormat, losslessExport });
     }
     const { requested, mime: exportMime } = resolveExportMime(outputFormat, fileInfo.mimeType);
-    let blob: Blob;
+    let blob: Blob | null = null;
+    let platformCapped = false;
     if (losslessExport) {
       // The original bytes, minus every metadata segment and whatever follows the end of the image.
+      // The container is read from the bytes: a file whose extension lies about its format takes
+      // the re-encode path below rather than leaving with its metadata intact.
       const source = fileInfo.originalFile ?? fileInfo.file;
-      blob = await stripContainerMetadata(new Blob([await source.arrayBuffer()], { type: fileInfo.mimeType }));
-      setPlatformCapped(false);
-    } else {
+      const bytes = await source.arrayBuffer();
+      const container = sniffContainer(new Uint8Array(bytes));
+      if (container) blob = await stripContainerMetadata(new Blob([bytes], { type: container }));
+    }
+    if (!blob) {
       const result = await createProcessedCanvas();
       if (!result) {
         throw new Error('no-canvas');
       }
       const { canvas } = result;
-      setPlatformCapped(result.platformCapped);
-      const quality = exportMime === 'image/png' ? undefined : qualityForMode(qualityMode);
+      platformCapped = result.platformCapped;
+      const quality = exportMime === 'image/png' ? undefined : qualityForMode(qualityMode, sourceQuality);
       const encodedBlob: Blob = await new Promise((resolve, reject) => {
         canvas.toBlob((encoded) => {
           if (encoded) resolve(encoded);
@@ -699,28 +900,35 @@ const App: React.FC = () => {
     const originalPhash = proData?.hash?.phash ?? null;
     const exportPhash = originalPhash ? await phashFromBlob(blob) : null;
     const phashDistance = originalPhash && exportPhash ? hammingDistance(originalPhash, exportPhash) : null;
-    setVerifyResult({
+    const verify: VerifyResult = {
       before: metadataFieldCount,
       after: remaining,
       phashDistance,
       trailingBytesBefore: metadata?.samsung?.bytes ?? 0,
-      thumbnailBytesBefore: metadata?.thumbnail?.bytes ?? 0
-    });
+      thumbnailBytesBefore: metadata?.thumbnail?.bytes ?? 0,
+      leakBefore: digitalProfile?.leakScore ?? null,
+      leakAfter,
+      antiSearchApplied: antiSearchEnabled
+    };
     if (import.meta.env.DEV) {
       console.info('[pipeline] export:done', { mime: actualMime, remaining, phashDistance });
     }
-    return { file: new File([blob], fileName, { type: actualMime }), requested, actualMime };
+    return { file: new File([blob], fileName, { type: actualMime }), requested, actualMime, verify, platformCapped };
   }, [
     fileInfo,
     createProcessedCanvas,
     losslessExport,
     qualityMode,
+    sourceQuality,
     renameFile,
     outputFormat,
     metadataFieldCount,
     proData?.hash?.phash,
     metadata?.samsung?.bytes,
-    metadata?.thumbnail?.bytes
+    metadata?.thumbnail?.bytes,
+    digitalProfile?.leakScore,
+    leakAfter,
+    antiSearchEnabled
   ]);
 
   const triggerDownload = useCallback((file: File) => {
@@ -739,11 +947,16 @@ const App: React.FC = () => {
     if (!fileInfo) {
       return;
     }
+    const startedFor = fileInfo;
     setProcessing(true);
     setNotice(null);
     try {
-      const { file, requested, actualMime } = await exportCleanFile();
+      const { file, requested, actualMime, verify, platformCapped: capped } = await exportCleanFile();
       triggerDownload(file);
+      // The photo changed while this ran: the file is what was asked for, the state under B's preview is not.
+      if (latestFileRef.current !== startedFor) return;
+      setVerifyResult(verify);
+      setPlatformCapped(capped);
       const messages = [t('downloadReady')];
       if (actualMime !== requested) {
         messages.push(t('formatFallback', { from: mimeLabel(requested), to: mimeLabel(actualMime) }));
@@ -760,7 +973,10 @@ const App: React.FC = () => {
   // The share sheet needs a user gesture and a long export can outlive it: the prepared file
   // is then kept for one more tap instead of being thrown away.
   // A fresh token whenever the pipeline or export settings change; the prepared file is tied to it.
-  const shareToken = useMemo(() => ({}), [createProcessedCanvas, outputFormat, qualityMode, renameFile]);
+  // The token's identity is the point: a new object whenever any of these changes, and nothing
+  // else reads it, which is why the dependency list is longer than the body uses.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const shareToken = useMemo<ShareToken>(() => ({}), [createProcessedCanvas, outputFormat, qualityMode, renameFile]);
   const shareReady = shareEntry && shareEntry.token === shareToken ? shareEntry.file : null;
   const setShareReady = useCallback((file: File | null) => setShareEntry(file ? { file, token: shareToken } : null), [shareToken]);
 
@@ -771,9 +987,14 @@ const App: React.FC = () => {
     setNotice(null);
     let file = shareReady;
     if (!file) {
+      const startedFor = fileInfo;
       setProcessing(true);
       try {
-        file = (await exportCleanFile()).file;
+        const exported = await exportCleanFile();
+        file = exported.file;
+        if (latestFileRef.current !== startedFor) return;
+        setVerifyResult(exported.verify);
+        setPlatformCapped(exported.platformCapped);
       } catch (err) {
         console.error(err);
         setNotice({ type: 'error', message: t('cleanupFailed') });
@@ -852,7 +1073,7 @@ const App: React.FC = () => {
     // A new preview means the settings changed; the last verification no longer describes them.
     setVerifyResult(null);
     const { mime } = resolveExportMime(outputFormat, fileInfo.mimeType);
-    const quality = mime === 'image/png' ? undefined : qualityForMode(qualityMode);
+    const quality = mime === 'image/png' ? undefined : qualityForMode(qualityMode, sourceQuality);
 
     const fail = (err: unknown) => {
       console.error('cleanup-preview', err);
@@ -882,6 +1103,23 @@ const App: React.FC = () => {
             const finalWidth = Math.max(1, Math.round(canvas.width * ratio));
             const finalHeight = Math.max(1, Math.round(canvas.height * ratio));
             replacePreviewUrl(URL.createObjectURL(blob));
+            if (losslessExport) {
+              // «Только метаданные» keeps the original bytes: the export is the source's own size
+              // whatever the platform cap says, and its byte count is the stripped container's,
+              // not the re-encode's. The summary used to promise a downscale that never happened.
+              setPreviewDimensions({ width: fileInfo.width, height: fileInfo.height });
+              setPlatformCapped(false);
+              setPreviewLoading(false);
+              losslessSize(fileInfo)
+                .then((size) => {
+                  if (!cancelled) setEstimatedSize(size);
+                })
+                .catch((err: unknown) => {
+                  console.warn('lossless-size', err);
+                  if (!cancelled) setEstimatedSize(fileInfo.sizeBytes);
+                });
+              return;
+            }
             setPreviewDimensions({ width: finalWidth, height: finalHeight });
             setPlatformCapped(result.platformCapped);
             setPreviewLoading(false);
@@ -911,7 +1149,7 @@ const App: React.FC = () => {
       cancelled = true;
       clearTimeout(debounceTimer);
     };
-  }, [fileInfo, createProcessedCanvas, qualityMode, outputFormat, replacePreviewUrl, sampledExportSize, t]);
+  }, [fileInfo, createProcessedCanvas, qualityMode, sourceQuality, outputFormat, losslessExport, replacePreviewUrl, sampledExportSize, t]);
 
   const handleManualMaskAdd = useCallback((mask: Omit<ManualMask, 'id'>) => {
     setManualMasks((current) => {
@@ -950,14 +1188,14 @@ const App: React.FC = () => {
             <UploadZone
               loading={loading}
               onFile={handleFile}
-              error={error ?? undefined}
-              warning={fileWarning ?? undefined}
+              error={fileError ? t(FILE_ERROR_KEYS[fileError.code], fileError.params) : undefined}
+              warning={fileWarning ? t(FILE_WARNING_KEYS[fileWarning]) : undefined}
               pickerRef={pickerRef}
             />
           </section>
 
           {fileInfo ? (
-            <ErrorBoundary variant="inline" resetKey={fileInfo}>
+            <ErrorBoundary variant="inline" resetKey={fileInfo} labels={inlineErrorLabels}>
               <SceneBlock
                 fileInfo={fileInfo}
                 detections={detections}
@@ -973,12 +1211,14 @@ const App: React.FC = () => {
           ) : null}
 
           {fileInfo ? (
-            <ErrorBoundary variant="inline" resetKey={fileInfo}>
+            <ErrorBoundary variant="inline" resetKey={fileInfo} labels={inlineErrorLabels}>
               <StoryBlock
                 fileInfo={fileInfo}
                 metadata={metadata}
                 profile={digitalProfile}
                 proData={proData}
+                jpeg={jpeg}
+                frame={frame}
                 detections={detections}
                 ocrResult={ocrResult}
                 ocrLoading={ocrLoading}
@@ -992,7 +1232,7 @@ const App: React.FC = () => {
           ) : null}
 
           {fileInfo ? (
-            <ErrorBoundary variant="inline" resetKey={fileInfo}>
+            <ErrorBoundary variant="inline" resetKey={fileInfo} labels={inlineErrorLabels}>
               <CleanupDownloadBlock
                 fileInfo={fileInfo}
                 prnuCleanup={prnuCleanup}
@@ -1049,6 +1289,9 @@ const App: React.FC = () => {
                 ocrPending={ocrLoading}
                 qrPending={qrLoading}
                 losslessExport={losslessExport}
+                sourceQuality={sourceQuality}
+                leakBefore={digitalProfile?.leakScore ?? null}
+                leakAfter={leakAfter}
                 antiSearchDistance={antiSearchDistance}
                 originalPreviewUrl={fileInfo.thumbnailUrl ?? null}
                 platformCapped={platformCapped}
@@ -1063,6 +1306,7 @@ const App: React.FC = () => {
               {notice.message}
             </p>
           ) : null}
+          <VerifyBlock />
         </main>
         <StickyActions photoLoaded={Boolean(fileInfo)} onNewPhoto={() => pickerRef.current?.()} />
         <SiteFooter />

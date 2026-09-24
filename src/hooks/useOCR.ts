@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { OCR_BASE } from '../assetPaths';
 import type { BasicFileInfo } from '../types/metadata';
 import { detectSkew, rotateInPlace, unrotateRect, SKEW_WORTH_FIXING_DEGREES, type DrawableSource } from '../utils/ocrDeskew';
 
@@ -53,11 +54,11 @@ const OCR_LANGS = 'rus+eng';
 const OEM_LSTM_ONLY = 1;
 
 const OCR_ASSET_PATHS = {
-  workerPath: '/ocr/worker.min.js',
+  workerPath: `${OCR_BASE}/worker.min.js`,
   /** Directory: the worker appends tesseract-core[-relaxedsimd|-simd]-lstm.wasm.js by SIMD support. */
-  corePath: '/ocr/',
+  corePath: `${OCR_BASE}/`,
   /** Directory: the worker fetches `${langPath}/${lang}.traineddata.gz`. */
-  langPath: '/ocr/lang'
+  langPath: `${OCR_BASE}/lang`
 } as const;
 
 /** Worker creation is retried at most this many times per page load; each failed attempt leaks a half-spawned Worker inside tesseract.js. */
@@ -172,9 +173,12 @@ function recognizeImage(
   sink: ProgressSink,
   isCancelled: () => boolean
 ): Promise<RecognizedPage | null> {
-  activeSink = sink;
   return enqueue(async () => {
     if (isCancelled()) return null;
+    // The sink is installed when this job starts, not when it was queued: until the previous
+    // file's recognition finishes its progress messages belong to that file, and the new row
+    // used to read «распознаём текст» while it was still waiting its turn.
+    activeSink = sink;
     const worker = await getWorker();
     if (isCancelled()) return null;
     try {

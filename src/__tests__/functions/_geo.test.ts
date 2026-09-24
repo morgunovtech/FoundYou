@@ -47,6 +47,30 @@ describe('parseCoord', () => {
   ])('parseCoord(%j, %d) → %j', (raw, max, expected) => {
     expect(parseCoord(raw, max)).toBe(expected);
   });
+
+  it('still reads every ordinary spelling after the pattern was made non-overlapping', () => {
+    expect(parseCoord('1.5', 90)).toBe(1.5);
+    expect(parseCoord('.5', 90)).toBe(0.5);
+    expect(parseCoord('5.', 90)).toBe(5);
+    expect(parseCoord('1e3', 5000)).toBe(1000);
+    expect(parseCoord('-0', 90) === 0).toBe(true);
+    expect(parseCoord('+41.3', 90)).toBe(41.3);
+  });
+
+  it('caps the input at 32 characters: no coordinate needs more, and a digit run must not cost CPU', () => {
+    // 32 characters of a perfectly valid zero parse; the 33rd is refused before the regex runs.
+    expect(parseCoord(`0.${'0'.repeat(30)}`, 90)).toBe(0);
+    expect(parseCoord(`0.${'0'.repeat(31)}`, 90)).toBeNull();
+    expect(parseCoord('1'.repeat(33), Number.MAX_VALUE)).toBeNull();
+  });
+
+  it('answers a 40 000-digit run in well under 10 ms', () => {
+    // The old `\d+\.?\d*` backtracked quadratically: 16 000 digits took ~137 ms of CPU per call.
+    const run = '9'.repeat(40_000);
+    const started = performance.now();
+    expect(parseCoord(run, Number.MAX_VALUE)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(10);
+  });
 });
 
 describe('round4 / coordKey', () => {
@@ -116,11 +140,17 @@ describe('json', () => {
 describe('isSameSite', () => {
   const request = (headers: Record<string, string>) => new Request(`${BASE}/api/x`, { headers });
 
-  it('trusts Sec-Fetch-Site when present', () => {
+  it('trusts Sec-Fetch-Site when present, and only same-origin passes', () => {
     expect(isSameSite(request({ 'Sec-Fetch-Site': 'same-origin' }))).toBe(true);
-    expect(isSameSite(request({ 'Sec-Fetch-Site': 'same-site' }))).toBe(true);
+    // Another host under the same registrable domain has no business calling our /api: the SPA,
+    // the dev server and every Pages preview are same-origin with their own Functions.
+    expect(isSameSite(request({ 'Sec-Fetch-Site': 'same-site' }))).toBe(false);
     expect(isSameSite(request({ 'Sec-Fetch-Site': 'cross-site' }))).toBe(false);
     expect(isSameSite(request({ 'Sec-Fetch-Site': 'none' }))).toBe(false);
+  });
+
+  it('a same-site Sec-Fetch-Site is not rescued by a same-host Origin', () => {
+    expect(isSameSite(request({ 'Sec-Fetch-Site': 'same-site', Origin: BASE }))).toBe(false);
   });
 
   it('Sec-Fetch-Site wins over a same-host Origin', () => {
@@ -169,7 +199,7 @@ describe('fetchUpstream', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error('expected ok');
     expect(result.status).toBe(200);
-    expect(await result.response.json()).toEqual({ hello: 1 });
+    expect(JSON.parse(result.text)).toEqual({ hello: 1 });
 
     const { url, init } = fetchCall(fetch);
     expect(url).toBe('https://upstream.test/a');
@@ -258,6 +288,51 @@ describe('fetchUpstream', () => {
     if (result.ok) throw new Error('expected failure');
     expect(result.error.status).toBe(504);
   });
+
+  it('reads the body under the same deadline: headers in time, body stalled → 504 upstream-timeout', async () => {
+    // The timer used to be cleared as soon as the headers arrived, so the `.json()` every caller
+    // then awaited had no deadline at all. A stream that never closes stands in for an upstream
+    // that sent its headers and then stalled.
+    const stalled = new ReadableStream<Uint8Array>({ start() {} });
+    mockFetch(async () => new Response(stalled, { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    const result = await fetchUpstream('https://upstream.test/stalled', {}, 20);
+    if (result.ok) throw new Error('expected failure');
+    expect(result.status).toBeNull();
+    expect(result.error.status).toBe(504);
+    expect(await result.error.json()).toEqual({ ok: false, error: 'upstream-timeout' });
+  });
+
+  it('a body that arrives in time is handed back whole', async () => {
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"hel'));
+        setTimeout(() => {
+          controller.enqueue(encoder.encode('lo":2}'));
+          controller.close();
+        }, 5);
+      }
+    });
+    mockFetch(async () => new Response(body, { status: 200 }));
+    const result = await fetchUpstream('https://upstream.test/slowish', {}, 500);
+    if (!result.ok) throw new Error('expected ok');
+    expect(JSON.parse(result.text)).toEqual({ hello: 2 });
+  });
+
+  it('a body stream that errors → 502 upstream-unavailable without the message', async () => {
+    const broken = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error('SECRET stream detail'));
+      }
+    });
+    mockFetch(async () => new Response(broken, { status: 200 }));
+    const result = await fetchUpstream('https://upstream.test/broken');
+    if (result.ok) throw new Error('expected failure');
+    expect(result.error.status).toBe(502);
+    const text = await result.error.text();
+    expect(JSON.parse(text)).toEqual({ ok: false, error: 'upstream-unavailable' });
+    expect(text).not.toContain('SECRET');
+  });
 });
 
 describe('withCache', () => {
@@ -315,6 +390,27 @@ describe('withCache', () => {
     expect(second.headers.get('X-Cache')).toBe('HIT');
     expect(await second.json()).toEqual({ ok: true, n: 1 });
     expect(produce).toHaveBeenCalledTimes(1);
+  });
+
+  it('the copy that leaves is no-store on MISS and HIT alike; the stored copy keeps its public max-age', async () => {
+    // The edge needs a public max-age or it stores nothing; the browser must get none, or the
+    // answers to `/api/…?lat=…&lon=…` sit on the reader's disk as a history of places.
+    const caches = installCaches();
+    const { ctx, promises } = context();
+    const produce = vi.fn(async () => json({ ok: true, n: 1 }, 200, undefined, 60));
+
+    const miss = await withCache(ctx, cacheKey('t', 'disk'), 60, produce);
+    await Promise.all(promises);
+    expect(miss.headers.get('Cache-Control')).toBe('no-store');
+    expect(miss.headers.get('X-Cache')).toBe('MISS');
+    expect(caches.store.get(cacheKey('t', 'disk'))?.headers).toContainEqual(['cache-control', 'public, max-age=60, s-maxage=60']);
+
+    const hit = await withCache(ctx, cacheKey('t', 'disk'), 60, produce);
+    expect(hit.headers.get('Cache-Control')).toBe('no-store');
+    expect(hit.headers.get('X-Cache')).toBe('HIT');
+    expect(await hit.json()).toEqual({ ok: true, n: 1 });
+    // The header was not stripped from the stored copy on the way out.
+    expect(caches.store.get(cacheKey('t', 'disk'))?.headers).toContainEqual(['cache-control', 'public, max-age=60, s-maxage=60']);
   });
 
   it('keys are distinct per URL', async () => {
@@ -423,8 +519,18 @@ describe('defineHandler', () => {
     const response = await call(echo, `${BASE}/api/echo?q=1`, { method: 'HEAD' });
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('application/json; charset=utf-8');
-    expect(response.headers.get('Cache-Control')).toBe('public, max-age=60, s-maxage=60');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(await response.text()).toBe('');
+  });
+
+  it('every answer reaches the browser as no-store, whatever ttl the handler asked for', async () => {
+    // The endpoints that build their own answer after `withCache` pass through here too, so the
+    // rule holds by construction: nothing under /api/* is ever kept on the reader's disk.
+    const response = await call(echo, `${BASE}/api/echo?q=1`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(await response.json()).toEqual({ ok: true, data: { q: '1' } });
   });
 
   it('a HEAD to a failing handler mirrors the error status with an empty body', async () => {

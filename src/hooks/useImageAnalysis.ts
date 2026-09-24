@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { MEDIAPIPE_BASE } from '../assetPaths';
 import type { Detection, FaceDetector, ObjectDetector } from '@mediapipe/tasks-vision';
 import {
   FACE_LABEL,
@@ -16,7 +17,7 @@ import { rotateCanvas, unrotateBox, unrotatePoint, type Quarter } from '../utils
 /* ── self-hosted MediaPipe assets (see scripts/prepare-assets.mjs) ── */
 
 /** Directory with `vision_wasm[_nosimd]_internal.{js,wasm}`; FilesetResolver picks the SIMD variant itself. */
-const WASM_BASE_PATH = '/mediapipe/wasm';
+const WASM_BASE_PATH = `${MEDIAPIPE_BASE}/wasm`;
 /*
  * Two BlazeFace models, because each is blind to the other's case. Measured on a five-person
  * group photo and on a crop of one face from it: short range finds 2 of the 5 faces in the group
@@ -25,10 +26,10 @@ const WASM_BASE_PATH = '/mediapipe/wasm';
  * for faces that are small in it, so both run and `pickDistinctFaces` merges the two lists.
  * Neither invented a face on the negatives (a car and rocks, an empty hillside, a screenshot).
  */
-const FACE_MODEL_URL = '/mediapipe/models/blaze_face_short_range.tflite';
-const FACE_FAR_MODEL_URL = '/mediapipe/models/blaze_face_full_range.tflite';
+const FACE_MODEL_URL = `${MEDIAPIPE_BASE}/models/blaze_face_short_range.tflite`;
+const FACE_FAR_MODEL_URL = `${MEDIAPIPE_BASE}/models/blaze_face_full_range.tflite`;
 /** Lite2 instead of Lite0: better recall on small and partly hidden objects for a 12 MB model (see prepare-assets). */
-const OBJECT_MODEL_URL = '/mediapipe/models/efficientdet_lite2.tflite';
+const OBJECT_MODEL_URL = `${MEDIAPIPE_BASE}/models/efficientdet_lite2.tflite`;
 
 /** EfficientDet-Lite2 works on 448×448 and BlazeFace short-range on 128×128, so anything above ~800 px is wasted decode work. */
 const DETECTION_MAX_DIMENSION = 800;
@@ -367,7 +368,8 @@ export function useImageAnalysis(fileInfo: BasicFileInfo | null) {
 
         setStage('process', 0.8);
         const persons = collectPersons(results.objects);
-        let faces = plausibleFaces(results.faces, persons, scaledForDetection.canvas);
+        const animals = collectAnimals(results.objects);
+        let faces = plausibleFaces(results.faces, persons, animals, scaledForDetection.canvas);
         /*
          * Then the same frame turned 90° each way, always. The first shape of this gated the extra
          * passes on «more people than faces», and it never fired on the case it was written for:
@@ -387,7 +389,7 @@ export function useImageAnalysis(fileInfo: BasicFileInfo | null) {
         if (cancelled) return;
         const uprightFaces = faces.length;
         if (rotated.length > 0) {
-          faces = plausibleFaces([...results.faces, ...rotated], persons, scaledForDetection.canvas);
+          faces = plausibleFaces([...results.faces, ...rotated], persons, animals, scaledForDetection.canvas);
         }
         if (import.meta.env.DEV) {
           console.info('[analysis] rotated face pass', {
@@ -475,13 +477,30 @@ function collectPersons(objects: Detection[]): Rect[] {
   return persons;
 }
 
+/** COCO classes with a face of their own, which BlazeFace mistakes for a human one now and then. */
+const ANIMAL_LABELS = new Set(['dog', 'cat', 'horse', 'sheep', 'cow', 'bird', 'bear', 'zebra', 'giraffe', 'elephant', 'teddy bear']);
+
+/** The EfficientDet animal boxes solid enough to claim a face found inside them (see `selectPlausibleFaces`). */
+function collectAnimals(objects: Detection[]): Rect[] {
+  const animals: Rect[] = [];
+  for (const det of objects) {
+    const bb = det.boundingBox;
+    const top = det.categories[0];
+    if (!bb || !top || !ANIMAL_LABELS.has(top.categoryName ?? '') || (top.score ?? 0) < PERSON_CONTEXT_SCORE) continue;
+    animals.push({ x: bb.originX, y: bb.originY, width: bb.width, height: bb.height });
+  }
+  return animals;
+}
+
 /**
  * Keeps only the BlazeFace detections that pass `isPlausibleFace`: keypoints that form a face,
  * plus either a sure score or an EfficientDet person box underneath (frame: the analysis canvas).
+ * A face inside an animal's box and no person's is the animal's and is dropped first.
  */
 function plausibleFaces(
   detected: Detection[],
   persons: Rect[],
+  animals: Rect[],
   canvas: { width: number; height: number }
 ): Detection[] {
   const boxed = detected.filter((det) => det.boundingBox);
@@ -502,7 +521,7 @@ function plausibleFaces(
     score: det.categories[0]?.score ?? 0,
     keypoints: (det.keypoints ?? []).map((kp) => ({ x: kp.x * canvas.width, y: kp.y * canvas.height }))
   }));
-  return selectPlausibleFaces(candidates, persons).map((index) => boxed[index]);
+  return selectPlausibleFaces(candidates, persons, animals).map((index) => boxed[index]);
 }
 
 /** Maps the downscaled analysis canvas back onto the original image. */

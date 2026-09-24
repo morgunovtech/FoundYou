@@ -134,7 +134,20 @@ export interface ShotInstant {
   /** The camera's own clock offset from UTC, when it can be told. */
   cameraOffsetMinutes: number | null;
   source: InstantSource;
+  /**
+   * The offset was not measured but taken from the place's zone, because the wall clock minus
+   * the GPS time did not land on any zone (see `resolveShotInstant`).
+   */
+  cameraOffsetAssumed?: boolean;
 }
+
+/**
+ * How far off a quarter hour the wall clock minus the GPS time may be and still be read as a
+ * zone. Zones come in quarter hours, so a right clock lands on one; a clock 8 minutes fast in
+ * UTC+5 gave 308 → +05:15, «a quarter of an hour ahead of the place», and a drift of −7 minutes,
+ * when the fact is +8 minutes in the same zone.
+ */
+export const GPS_ZONE_SLACK_MINUTES = 2;
 
 type GpsLike = { lon: number; timestampUtc?: string };
 
@@ -164,7 +177,14 @@ export function resolveShotInstant(
       const diffMinutes = (local.getTime() - gpsUtc.getTime()) / 60_000;
       // A GPS stamp more than a day away from the wall clock belongs to another shot (stale fix).
       if (Math.abs(diffMinutes) <= 26 * 60) {
-        return { utc: gpsUtc, cameraOffsetMinutes: Math.round(diffMinutes / 15) * 15, source: 'gps-time' };
+        const rounded = Math.round(diffMinutes / 15) * 15;
+        if (Math.abs(diffMinutes - rounded) <= GPS_ZONE_SLACK_MINUTES) {
+          return { utc: gpsUtc, cameraOffsetMinutes: rounded, source: 'gps-time' };
+        }
+        // Off any zone: the camera is presumed set to the place's zone and the whole residual is
+        // its drift (`timeProfile` reports it); with no place known the zone stays unknown.
+        const zone = placeTimezone ? zoneOffsetMinutes(placeTimezone, gpsUtc) : null;
+        return { utc: gpsUtc, cameraOffsetMinutes: zone, source: 'gps-time', cameraOffsetAssumed: zone != null };
       }
     } else {
       return { utc: gpsUtc, cameraOffsetMinutes: null, source: 'gps-time' };

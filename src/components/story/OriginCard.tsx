@@ -1,24 +1,20 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import type { BasicFileInfo, StructuredMetadata } from '../../types/metadata';
 import type { ProData } from '../../App';
 import type { ProfileSection, ProfileSectionKind } from '../../utils/heuristics/digitalProfile';
 import { ORIGIN_KINDS } from '../../utils/heuristics/digitalProfile';
 import type { ContentCredentialsState } from '../../hooks/useContentCredentials';
 import type { DeviceProfile } from '../../utils/deviceProfile';
-import { buildFileHistory, type FileEvent } from '../../utils/fileHistory';
+import type { FileEvent } from '../../utils/fileHistory';
 import { formatCompactDate, formatDetailedDate, formatDimensions, formatSecondsDuration } from '../../utils/format';
 import { DRIFT_SUSPICIOUS_SECONDS, type TimeProfile } from '../../utils/timeProfile';
 import type { Stance } from '../../utils/stance';
-import type { JpegSignals } from '../../utils/jpegQuant';
-import { judgeCompression } from '../../utils/jpegQuant';
-import type { FrameStats } from '../../hooks/useFrameStats';
 import { checkLight } from '../../utils/lightCheck';
 import { checkTimestamps } from '../../utils/timestampConsistency';
-import { scoreScreenshot } from '../../utils/screenshot';
 import { wallClockOf } from '../../utils/fileHistory';
 import { COMPRESSION_KEYS, LIGHT_KEYS, SCREENSHOT_LEVEL_KEYS, SCREENSHOT_REASON_KEYS, TIMESTAMP_ISSUE_KEYS } from './storyKeys';
 import { useI18n, useT } from '../../i18n';
-import { matchMessengerSize } from '../../utils/messengerFootprint';
+import { describeOrigin } from '../../utils/originText';
 import { FactRow } from './FactRow';
 import { DeviceRows } from './DeviceRows';
 
@@ -29,10 +25,6 @@ interface OriginCardProps {
   metadata: StructuredMetadata | null;
   proData: ProData | null;
   credentials: ContentCredentialsState;
-  /** JPEG quantization tables and subsampling of the original file; null for other containers. */
-  jpeg: JpegSignals | null;
-  /** Pixel statistics (flat interface colours) for the screenshot score. */
-  frame: FrameStats | null;
   /** The shot geometry, for the sun's height at the moment of capture. */
   stance: Stance | null;
   /** The camera and place zones and the GPS drift. */
@@ -69,8 +61,6 @@ const CredentialsDetails: React.FC<{ credentials: ContentCredentialsState }> = (
   );
 };
 
-const withEvidence = (text: string, evidence: string | null | undefined) => (evidence ? `${text} (${evidence})` : text);
-
 /**
  * «На что сделан снимок»: the device and its system in the headline, the device rows, the
  * file history as two dates (created from the camera clock, with the clock drift against the GPS
@@ -82,31 +72,24 @@ const withEvidence = (text: string, evidence: string | null | undefined) => (evi
  * exposure against the sun, the timestamps against each other, the Live / Motion Photo as a
  * sign of an untouched original, serial numbers and Content Credentials.
  */
-export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, fileInfo, metadata, proData, credentials, jpeg, frame, stance, timeProfile }) => {
+export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, fileInfo, metadata, proData, credentials, stance, timeProfile }) => {
   const t = useT();
   const { lang } = useI18n();
 
-  const history = useMemo(
-    () =>
-      buildFileHistory({
-        metadata,
-        editing: proData?.editing ?? null,
-        stripped: proData?.stripped ?? null,
-        credentials: credentials.data ?? null,
-        lastModified: (fileInfo.originalFile ?? fileInfo.file).lastModified || null,
-        width: fileInfo.originalWidth ?? fileInfo.width,
-        height: fileInfo.originalHeight ?? fileInfo.height,
-        phash: proData?.hash?.phash ?? null
-      }),
-    [metadata, proData, credentials.data, fileInfo]
-  );
+  // The history, the screenshot score, the tables and the one origin verdict are computed once
+  // in App, together with the profile, so this card and the raw table read the same answer.
+  const history = proData?.history ?? [];
+  const origin = proData?.origin ?? null;
+  const originText = origin ? describeOrigin(origin, t) : null;
+  // The verdict says the picture was written again after the shutter (a messenger, an editor, a
+  // re-save): «не редактировался» would contradict it two rows up.
+  const writtenAgain = origin ? origin.verdict === 'resaved' || origin.verdict === 'messenger' || origin.verdict === 'stripped' : false;
 
   const parts = Array.from(ORIGIN_KINDS)
     .map((kind) => sectionsByKind.get(kind))
     .filter((section): section is ProfileSection => Boolean(section));
   if (parts.length === 0) return null;
 
-  const severity = parts.some((p) => p.severity === 'high') ? 'high' : parts.some((p) => p.severity === 'medium') ? 'medium' : 'low';
   const ai = sectionsByKind.get('ai');
   const serial = sectionsByKind.get('serial');
   const exif = metadata?.groups.exif ?? {};
@@ -123,17 +106,8 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
     : null;
 
   // Authenticity signals, each a pure check over what the file and the lookups already gave us.
-  const screenshot = proData
-    ? scoreScreenshot({
-        filenameScreenshot: proData.filename.isScreenshot,
-        knownScreenSize: proData.resolution.isScreenshot,
-        hasCameraExif: Boolean(metadata?.cameraMake || metadata?.cameraModel),
-        hasShotDate: Boolean(metadata?.shotDateLocal),
-        mimeType: fileInfo.originalMimeType ?? fileInfo.mimeType,
-        flatRatio: frame?.flatRatio ?? null
-      })
-    : null;
-  const compression = jpeg ? judgeCompression(jpeg, metadata?.cameraMake) : null;
+  const screenshot = proData?.screenshot ?? null;
+  const compression = proData?.compression ?? null;
   const flash = exif.Flash;
   const light = stance?.sun
     ? checkLight({
@@ -158,26 +132,31 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
     signedAt: credentials.data?.signedAt ?? null,
     lastModified: (fileInfo.originalFile ?? fileInfo.file).lastModified || null
   });
+  // The marker survives a re-save along with the rest of the metadata, so it only vouches for the
+  // pixels when nothing else says they were written again; otherwise it says what it can.
   const originalSign = metadata?.apple?.livePhoto
-    ? t('originalLivePhoto')
+    ? t(writtenAgain ? 'originalLivePhotoKept' : 'originalLivePhoto')
     : metadata?.samsung?.motionPhotoBytes != null
-      ? t('originalMotionPhoto')
+      ? t(writtenAgain ? 'originalMotionPhotoKept' : 'originalMotionPhoto')
       : null;
+  // Without a device the card still answers its own question: the device is unknown, and the
+  // origin row under it says why (the camera block is gone). «Оригинальный файл» as the
+  // headline of a device card answered a different question, and on a Telegram photo it was wrong.
   const headline = device
     ? [[device.make, device.model].filter(Boolean).join(' '), device.os ? `${device.os.name} ${device.os.version}` : null]
         .filter(Boolean)
         .join(', ')
-    : sectionsByKind.get('origin')?.text ?? null;
+    : t('deviceUnknownHeadline');
 
   // Two dates and the evidence: the camera clock, then ModifyDate / Software or the signs of a
   // later save (smaller than the camera wrote, a messenger re-encode, a thumbnail that differs).
   const shot = history.find((event) => event.kind === 'shot') ?? null;
   const modified = history.find((event) => event.kind === 'modified') ?? null;
+  // The messenger and stripped signs now live in the origin verdict's grounds; what stays here
+  // is what has a detail of its own: the sizes of a resize, the thumbnail picture, the AI marker.
   const signs = history.filter(
     (event) =>
       event.kind === 'resized' ||
-      event.kind === 'messenger' ||
-      event.kind === 'stripped' ||
       // A generative patch means the frame was written again after the shutter, whatever the dates say.
       (event.kind === 'ai' && event.scope === 'edited') ||
       (event.kind === 'thumbnail' && event.same === false)
@@ -185,7 +164,7 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
   const createdText = shot?.at ? formatCompactDate(shot.at, lang) ?? shot.at : t('historyDateUnknown');
   const editedText = modified?.at
     ? formatCompactDate(modified.at, lang) ?? modified.at
-    : modified || signs.length > 0
+    : modified || signs.length > 0 || writtenAgain
     ? t('historyDateUnknown')
     : t('historyNotEdited');
   const editedNote = modified?.agent ? t('historyModifiedWith', { software: modified.agent }) : null;
@@ -200,15 +179,6 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
               : t('driftBehind', { delta: formatSecondsDuration(-driftSeconds, t) })
         })
       : null;
-  /*
-   * The size a service left behind. `strippedDetector` already says «looks like social media
-   * re-compression» for anything under 1600 px, which fires on every downscaled photograph and
-   * names nobody. Sitting exactly on a known cap is narrower, and it is shown as a hint with
-   * every service that shares the number — never one, because 1280 is Telegram's and Viber's
-   * alike and the caps change between app versions.
-   */
-  const messengerSize = matchMessengerSize(fileInfo.width, fileInfo.height);
-
   const signText = (event: FileEvent): string => {
     switch (event.kind) {
       case 'resized':
@@ -216,10 +186,6 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
           from: formatDimensions(event.from?.width ?? 0, event.from?.height ?? 0),
           to: formatDimensions(event.to?.width ?? 0, event.to?.height ?? 0)
         });
-      case 'messenger':
-        return withEvidence(t('historyMessenger', { platform: event.agent ?? '' }), event.evidence);
-      case 'stripped':
-        return withEvidence(t('historyStripped'), event.evidence);
       case 'ai':
         return t('historyAiEdit', { tool: event.agent ?? 'AI' });
       case 'thumbnail':
@@ -232,11 +198,20 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
   };
 
   return (
-    <FactRow title={t('factOriginTitle')} severity={severity} value={headline} sub={null}>
+    <FactRow title={t('factOriginTitle')} value={headline} sub={null}>
       <div className="fy-fact-details fy-origin">
         {device ? <DeviceRows device={device} metadata={metadata} /> : null}
         <h4 className="v4-h3">{t('historyTitle')}</h4>
         <dl className="fy-spec fy-spec--tight">
+          {originText ? (
+            <>
+              <dt>{t('originRowTitle')}</dt>
+              <dd>
+                <span>{originText.headline}</span>
+                {originText.reasons.length > 0 ? <span className="fy-muted">{originText.reasons.join('; ')}</span> : null}
+              </dd>
+            </>
+          ) : null}
           <dt>{t('historyCreated')}</dt>
           <dd>
             <span>{createdText}</span>
@@ -252,11 +227,6 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
                 <span className="fy-muted">{signText(event)}</span>
               </span>
             ))}
-            {messengerSize ? (
-              <span className="fy-muted">
-                {t('historyMessengerSize', { size: messengerSize.cap, platforms: messengerSize.platforms.join(', ') })}
-              </span>
-            ) : null}
           </dd>
         </dl>
         <h4 className="v4-h3">{t('authenticityTitle')}</h4>

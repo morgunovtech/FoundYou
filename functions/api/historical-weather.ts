@@ -39,7 +39,7 @@ export const onRequest = defineHandler(async ({ url, context }) => {
 
     let payload: any;
     try {
-      payload = await upstream.response.json();
+      payload = JSON.parse(upstream.text);
     } catch {
       return json({ ok: false, error: 'upstream-invalid' }, 502);
     }

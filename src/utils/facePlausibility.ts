@@ -257,15 +257,30 @@ export function isNeighbourOf(box: Rect, anchor: Rect): boolean {
  * gone before anything asks whether the winner is a face at all, and that face is then
  * neither drawn nor blurred.
  */
-export function selectPlausibleFaces(candidates: readonly FaceCandidate[], persons: readonly Rect[]): number[] {
-  const accepted = candidates.map((candidate) => isPlausibleFace(candidate, persons));
+export function selectPlausibleFaces(
+  candidates: readonly FaceCandidate[],
+  persons: readonly Rect[],
+  animals: readonly Rect[] = []
+): number[] {
+  /*
+   * A candidate whose centre sits in an animal's box and in no person's is the animal's face:
+   * BlazeFace answered «face» for a dog's muzzle at 0.63 on the sample photograph, the person
+   * beside it vouched for it as a neighbour of comparable size, and the page drew «ЛИЦО» on the
+   * dog, counted two people and gave the leak index twenty points for them. A person holding a
+   * cat keeps their face: the person box is checked first.
+   */
+  const animalOnly = candidates.map(
+    (candidate) =>
+      animals.some((animal) => centreInside(candidate.box, animal)) && !persons.some((person) => centreInside(candidate.box, person))
+  );
+  const accepted = candidates.map((candidate, i) => !animalOnly[i] && isPlausibleFace(candidate, persons));
 
   // A neighbour may only be vouched for by a face accepted on its own evidence, so this does not
   // cascade: one admitted face cannot lend its authority onwards to a third.
   const anchors = candidates.filter((_, i) => accepted[i]).map((candidate) => candidate.box);
   if (anchors.length > 0) {
     candidates.forEach((candidate, i) => {
-      if (accepted[i]) return;
+      if (accepted[i] || animalOnly[i]) return;
       if (candidate.score < FACE_SUPPORTED_SCORE) return;
       if (faceAnomalies(candidate).length > 0) return;
       if (anchors.some((anchor) => isNeighbourOf(candidate.box, anchor))) accepted[i] = true;

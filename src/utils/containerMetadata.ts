@@ -22,12 +22,30 @@ const JPEG_SOS = 0xda;
 const isStandalone = (marker: number) => (marker >= 0xd0 && marker <= 0xd7) || marker === 0x01 || marker === JPEG_SOI || marker === JPEG_EOI;
 /**
  * Segments to drop: APP1 (EXIF/XMP), APP2 (ICC, FlashPix), APP3–APP12 (Kodak, HP,
- * Ducky…), APP13 (Photoshop/IPTC), APP15 and COM. APP0 (JFIF/JFXX) and APP14
- * (Adobe colour transform) are kept: decoders rely on them for density and
- * colour interpretation, and neither carries user data.
+ * Ducky…), APP13 (Photoshop/IPTC), APP15 and COM. APP0 and APP14 are kept only when
+ * they are what decoders rely on: a `JFIF` APP0 (pixel density) and an `Adobe` APP14
+ * (colour transform). A `JFXX` APP0 is an embedded thumbnail — the picture again, in
+ * small — and any other payload under those two markers is a vendor's, not the decoder's.
  */
 const isJpegMetadataMarker = (marker: number) =>
   marker === 0xfe || (marker >= 0xe1 && marker <= 0xed) || marker === 0xef;
+
+const JPEG_APP0 = 0xe0;
+const JPEG_APP14 = 0xee;
+
+/** Whether the payload of an APP0 / APP14 segment starting at `payload` names the standard block. */
+function isDecoderSegment(bytes: Uint8Array, marker: number, payload: number, end: number): boolean {
+  const startsWith = (text: string) => {
+    if (payload + text.length > end) return false;
+    for (let i = 0; i < text.length; i++) {
+      if (bytes[payload + i] !== text.charCodeAt(i)) return false;
+    }
+    return true;
+  };
+  if (marker === JPEG_APP0) return startsWith('JFIF\0');
+  if (marker === JPEG_APP14) return startsWith('Adobe');
+  return true;
+}
 
 export function stripJpegMetadata(input: ArrayBuffer): ArrayBuffer {
   const bytes = new Uint8Array(input);
@@ -66,7 +84,7 @@ export function stripJpegMetadata(input: ArrayBuffer): ArrayBuffer {
       offset = scanEnd;
       continue;
     }
-    if (!isJpegMetadataMarker(marker)) {
+    if (!isJpegMetadataMarker(marker) && isDecoderSegment(bytes, marker, offset + 4, end)) {
       keep.push(bytes.subarray(offset, end));
     }
     offset = end;
@@ -90,11 +108,21 @@ function findScanEnd(bytes: Uint8Array, from: number): number {
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 /**
- * Ancillary chunks that carry metadata rather than rendering information.
- * `sRGB`, `gAMA`, `cHRM`, `pHYs`, `tRNS`, `bKGD`, `PLTE` stay: they describe how to
- * show the pixels and contain no free text or profile blobs.
+ * The chunks a PNG needs to be shown: the critical four, the ones that describe how to
+ * interpret the pixels (transparency, gamma, colour space, physical size, palette hints)
+ * and the animation triplet. Everything else is dropped — this is a keep-list, not a
+ * drop-list, because the drop-list it used to be knew `tEXt`, `iCCP` and `eXIf` but not
+ * `caBX`, the chunk a Content Credentials manifest travels in, and a Firefly or Photoshop
+ * PNG kept its whole manifest through the «metadata only» export while exifr, which does
+ * not read `caBX`, reported 0 fields left. A private chunk no one has heard of gets the
+ * same treatment: the promise is «pixels only», and a keep-list is the only way to mean it.
  */
-const PNG_METADATA_CHUNKS = new Set(['iCCP', 'tEXt', 'zTXt', 'iTXt', 'eXIf', 'tIME', 'dSIG', 'oFFs', 'pCAL', 'sCAL', 'sTER']);
+const PNG_KEEP_CHUNKS = new Set([
+  'IHDR', 'PLTE', 'IDAT', 'IEND',
+  'tRNS', 'gAMA', 'cHRM', 'sRGB', 'sBIT', 'bKGD', 'pHYs', 'hIST', 'sPLT',
+  'cICP', 'mDCv', 'cLLi',
+  'acTL', 'fcTL', 'fdAT'
+]);
 
 export function stripPngMetadata(input: ArrayBuffer): ArrayBuffer {
   const bytes = new Uint8Array(input);
@@ -108,7 +136,7 @@ export function stripPngMetadata(input: ArrayBuffer): ArrayBuffer {
     if (length < 0 || offset + 12 + length > bytes.length) return input;
     const type = String.fromCharCode(bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7]);
     const end = offset + 12 + length; // length + type + data + crc
-    if (!PNG_METADATA_CHUNKS.has(type)) {
+    if (PNG_KEEP_CHUNKS.has(type)) {
       keep.push(bytes.subarray(offset, end));
     }
     offset = end;
@@ -122,11 +150,23 @@ export function stripPngMetadata(input: ArrayBuffer): ArrayBuffer {
   return concat(keep);
 }
 
-/** Strips container metadata for the formats we know how to rewrite; other blobs are returned untouched. */
+/** What the first bytes say the container is; the extension and `blob.type` are only what someone named it. */
+export function sniffContainer(bytes: Uint8Array): 'image/jpeg' | 'image/png' | null {
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === JPEG_SOI) return 'image/jpeg';
+  if (bytes.length >= 8 && PNG_SIGNATURE.every((value, index) => bytes[index] === value)) return 'image/png';
+  return null;
+}
+
+/**
+ * Strips container metadata for the formats we know how to rewrite; other blobs are returned
+ * untouched. The format is read from the bytes, not from `blob.type`: a JPEG saved as `.png`
+ * used to reach the PNG stripper, which found no signature and handed the file back with every
+ * field in place, and the summary still said «Файл готов».
+ */
 export async function stripContainerMetadata(blob: Blob): Promise<Blob> {
-  const type = blob.type || '';
-  if (type !== 'image/jpeg' && type !== 'image/png') return blob;
   const buffer = await blob.arrayBuffer();
+  const type = sniffContainer(new Uint8Array(buffer));
+  if (!type) return blob;
   const stripped = type === 'image/jpeg' ? stripJpegMetadata(buffer) : stripPngMetadata(buffer);
   return stripped === buffer ? blob : new Blob([stripped], { type });
 }

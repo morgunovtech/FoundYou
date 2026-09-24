@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { onRequest } from '../../../functions/api/reverse-geocode';
 import type { ApiResponse, ReverseGeocodeResult } from '../../../src/types/api';
-import { call, callJson, fetchCall, installCaches, jsonResponse, mockFetch, rejectAborted, urlOf } from './_harness';
+import { call, callJson, fetchCall, installCaches, jsonResponse, mockFetch, rejectAborted, urlOf, type FakeCaches } from './_harness';
+import { cacheKey } from '../../../functions/api/_geo';
 
 const PATH = '/api/reverse-geocode';
 const TASHKENT = { lat: '41.311158', lon: '69.279737' };
+const TASHKENT_KEY = cacheKey('reverse-geocode', '41.3112', '69.2797');
 
 const nominatim = {
   place_id: 1,
@@ -22,8 +24,10 @@ const nominatim = {
   boundingbox: ['41.3105', '41.3115', '69.2790', '69.2810']
 };
 
+let caches: FakeCaches;
+
 beforeEach(() => {
-  installCaches();
+  caches = installCaches();
 });
 
 afterEach(() => {
@@ -79,7 +83,7 @@ describe('reverse-geocode: success', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toBe('application/json; charset=utf-8');
-    expect(response.headers.get('Cache-Control')).toBe('public, max-age=86400, s-maxage=86400');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(response.headers.get('X-Cache')).toBe('MISS');
 
     expect(body.ok).toBe(true);
@@ -123,13 +127,31 @@ describe('reverse-geocode: success', () => {
     });
   });
 
-  it('survives an empty Nominatim object with defaults', async () => {
+  it('survives an empty Nominatim object with only the coordinates, inventing nothing', async () => {
     mockFetch(async () => jsonResponse({}));
-    const { response, body } = await callJson<ApiResponse<ReverseGeocodeResult>>(onRequest, urlOf(PATH, TASHKENT));
+    const { response, body, text } = await callJson<ApiResponse<ReverseGeocodeResult>>(onRequest, urlOf(PATH, TASHKENT));
     expect(response.status).toBe(200);
-    expect(body.data).toMatchObject({ address: 'Unknown address', country: 'Unknown', lat: 41.3112, lon: 69.2797 });
-    expect(body.data!.precisionMeters).toBeUndefined();
-    expect(body.data!.countryCode).toBeUndefined();
+    expect(body.data).toEqual({ lat: 41.3112, lon: 69.2797 });
+    expect(text).not.toContain('Unknown');
+  });
+
+  it('Nominatim’s «Unable to geocode» is an answer with no address, not an English placeholder', async () => {
+    // Its documented no-result form is HTTP 200 with `{ "error": "Unable to geocode" }` — open
+    // sea, the poles. The endpoint used to answer «Unknown address» / «Unknown», which the page
+    // then printed verbatim in a Russian or Uzbek card; now the fields are simply absent and the
+    // page falls back to its own dictionary. It is still a real answer, and still cached.
+    const fetch = mockFetch(async () => jsonResponse({ error: 'Unable to geocode' }));
+    const first = await callJson<ApiResponse<ReverseGeocodeResult>>(onRequest, urlOf(PATH, TASHKENT));
+    expect(first.response.status).toBe(200);
+    expect(first.body).toEqual({ ok: true, data: { lat: 41.3112, lon: 69.2797 } });
+    expect('address' in first.body.data!).toBe(false);
+    expect('country' in first.body.data!).toBe(false);
+    expect(first.text).not.toContain('Unknown');
+
+    const second = await callJson<ApiResponse<ReverseGeocodeResult>>(onRequest, urlOf(PATH, TASHKENT));
+    expect(second.response.headers.get('X-Cache')).toBe('HIT');
+    expect(second.body).toEqual(first.body);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it('ignores a malformed bounding box', async () => {
@@ -142,7 +164,7 @@ describe('reverse-geocode: success', () => {
     mockFetch(async () => jsonResponse(nominatim));
     const response = await call(onRequest, urlOf(PATH, TASHKENT), { method: 'HEAD' });
     expect(response.status).toBe(200);
-    expect(response.headers.get('Cache-Control')).toBe('public, max-age=86400, s-maxage=86400');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(await response.text()).toBe('');
   });
 });
@@ -156,6 +178,19 @@ describe('reverse-geocode: cache', () => {
     expect(second.response.headers.get('X-Cache')).toBe('HIT');
     expect(second.body).toEqual(first.body);
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('the edge keeps a public copy for a day; the browser is told no-store on MISS and HIT', async () => {
+    // A resolved address against `?lat=…&lon=…` in the browser's HTTP cache is a history of
+    // places on the reader's disk — the same reason the map tiles are never cached.
+    mockFetch(async () => jsonResponse(nominatim));
+    const miss = await call(onRequest, urlOf(PATH, TASHKENT));
+    expect(miss.headers.get('Cache-Control')).toBe('no-store');
+    expect(caches.store.get(TASHKENT_KEY)?.headers).toContainEqual(['cache-control', 'public, max-age=86400, s-maxage=86400']);
+
+    const hit = await call(onRequest, urlOf(PATH, TASHKENT));
+    expect(hit.headers.get('X-Cache')).toBe('HIT');
+    expect(hit.headers.get('Cache-Control')).toBe('no-store');
   });
 
   it('points within the same 4-decimal cell share the cache entry', async () => {

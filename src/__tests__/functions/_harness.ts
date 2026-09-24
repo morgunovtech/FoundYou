@@ -8,7 +8,7 @@
  *
  * Restore everything with `vi.unstubAllGlobals()` in `afterEach`.
  */
-import { vi } from 'vitest';
+import { vi, type Mock } from 'vitest';
 import type { PagesEventContext } from '../../../functions/api/_types';
 
 export const SAME_ORIGIN = { 'Sec-Fetch-Site': 'same-origin' } as const;
@@ -24,8 +24,8 @@ interface StoredResponse {
 
 export interface FakeCaches {
   default: {
-    match: ReturnType<typeof vi.fn>;
-    put: ReturnType<typeof vi.fn>;
+    match: Mock<(request: Request | string) => Promise<Response | undefined>>;
+    put: Mock<(request: Request | string, response: Response) => Promise<void>>;
   };
   /** Raw store, for assertions on what was cached. */
   store: Map<string, StoredResponse>;
@@ -41,7 +41,17 @@ export function makeCaches(): FakeCaches {
     return new Response(hit.body, { status: hit.status, headers: hit.headers });
   });
   const put = vi.fn(async (request: Request | string, response: Response): Promise<void> => {
+    // The same refusals as Cloudflare's `cache.put`: a key that is not a GET, a 206 and `Vary: *`
+    // throw; a response marked `no-store`, `private`, `no-cache` or a zero max-age is silently
+    // not stored. Without them the fake would «cache» the browser copy, which `withCache` marks
+    // `no-store` on purpose, and a regression that stored it would stay invisible here.
     const url = typeof request === 'string' ? request : request.url;
+    const method = typeof request === 'string' ? 'GET' : request.method;
+    if (method !== 'GET') throw new TypeError(`cache.put: ${method} request`);
+    if (response.status === 206) throw new TypeError('cache.put: 206 Partial Content');
+    if (response.headers.get('Vary') === '*') throw new TypeError('cache.put: Vary: *');
+    const control = response.headers.get('Cache-Control') ?? '';
+    if (/\b(?:no-store|private|no-cache)\b|\b(?:max-age|s-maxage)=0\b/.test(control)) return;
     store.set(url, {
       status: response.status,
       headers: Array.from(response.headers.entries()),
@@ -94,6 +104,8 @@ export interface CallOptions {
   headers?: Record<string, string>;
   /** Default `true`: await every `waitUntil` promise before returning. */
   settle?: boolean;
+  /** Route parameters, as Cloudflare fills them for `[[path]]` catch-all files. */
+  params?: Record<string, string | string[]>;
 }
 
 export function urlOf(path: string, params: Record<string, string> = {}): string {
@@ -108,7 +120,7 @@ export async function call(handler: Handler, url: string, options: CallOptions =
   const response = await handler({
     request,
     env: {},
-    params: {},
+    params: options.params ?? {},
     waitUntil: (promise) => {
       promises.push(promise);
     }

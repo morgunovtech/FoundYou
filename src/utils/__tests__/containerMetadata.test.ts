@@ -200,8 +200,11 @@ describe('stripContainerMetadata', () => {
     expect(await stripContainerMetadata(webp)).toBe(webp);
     const gif = new Blob([new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61])], { type: 'image/gif' });
     expect(await stripContainerMetadata(gif)).toBe(gif);
+    // The container is read from the bytes: a JPEG with no declared type is still a JPEG.
     const untyped = new Blob([new Uint8Array([0xff, 0xd8, ...app0])]);
-    expect(await stripContainerMetadata(untyped)).toBe(untyped);
+    const output = await stripContainerMetadata(untyped);
+    expect(output.type).toBe('image/jpeg');
+    expect(output.size).toBe(untyped.size);
   });
 
   it('rewrites a JPEG blob without its metadata segments and keeps the type', async () => {
@@ -224,10 +227,16 @@ describe('stripContainerMetadata', () => {
     expect(pngTypes(await output.arrayBuffer())).toEqual(['IHDR', 'IDAT', 'IEND']);
   });
 
-  it('returns the same instance when the bytes are not the declared container', async () => {
+  it('trusts the bytes over the declared container', async () => {
+    /*
+     * A JPEG saved as `.png` used to reach the PNG stripper, which found no signature and handed
+     * the file back with every field in place while the summary said «Файл готов».
+     */
     const mislabeled = new Blob([new Uint8Array(signature)], { type: 'image/jpeg' });
-    expect(await stripContainerMetadata(mislabeled)).toBe(mislabeled);
-    const alsoMislabeled = new Blob([jpeg(app0, dqt, sof, sos, scan)], { type: 'image/png' });
-    expect(await stripContainerMetadata(alsoMislabeled)).toBe(alsoMislabeled);
+    expect((await stripContainerMetadata(mislabeled)).type).toBe('image/png');
+    const alsoMislabeled = new Blob([jpeg(app0, app1Exif, dqt, sof, sos, scan)], { type: 'image/png' });
+    const output = await stripContainerMetadata(alsoMislabeled);
+    expect(output.type).toBe('image/jpeg');
+    expect(markers(await output.arrayBuffer())).toEqual([0xe0, 0xdb, 0xc0, 0xda]);
   });
 });

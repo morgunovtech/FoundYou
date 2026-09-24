@@ -33,8 +33,15 @@ export interface ScreenshotScore {
 
 /** Prior: about one file in fifteen brought here is a screenshot. */
 const PRIOR_LOGIT = -2.6;
-/** Interfaces are flat: above this share of identical neighbours a photo is practically ruled out. */
-export const FLAT_SCREENSHOT = 0.55;
+/**
+ * Interfaces are flat: above this share of identical neighbours a photo is practically ruled out.
+ * Measured 2026-09-24 (`docs/threshold-check-2026-09-24.md`): 76 camera originals sit at
+ * 0.01–0.20, 24 Telegram-recompressed photos at 0.13–0.41, a 480 px iCloud thumbnail at 0.45;
+ * 16 real screenshots at 0.39–0.93, with four content-heavy captures (long page captures, an
+ * app home screen full of pictures) under 0.55. Lowering the bar to 0.50 catches two of those
+ * four and no photograph in the set; the two at 0.39–0.44 still get the middle band below.
+ */
+export const FLAT_SCREENSHOT = 0.5;
 /** Below this the picture has sensor noise everywhere, as photos do. */
 export const FLAT_PHOTO = 0.12;
 

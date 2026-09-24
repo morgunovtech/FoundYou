@@ -57,8 +57,10 @@ const RESIDENTIAL_TYPES = new Set([
   'semidetached_house',
   'terrace',
   'bungalow',
-  'dormitory',
-  'yes'
+  'dormitory'
+  // Not `yes`: the most common building value says only that a building was mapped, and the
+  // signal's copy reads «точка попадает в жилой дом» — a corner shop drawn as a bare polygon
+  // inside a residential block scored +3 for being a home it is not.
 ]);
 
 const NON_RESIDENTIAL_LANDUSE = new Set([

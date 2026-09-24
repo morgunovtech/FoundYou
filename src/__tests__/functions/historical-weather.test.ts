@@ -120,7 +120,7 @@ describe('historical-weather: target resolution', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('Cache-Control')).toBe('public, max-age=86400, s-maxage=86400');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(response.headers.get('X-Cache')).toBe('MISS');
     expect(body.ok).toBe(true);
     expect(body.data).toMatchObject({ temperature: 38, cloudCover: 18, windSpeed: 19, pressure: 1018, weatherCode: 2, timezone: 'Asia/Tashkent' });

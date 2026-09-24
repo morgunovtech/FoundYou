@@ -38,9 +38,9 @@ export const COUNT_SEPARATOR: FakeElement = {
 
 export const SURVEILLANCE_ELEMENTS: FakeElement[] = [
   { type: 'node', id: 10, lat: 41.3113, lon: 69.2796, tags: { man_made: 'surveillance', surveillance: 'public', 'surveillance:type': 'camera' } },
-  { type: 'node', id: 11, lat: 41.3115, lon: 69.2801, tags: { amenity: 'atm', name: 'Kapitalbank ATM', operator: 'Kapitalbank' } },
-  { type: 'way', id: 12, center: { lat: 41.3118, lon: 69.2793 }, tags: { amenity: 'bank', brand: 'NBU' } },
-  { type: 'node', id: 2, lat: 41.312, lon: 69.28, tags: { shop: 'supermarket', name: 'Korzinka' } }, // also in .poi
+  { type: 'node', id: 11, lat: 41.3115, lon: 69.2801, tags: { surveillance: 'outdoor', name: 'Kapitalbank ATM', operator: 'Kapitalbank' } },
+  { type: 'way', id: 12, center: { lat: 41.3118, lon: 69.2793 }, tags: { man_made: 'surveillance', brand: 'NBU' } },
+  { type: 'node', id: 13, lat: 41.312, lon: 69.28, tags: { man_made: 'surveillance', surveillance: 'indoor', name: 'Korzinka' } },
   { type: 'way', id: 14, tags: { man_made: 'surveillance' } }, // no center → skipped
   { type: 'node', id: 15, lat: 41.3109, lon: 69.2795, tags: { man_made: 'surveillance' } }
 ];

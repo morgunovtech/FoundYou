@@ -1,3 +1,4 @@
+import { ZXING_BASE } from '../assetPaths';
 /**
  * The barcodes jsQR cannot read.
  *
@@ -17,7 +18,7 @@
  */
 
 /** Where `prepare:assets` puts the reader binary. Never a CDN. */
-const WASM_URL = '/zxing/zxing_reader.wasm';
+const WASM_URL = `${ZXING_BASE}/zxing_reader.wasm`;
 
 /**
  * The formats worth the extra pass. QR is deliberately absent — it has already been tried by

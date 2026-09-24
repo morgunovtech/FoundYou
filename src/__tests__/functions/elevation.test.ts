@@ -33,7 +33,7 @@ describe('elevation: success and failure', () => {
     const { response, body } = await callJson<ApiResponse<ElevationResult>>(onRequest, urlOf(PATH, POINT));
     expect(response.status).toBe(200);
     expect(body).toEqual({ ok: true, data: { elevation: 1270.5, resolutionMeters: 90 } });
-    expect(response.headers.get('Cache-Control')).toBe(`public, max-age=${30 * 86_400}, s-maxage=${30 * 86_400}`);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
     const { url } = fetchCall(fetch);
     expect(url).toBe('https://api.open-meteo.com/v1/elevation?latitude=41.3612&longitude=69.9240');
   });

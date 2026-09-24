@@ -65,7 +65,7 @@ describe('holidays: Nager 200', () => {
     const { response, body } = await callJson<ApiResponse<HolidaysResult>>(onRequest, urlOf(PATH, { country: 'de', date: '2024-10-03' }));
 
     expect(response.status).toBe(200);
-    expect(response.headers.get('Cache-Control')).toBe('public, max-age=86400, s-maxage=86400');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(response.headers.get('X-Cache')).toBe('MISS');
     expect(body).toEqual({
       ok: true,
@@ -178,7 +178,7 @@ describe('holidays: static fallback', () => {
     const { response, body } = await callJson<ApiResponse<HolidaysResult>>(onRequest, urlOf(PATH, { country: 'XX', date: '2026-09-01' }));
     expect(response.status).toBe(200);
     expect(body).toEqual({ ok: true, data: { isHoliday: false, holidays: [] } });
-    expect(response.headers.get('Cache-Control')).toBe('public, max-age=86400, s-maxage=86400');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
   });
 });
 

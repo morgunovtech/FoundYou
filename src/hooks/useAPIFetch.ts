@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApiResponse } from '../types/api';
 
+/** A retry may succeed: what `retryable` reports, and what the manual «Повторить» button acts on. */
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+/**
+ * What the hook retries on its own, with backoff. 429 is deliberately not here: Nominatim and
+ * Overpass answer it when a client is already asking too often, and asking again 300 ms later
+ * and again 600 ms after that is exactly what those public servers ban an address for. The
+ * reader can still press the button; the hook will not press it for them.
+ */
+const AUTO_RETRY_STATUS = new Set([500, 502, 503, 504]);
 const REQUEST_TIMEOUT_MS = 12_000;
 const MAX_RETRIES = 2;
 
@@ -117,6 +125,12 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** A 5xx, a timeout or a network failure (status null) — never a 429, which is the upstream asking for less. */
+export function shouldRetryAutomatically(result: ApiResult<unknown>): boolean {
+  if (result.ok || !result.retryable) return false;
+  return result.status === null || AUTO_RETRY_STATUS.has(result.status);
+}
+
 async function fetchWithRetry<T>(
   url: string,
   init: RequestInit | undefined,
@@ -127,7 +141,7 @@ async function fetchWithRetry<T>(
   let result: ApiResult<T> = { ok: false, error: 'network-error', status: null, retryable: true };
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     result = await fetchOnce<T>(url, init, signal, accepts);
-    if (result.ok || !result.retryable || signal?.aborted) {
+    if (!shouldRetryAutomatically(result) || signal?.aborted) {
       return result;
     }
     if (attempt < retries) {

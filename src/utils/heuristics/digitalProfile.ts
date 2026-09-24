@@ -13,6 +13,8 @@ import type { StrippedAnalysis } from './strippedDetector';
 import type { EditingAnalysis } from './editingHistory';
 import type { HashResult } from './hashAnalyzer';
 import type { TemporalInsight, Severity } from './temporalAnalyzer';
+import type { OriginJudgement } from '../originJudge';
+import { describeOrigin } from '../originText';
 
 type Lang = 'ru' | 'en' | 'uz';
 
@@ -49,47 +51,85 @@ export interface ProfileSection {
 
 export interface LeakLevel {
   level: 'low' | 'medium' | 'high' | 'critical';
-  color: string;
   label: string;
   description: string;
 }
+
+/** A fact the file does not carry at all; listed under the leak index instead of as an empty card. */
+export type MissingFact = 'date' | 'location' | 'device';
 
 export interface DigitalProfile {
   sections: ProfileSection[];
   leakScore: number;
   leakLevel: LeakLevel;
   serialNumbers: string[];
+  /** What the file says nothing about, in a fixed order: date, location, device. */
+  missing: MissingFact[];
 }
 
 /* ── leak level ─────────────────────────────────────────── */
 
-const LEVELS: Record<Lang, Record<string, LeakLevel>> = {
-  ru: {
-    critical: { level: 'critical', color: '#DC2626', label: 'Критическая утечка', description: 'Фото раскрывает адрес, устройство, привычки. Не публикуйте без очистки.' },
-    high: { level: 'high', color: '#F59E0B', label: 'Высокий риск', description: 'Достаточно данных для частичной идентификации.' },
-    medium: { level: 'medium', color: '#3B82F6', label: 'Умеренный риск', description: 'Некоторые данные доступны, но недостаточны для полной идентификации.' },
-    low: { level: 'low', color: '#10B981', label: 'Низкий риск', description: 'Метаданные минимальны. Фото относительно анонимно.' },
-  },
-  en: {
-    critical: { level: 'critical', color: '#DC2626', label: 'Critical leak', description: 'Photo reveals your address, device, and habits. Do not publish without cleanup.' },
-    high: { level: 'high', color: '#F59E0B', label: 'High risk', description: 'Enough data for partial identification.' },
-    medium: { level: 'medium', color: '#3B82F6', label: 'Moderate risk', description: 'Some data available, but insufficient for full identification.' },
-    low: { level: 'low', color: '#10B981', label: 'Low risk', description: 'Minimal metadata. Photo is relatively anonymous.' },
-  },
-  uz: {
-    critical: { level: 'critical', color: '#DC2626', label: 'Kritik oqish', description: 'Foto manzil, qurilma va odatlarni oshkor qiladi. Tozalashsiz nashr etmang.' },
-    high: { level: 'high', color: '#F59E0B', label: 'Yuqori xavf', description: 'Qisman identifikatsiya uchun yetarli ma\'lumot.' },
-    medium: { level: 'medium', color: '#3B82F6', label: 'O\'rtacha xavf', description: 'Ba\'zi ma\'lumotlar mavjud, lekin to\'liq identifikatsiya uchun yetarli emas.' },
-    low: { level: 'low', color: '#10B981', label: 'Past xavf', description: 'Minimal metadata. Foto nisbatan anonim.' },
-  },
+/**
+ * The four bands of the leak index, from the dictionary. The index was computed all along and,
+ * since the verdict card went on 2026-09-16, shown nowhere but the raw table; the owner asked
+ * for it back on 2026-09-24 as a number with its arithmetic next to it. The descriptions say
+ * what the file states, not what the reader should do: the «не публикуйте» and the habits went.
+ */
+const LEVEL_KEYS: Record<LeakLevel['level'], { label: MessageKey; description: MessageKey }> = {
+  critical: { label: 'leakLevelCritical', description: 'leakLevelCriticalDesc' },
+  high: { label: 'leakLevelHigh', description: 'leakLevelHighDesc' },
+  medium: { label: 'leakLevelMedium', description: 'leakLevelMediumDesc' },
+  low: { label: 'leakLevelLow', description: 'leakLevelLowDesc' }
 };
 
+/** The bands: 80 and above, 50, 25, below. */
+export function leakLevelOf(score: number): LeakLevel['level'] {
+  if (score >= 80) return 'critical';
+  if (score >= 50) return 'high';
+  if (score >= 25) return 'medium';
+  return 'low';
+}
+
 function getLeakLevel(score: number, lang: Lang): LeakLevel {
-  const l = LEVELS[lang];
-  if (score >= 80) return l.critical;
-  if (score >= 50) return l.high;
-  if (score >= 25) return l.medium;
-  return l.low;
+  const level = leakLevelOf(score);
+  return {
+    level,
+    label: formatMessage(lang, LEVEL_KEYS[level].label),
+    description: formatMessage(lang, LEVEL_KEYS[level].description)
+  };
+}
+
+/* ── the index after cleanup ────────────────────────────── */
+
+export interface CleanupChoices {
+  blurFaces: boolean;
+  blurText: boolean;
+  blurPlates: boolean;
+  blurQr: boolean;
+  blurDocuments: boolean;
+}
+
+/** Sections whose points rest on metadata alone: every export path rewrites the container and drops them. */
+const METADATA_KINDS = new Set<ProfileSectionKind>(['device', 'location', 'time', 'editing', 'origin', 'serial', 'content', 'ai']);
+
+/**
+ * What the index would be for the exported copy, from the settings alone: the metadata
+ * sections go with the container, the pixel facts go with the blur that covers them. It is
+ * the same arithmetic as the index itself, so it can be shown before the button is pressed
+ * («73 → 20») and the number becomes a goal of the cleanup rather than only a diagnosis.
+ */
+export function predictLeakAfter(profile: DigitalProfile, choices: CleanupChoices): number {
+  let total = 0;
+  for (const section of profile.sections) {
+    if (METADATA_KINDS.has(section.kind)) continue;
+    if (section.kind === 'people' && choices.blurFaces) continue;
+    if (section.kind === 'text' && choices.blurText) continue;
+    if (section.kind === 'plates' && choices.blurPlates) continue;
+    if (section.kind === 'qr' && choices.blurQr) continue;
+    if (section.kind === 'documents' && choices.blurDocuments) continue;
+    total += section.leakPoints;
+  }
+  return Math.min(100, total);
 }
 
 /* ── threat scenarios ───────────────────────────────────── */
@@ -109,23 +149,6 @@ const TEXTS: Record<string, Record<Lang, string>> = {
     uz: 'Kamera surati, lekin kadrning bir qismi neyrotarmoq tomonidan qayta chizilgan yoki o‘chirilgan — iPhone’dagi Clean Up, Pixel’dagi Magic Editor va Galaxy AI faylni shunday belgilaydi. Nima o‘zgartirilganini belgi aytmaydi',
   },
   aiCompositeTitle: { ru: 'Склейка кадров', en: 'Multi-shot composite', uz: 'Kadrlar birikmasi' },
-  originTitle: { ru: 'Происхождение', en: 'Origin', uz: 'Kelib chiqishi' },
-  originCamera: {
-    ru: 'Оригинальный файл (не из мессенджера)',
-    en: 'Original file (not from a messenger)',
-    uz: 'Original fayl (messenjerdan emas)',
-  },
-  originCameraSub: {
-    ru: 'Метаданные сохранены — файл не проходил через сервисы сжатия',
-    en: 'Metadata preserved — file was not re-compressed by a service',
-    uz: 'Metadata saqlangan — fayl siqish xizmatlaridan o‘tmagan',
-  },
-  originScreenshot: { ru: 'Снимок экрана, не фото с камеры', en: 'A screen capture, not a camera photo', uz: 'Ekran surati, kamera surati emas' },
-  originScreenshotSub: {
-    ru: 'У снимка экрана нет EXIF камеры — но на нём может быть видно то, что было открыто на экране',
-    en: 'A screen capture carries no camera EXIF — but it can show whatever was open on the screen',
-    uz: 'Ekran suratida kamera EXIF’i yo‘q — lekin unda ekranda ochiq bo‘lgan narsa ko‘rinishi mumkin',
-  },
   aiCompositeSub: {
     ru: 'Кадр собран из нескольких снимков, сделанных подряд, без генеративной нейросети (Best Take, Add Me и похожие режимы)',
     en: 'The frame is blended from several shots taken moments apart, with no generative model (Best Take, Add Me and similar modes)',
@@ -215,6 +238,8 @@ export interface ProfileInput {
   editing: EditingAnalysis;
   hash: HashResult | null;
   temporal: TemporalInsight[];
+  /** The one verdict on where the file has been since the shutter (`judgeOrigin`). */
+  origin: OriginJudgement;
   metadata: StructuredMetadata | null;
   detections: BoundingBox[];
   ocrResult: OCRResult | null;
@@ -223,7 +248,7 @@ export interface ProfileInput {
 }
 
 export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
-  const { filename, resolution, stripped, editing, hash, temporal, metadata, detections, ocrResult, lang } = input;
+  const { filename, resolution, editing, hash, temporal, origin, metadata, detections, ocrResult, lang } = input;
   /*
    * The dictionary, reached the same way `useT` reaches it. These sections used to carry their
    * own `lang === 'ru' ? … : …` chains, which is how six of their strings ended up with no Uzbek
@@ -261,7 +286,9 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     });
   }
 
-  // ── Temporal (always show) ──
+  // ── Temporal: only when the file names a moment, or claims one it cannot hold (dateFault). A
+  // card that says «дата не найдена» is not a fact about the reader; the absence is listed under
+  // the index instead (`missing`), where a screenshot's three empty cards used to be.
   if (temporal.length > 0) {
     // Show ALL temporal insights, not just the first
     const allFacts = temporal.map(t => t.fact).join('. ');
@@ -279,7 +306,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       leakPoints: maxSeverity === 'high' ? 15 : 8,
       severity: maxSeverity,
     });
-  } else {
+  } else if (metadata?.dateFault) {
     sections.push({
       kind: 'time',
       title: TEXTS.timeTitle[lang],
@@ -456,37 +483,19 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     });
   }
 
-  // ── Origin / messenger (always show) ──
-  if (stripped.stripped) {
+  // ── Origin (always show): the one judge's verdict with its grounds. ──
+  // The stripped detector, the quantization tables, the Live Photo marker and the size cap used
+  // to speak here each on their own and disagreed on the same file; `judgeOrigin` hears them all.
+  {
+    const described = describeOrigin(origin, t);
+    const passedThrough = origin.verdict === 'messenger' || origin.verdict === 'stripped';
     sections.push({
       kind: 'origin',
       title: t('profileOriginTitle'),
-      text: stripped.strippedBy
-        ? t('profileOriginMessenger', { platform: stripped.strippedBy })
-        : t('profileOriginStripped'),
-      subtext: stripped.evidence[0] ?? null,
-      leakPoints: 5,
-      severity: 'medium',
-    });
-  } else if (input.filename.isScreenshot || input.resolution.isScreenshot) {
-    // «Оригинальный файл» next to a «Скриншот: похоже (80 %)» row read as a contradiction: the
-    // headline answers what the file is, and a screen capture is not a camera original.
-    sections.push({
-      kind: 'origin',
-      title: TEXTS.originTitle[lang],
-      text: TEXTS.originScreenshot[lang],
-      subtext: TEXTS.originScreenshotSub[lang],
-      leakPoints: 0,
-      severity: 'low',
-    });
-  } else {
-    sections.push({
-      kind: 'origin',
-      title: TEXTS.originTitle[lang],
-      text: TEXTS.originCamera[lang],
-      subtext: TEXTS.originCameraSub[lang],
-      leakPoints: 0,
-      severity: 'low',
+      text: described.headline,
+      subtext: described.reasons.length > 0 ? described.reasons.join('; ') : null,
+      leakPoints: passedThrough ? 5 : 0,
+      severity: passedThrough ? 'medium' : 'low',
     });
   }
 
@@ -522,17 +531,24 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       title: t('profileHashTitle'),
       text: hash.phash ? `pHash ${hash.phash} · SHA-256 ${hash.sha256.substring(0, 16)}…` : `SHA-256: ${hash.sha256.substring(0, 16)}...`,
       subtext: TEXTS.hashSub[lang],
-      leakPoints: 5,
+      // Every file has a hash, so it measured nothing: it used to add five points to every score.
+      leakPoints: 0,
       severity: 'low',
     });
   }
 
   const leakScore = Math.min(100, sections.reduce((s, sec) => s + sec.leakPoints, 0));
 
+  const missing: MissingFact[] = [];
+  if (temporal.length === 0 && !metadata?.dateFault) missing.push('date');
+  if (!metadata?.gps) missing.push('location');
+  if (!device) missing.push('device');
+
   return {
     sections,
     leakScore,
     leakLevel: getLeakLevel(leakScore, lang),
     serialNumbers: serials,
+    missing,
   };
 }

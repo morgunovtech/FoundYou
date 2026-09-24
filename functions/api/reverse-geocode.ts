@@ -23,17 +23,22 @@ export const onRequest = defineHandler(async ({ url, context }) => {
 
     let result: any;
     try {
-      result = await upstream.response.json();
+      result = JSON.parse(upstream.text);
     } catch {
       return json({ ok: false, error: 'upstream-invalid' }, 502);
     }
 
+    // Nominatim's documented «nothing here» is HTTP 200 with `{ "error": "Unable to geocode" }`:
+    // open sea, the poles, a point outside its coverage. That is a real answer and is cached like
+    // one — but with nothing invented for it. The endpoint used to fill in «Unknown address» and
+    // «Unknown», in English, and the page printed them verbatim in a Russian or Uzbek card. A
+    // field Nominatim does not have is left out, and the page falls back to its own dictionary.
     const boundingBox = (Array.isArray(result?.boundingbox) ? result.boundingbox : []).map((value: string) => Number(value));
     const address = result?.address ?? {};
     const countryCode = typeof address.country_code === 'string' ? address.country_code.toUpperCase() : undefined;
     const data = {
-      address: result?.display_name ?? 'Unknown address',
-      country: address.country ?? 'Unknown',
+      address: asString(result?.display_name),
+      country: asString(address.country),
       countryCode,
       city: address.city ?? address.town ?? address.village,
       state: address.state,

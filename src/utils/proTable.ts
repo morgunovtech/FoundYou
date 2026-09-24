@@ -30,9 +30,28 @@ export interface ProGroup {
 
 
 
+/** A typed array or a plain object of byte-index keys (what exifr hands back for ICC tag data). */
+function isByteBlob(value: unknown): value is ArrayLike<number> {
+  if (ArrayBuffer.isView(value)) return true;
+  if (value instanceof ArrayBuffer) return true;
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    const keys = Object.keys(value);
+    return keys.length >= 8 && keys.every((key, index) => key === String(index));
+  }
+  return false;
+}
+
+/** «N байт: 88 59 5a …» — the ICC matrix columns used to print as two hundred rows of single bytes. */
+function formatByteBlob(value: ArrayLike<number> | ArrayBuffer): string {
+  const bytes = value instanceof ArrayBuffer ? new Uint8Array(value) : Array.from(value as ArrayLike<number>, (n) => Number(n));
+  const head = Array.from(bytes).slice(0, 12).map((n) => n.toString(16).padStart(2, '0')).join(' ');
+  return `${bytes.length} B: ${head}${bytes.length > 12 ? ' …' : ''}`;
+}
+
 function formatValue(value: unknown): string {
   if (value == null) return '';
   if (value instanceof Date) return value.toISOString();
+  if (isByteBlob(value)) return formatByteBlob(value);
   if (typeof value === 'object') {
     try {
       return JSON.stringify(value);
@@ -48,7 +67,7 @@ function flattenEntries(obj: Record<string, unknown>, prefix = ''): ProRow[] {
   for (const [key, value] of Object.entries(obj)) {
     if (value == null) continue;
     const fullKey = prefix ? `${prefix}.${key}` : key;
-    if (typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+    if (typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date) && !isByteBlob(value)) {
       rows.push(...flattenEntries(value as Record<string, unknown>, fullKey));
     } else {
       rows.push([fullKey, formatValue(value)]);
@@ -71,7 +90,7 @@ export function buildProGroups(
 
   // 1. Leak score + profile sections
   const profileRows: ProRow[] = [
-    ['Leak Score', `${profile.leakScore}/100 (${profile.leakLevel.label})`],
+    [t('leakIndexTitle'), `${profile.leakScore}/100 (${profile.leakLevel.label})`],
     ...profile.sections.map(
       (s) =>
         [
@@ -99,8 +118,8 @@ export function buildProGroups(
     groups.push({ group: t('proGroupFile'), rows: fileRows });
   }
 
-  // 3. Filename heuristics
-  if (proData?.filename) {
+  // 3. Filename heuristics — only when the name said something; three dashes are not data.
+  if (proData?.filename && (proData.filename.platform || proData.filename.photoIndex != null)) {
     const fn = proData.filename;
     const rows: ProRow[] = [
       ['platform', fn.platform ?? '—'],
@@ -124,8 +143,19 @@ export function buildProGroups(
     groups.push({ group: t('proGroupResolution'), rows });
   }
 
-  // 5. Stripped detection
-  if (proData?.stripped) {
+  // 4b. Origin: the one verdict and its grounds.
+  if (proData?.origin) {
+    const rows: ProRow[] = [
+      ['verdict', proData.origin.verdict],
+      ['confidence', proData.origin.confidence],
+      ['platforms', proData.origin.platforms.join(', ') || '—'],
+      ['reasons', proData.origin.reasons.join(', ')]
+    ];
+    groups.push({ group: t('originRowTitle'), rows });
+  }
+
+  // 5. Stripped detection — only when it found something.
+  if (proData?.stripped && proData.stripped.stripped) {
     const st = proData.stripped;
     const rows: ProRow[] = [
       ['stripped', String(st.stripped)],

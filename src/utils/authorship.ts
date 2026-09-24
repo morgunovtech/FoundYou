@@ -36,10 +36,15 @@ export interface Authorship {
  * file at least as often as a person's name — `analyzeEditingHistory` treats it as software
  * for exactly that reason — so it is read separately below and only kept when it does not look
  * like a program.
+ *
+ * Neither are IPTC `Credit` and `Source`. `Credit` is where the phone editors leave their own
+ * mark — «Apple Photos Clean Up», «Edited with Google AI», «Galaxy AI» — which is exactly what
+ * `editingHistory.ts` reads it for, and a file that had a lamp post removed used to get a card
+ * naming the eraser as its author. Both are credit lines, so they are listed with the rights.
  */
-const PERSON_TAGS = ['Artist', 'artist', 'CameraOwnerName', 'OwnerName', 'XPAuthor', 'Byline', 'BylineTitle', 'Credit', 'Source'];
+const PERSON_TAGS = ['Artist', 'artist', 'CameraOwnerName', 'OwnerName', 'XPAuthor', 'Byline', 'BylineTitle'];
 
-const RIGHTS_TAGS = ['Copyright', 'copyright', 'CopyrightNotice', 'Rights', 'WebStatement', 'UsageTerms'];
+const RIGHTS_TAGS = ['Copyright', 'copyright', 'CopyrightNotice', 'Rights', 'WebStatement', 'UsageTerms', 'Credit', 'Source'];
 
 /** The IPTC/XMP contact block a newsroom fills in: these are ways to reach a specific person. */
 const CONTACT_TAGS = ['CiEmailWork', 'CiTelWork', 'CiUrlWork', 'CiAdrExtadr', 'CiAdrCity', 'CiAdrCtry', 'Contact', 'SpecialInstructions'];

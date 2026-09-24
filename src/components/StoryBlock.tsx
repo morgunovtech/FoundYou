@@ -26,11 +26,13 @@ import { FrameChecksCard } from './story/FrameChecksCard';
 import { DATE_FAULT_KEYS, PII_KIND_KEYS, QR_KIND_KEYS } from './story/storyKeys';
 import { timeHeadline } from './story/timeHeadline';
 import { Explainer } from './Explainer';
+import { Claim } from './Claim';
 import { findAuthorship, type AuthorshipKind } from '../utils/authorship';
 import { findWrittenPlace } from '../utils/placeFromMetadata';
 import { usePlaceTimezone } from '../hooks/usePlaceTimezone';
-import { useContainerSignals } from '../hooks/useContainerSignals';
-import { useFrameStats } from '../hooks/useFrameStats';
+import type { JpegSignals } from '../utils/jpegQuant';
+import type { FrameStats } from '../hooks/useFrameStats';
+import type { MessageKey } from '../i18n';
 
 interface StoryBlockProps {
   fileInfo: BasicFileInfo;
@@ -45,10 +47,36 @@ interface StoryBlockProps {
   credentials: ContentCredentialsState;
   qrCodes: QrCode[];
   pii: PiiFinding[];
+  /** JPEG quantization tables and subsampling of the original file; null for other containers. */
+  jpeg: JpegSignals | null;
+  /** Pixel statistics (flat interface colours), read once per file in App. */
+  frame: FrameStats | null;
 }
 
 /** The facts in the order they are shown; people are counted in section 01, the origin card follows these. */
 const FACT_ORDER: ProfileSectionKind[] = ['location', 'time', 'text', 'plates', 'qr', 'documents'];
+
+/**
+ * Where a section's points can be found on the page. Six profile sections render inside one card
+ * («На что сделан снимок»), people are counted in section 01 and the hash lives in the raw table;
+ * a contributor line naming «Люди на фото» sent readers looking for a card that is not there.
+ * `null` means the section's own title is the card's title.
+ */
+const CONTRIBUTOR_KEYS: Partial<Record<ProfileSectionKind, MessageKey>> = {
+  device: 'factOriginTitle',
+  serial: 'factOriginTitle',
+  origin: 'factOriginTitle',
+  editing: 'factOriginTitle',
+  ai: 'factOriginTitle',
+  content: 'factOriginTitle',
+  people: 'leakContribPeople'
+};
+
+const MISSING_KEYS: Record<'date' | 'location' | 'device', MessageKey> = {
+  date: 'leakMissingDate',
+  location: 'leakMissingLocation',
+  device: 'leakMissingDevice'
+};
 
 /**
  * Section 02 — what the photo says about you: one card per fact (where it was taken, when,
@@ -70,14 +98,12 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   ocrProgressLabel,
   credentials,
   qrCodes,
-  pii
+  pii,
+  jpeg
 }) => {
   const t = useT();
   const { lang } = useI18n();
   const geo = useGeoContext(metadata);
-  // Authenticity inputs read once per file: the JPEG tables from the bytes, the flat-pixel share from the pixels.
-  const jpeg = useContainerSignals(fileInfo);
-  const frame = useFrameStats(fileInfo);
   const [rawData, setRawData] = useState(false);
 
   const remote = Boolean(geo.coords);
@@ -147,7 +173,32 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       accuracyLabel={accuracyLabel}
       dayKind={timeProfile?.dayKind}
       hour={timeProfile?.parts.hour}
+      heading={stance?.heading?.degrees ?? null}
+      fieldOfView={stance?.fovDegrees ?? null}
     />
+  );
+
+  /**
+   * The cards that carried points, with their weight, so the number is an arithmetic the reader
+   * can follow — named after the cards on the page, with the origin card's six sections summed.
+   */
+  const leakContributors = useMemo(() => {
+    if (!profile) return '';
+    const totals = new Map<string, number>();
+    for (const section of profile.sections) {
+      if (section.leakPoints <= 0) continue;
+      const key = CONTRIBUTOR_KEYS[section.kind];
+      const label = key ? t(key) : section.title;
+      totals.set(label, (totals.get(label) ?? 0) + section.leakPoints);
+    }
+    return Array.from(totals.entries())
+      .map(([label, points]) => `${label} (+${points})`)
+      .join(', ');
+  }, [profile, t]);
+
+  const leakMissing = useMemo(
+    () => (profile ? profile.missing.map((fact) => t(MISSING_KEYS[fact])).join(', ') : ''),
+    [profile, t]
   );
 
   const stanceRow = stance ? (
@@ -233,8 +284,6 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     <FactRow
       key="author"
       title={t('authorTitle')}
-      // A name or a way to reach someone identifies a person; a licence line on its own does not.
-      severity={authorship.people.length > 0 || authorship.contacts.length > 0 ? 'high' : 'low'}
       value={authorship.people.join(', ') || null}
       sub={null}
     >
@@ -258,7 +307,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   // Only without coordinates: with GPS the location card already answers the question better.
   const writtenPlaceCard =
     writtenPlace && !metadata?.gps ? (
-      <FactRow key="written-place" title={t('writtenPlaceTitle')} severity="medium" value={writtenPlace.line} sub={t('writtenPlaceSub')}>
+      <FactRow key="written-place" title={t('writtenPlaceTitle')} value={writtenPlace.line} sub={t('writtenPlaceSub')}>
         <dl className="fy-spec fy-spec--tight">
           <dt>{t('writtenPlaceTagsLabel')}</dt>
           <dd className="fy-mono">{writtenPlace.tags.join(', ')}</dd>
@@ -278,7 +327,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
       // Text is worth a row even before the profile knows about it (OCR is still running).
       if (kind === 'text' && (ocrLoading || ocrError)) {
         return (
-          <FactRow key={kind} title={t('ocrTitle')} severity="low" value={null} sub={null}>
+          <FactRow key={kind} title={t('ocrTitle')} value={null} sub={null}>
             {textDetails}
           </FactRow>
         );
@@ -304,7 +353,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     const value = kind === 'location' ? null : shotDate ?? section.text;
     const sub = kind === 'location' || shotDate ? null : section.subtext;
     return (
-      <FactRow key={kind} title={section.title} severity={section.severity} value={value} sub={sub}>
+      <FactRow key={kind} title={section.title} value={value} sub={sub}>
         {details}
       </FactRow>
     );
@@ -320,6 +369,27 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
         </p>
       ) : null}
 
+      {profile ? (
+        <div className="fy-card fy-leak" role="group" aria-labelledby="leak-index-title">
+          <div className="fy-leak-head">
+            <span id="leak-index-title" className="fy-leak-title">
+              {t('leakIndexTitle')}
+            </span>
+            <Claim kind="inference" />
+          </div>
+          <p className="fy-leak-value">
+            <span className="fy-mono">{t('leakIndexValue', { score: profile.leakScore })}</span>
+            <span className="fy-leak-level">{profile.leakLevel.label}</span>
+          </p>
+          <p className="fy-hint">{profile.leakLevel.description}</p>
+          {leakContributors ? <p className="fy-hint">{t('leakIndexContributors', { items: leakContributors })}</p> : null}
+          {leakMissing ? <p className="fy-hint">{t('leakIndexMissing', { items: leakMissing })}</p> : null}
+          <Explainer title={t('leakIndexExplainTitle')}>
+            <p>{t('leakIndexExplainBody')}</p>
+          </Explainer>
+        </div>
+      ) : null}
+
       <div className="fy-facts">
         {FACT_ORDER.map((kind) => (kind === 'location' ? [renderFact(kind), writtenPlaceCard, stanceRow] : renderFact(kind)))}
         {authorCard}
@@ -331,8 +401,6 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
             metadata={metadata}
             proData={proData}
             credentials={credentials}
-            jpeg={jpeg}
-            frame={frame}
             stance={stance}
             timeProfile={timeProfile}
           />

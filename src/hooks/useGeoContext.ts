@@ -133,13 +133,17 @@ export function useGeoContext(metadata: StructuredMetadata | null): GeoContext {
   }, [countryCode, holidayDate, holidaysRequest]);
 
   // Landmarks wait for the country, because the Wikipedia edition follows it: half the
-  // monuments and mahallas of Tashkent have no article in the English one.
+  // monuments and mahallas of Tashkent have no article in the English one. «Wait» means until
+  // the reverse geocode has settled either way — it used to fire at once without the country
+  // and again with it, and the first request, although aborted here, had already sent the
+  // Function to the English edition.
+  const reverseSettled = !reverseFetch.loading && (reverseFetch.data !== null || reverseFetch.error !== null);
   useEffect(() => {
-    if (!requestCoords) return;
+    if (!requestCoords || !reverseSettled) return;
     const params = new URLSearchParams({ lat: String(requestCoords.lat), lon: String(requestCoords.lon) });
     if (countryCode) params.set('country', countryCode);
     void landmarksRequest(`/api/landmarks?${params}`);
-  }, [requestCoords, countryCode, landmarksRequest]);
+  }, [requestCoords, reverseSettled, countryCode, landmarksRequest]);
 
   const reverseData = reverseFetch.data ?? null;
   const accuracyMeters = useMemo(() => {

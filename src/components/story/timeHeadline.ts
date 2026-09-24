@@ -17,13 +17,12 @@ export function timeHeadline(tp: TimeProfile, locale: string, t: Translate): str
     new Intl.DateTimeFormat(locale, { ...options, timeZone: 'UTC' }).format(date);
   const dayKind =
     tp.dayKind === 'holiday' ? t('dayHoliday', { names: tp.holidayNames.join(', ') }) : t(DAY_KIND_KEYS[tp.dayKind]);
+  // Three groups rather than one comma list of seven items: the moment (date, weekday, clock),
+  // how long ago, and what kind of day and hour it was.
   const line = [
+    [format({ day: 'numeric', month: 'long', year: 'numeric' }), format({ weekday: 'long' }), tp.wallClock.slice(11, 19)].join(', '),
     t(AGE_KEYS[tp.age.kind], { count: tp.age.value }),
-    format({ day: 'numeric', month: 'long', year: 'numeric' }),
-    format({ weekday: 'long' }),
-    dayKind,
-    t(TIME_OF_DAY_KEYS[tp.timeOfDay]),
-    tp.wallClock.slice(11, 19)
-  ].join(', ');
+    [dayKind, t(TIME_OF_DAY_KEYS[tp.timeOfDay])].join(', ')
+  ].join(' · ');
   return line.charAt(0).toUpperCase() + line.slice(1);
 }

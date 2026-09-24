@@ -55,3 +55,16 @@ describe('isAtThePoint', () => {
     expect(isAtThePoint(null)).toBe(false);
   });
 });
+
+describe('placeTypeLabel and the places people pass through', () => {
+  it('names a station and an airport', () => {
+    // The live answer for a point in central Tashkent on 2026-09-24 was `railway/station`
+    // (the metro), which mapped to nothing and left the row without a type at all.
+    expect(placeTypeLabel({ category: 'railway', type: 'station', addressType: 'railway' })).toEqual({ key: 'placeType_station' });
+    expect(placeTypeLabel({ category: 'public_transport', type: 'stop_position' })).toEqual({ key: 'placeType_station' });
+    expect(placeTypeLabel({ category: 'aeroway', type: 'aerodrome' })).toEqual({ key: 'placeType_aerodrome' });
+    // A station 15 m away is what is here; a road never is.
+    expect(isAtThePoint({ category: 'railway', distanceMeters: 15 })).toBe(true);
+    expect(isAtThePoint({ category: 'highway', distanceMeters: 26 })).toBe(false);
+  });
+});

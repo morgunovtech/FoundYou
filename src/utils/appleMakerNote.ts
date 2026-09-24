@@ -207,10 +207,17 @@ export function parseBinaryPlist(bytes: Uint8Array): PlistValue {
 
   // `seen` guards against reference cycles on the current path only: CoreFoundation shares equal
   // objects (a dict whose `value` and `timescale` are the same integer), so an index may be read
-  // again once its subtree is done.
+  // again once its subtree is done. That sharing is also what makes a path-only guard
+  // insufficient on its own: a chain of arrays each holding its successor twice is read 2^depth
+  // times — measured, 22 levels took 742 ms and 40 levels fit in 250 bytes — so every parse also
+  // has a budget of object reads. A real MakerNote plist (a CMTime dict, a few integers) needs a
+  // handful; a crafted one runs out of budget and reads as no value.
   const seen = new Set<number>();
+  const PLIST_READ_BUDGET = 10_000;
+  let budget = PLIST_READ_BUDGET;
   const readObject = (index: number): PlistValue => {
     if (!Number.isInteger(index) || index < 0 || index >= offsets.length || seen.has(index)) return null;
+    if (--budget < 0) throw new RangeError('bplist: too many object reads');
     seen.add(index);
     try {
       return readObjectAt(offsets[index]);

@@ -41,7 +41,14 @@ export function isPlaceContext(data: unknown): boolean {
   if (!Array.isArray(data.sensitive) || !Array.isArray(data.transport)) return false;
   const isItem = (item: unknown) =>
     isRecord(item) && typeof item.kind === 'string' && typeof item.name === 'string' && isFiniteNumber(item.distance);
-  return data.sensitive.every(isItem) && data.transport.every(isItem);
+  // The card prints `landuse` through its label table, `placeName` as text and `population`
+  // through a number formatter: each is optional, but when present it must be what the card reads.
+  return (
+    data.sensitive.every(isItem) &&
+    data.transport.every(isItem) &&
+    ['landuse', 'placeName', 'placeKind'].every((key) => isOptionalString(data[key])) &&
+    isOptionalNumber(data.population)
+  );
 }
 
 export function isLandmarkList(data: unknown): boolean {
@@ -54,14 +61,32 @@ export function isLandmarkList(data: unknown): boolean {
   );
 }
 
+/**
+ * `address` and `country` are optional: the endpoint no longer invents them for a point Nominatim
+ * cannot geocode. `neighbourhood` and `localName` are rendered as JSX children, so an object in
+ * either would throw inside React and blank the section — which is why they are checked here.
+ */
 export function isReverseGeocode(data: unknown): boolean {
   if (!isRecord(data)) return false;
   if (!isFiniteNumber(data.lat) || !isFiniteNumber(data.lon)) return false;
-  if (typeof data.address !== 'string' || typeof data.country !== 'string') return false;
   return (
-    ['countryCode', 'city', 'state', 'district', 'road', 'houseNumber', 'category', 'type', 'addressType', 'name'].every(
-      (key) => isOptionalString(data[key])
-    ) && ['precisionMeters', 'distanceMeters'].every((key) => isOptionalNumber(data[key]))
+    [
+      'address',
+      'country',
+      'countryCode',
+      'city',
+      'state',
+      'district',
+      'neighbourhood',
+      'localName',
+      'road',
+      'houseNumber',
+      'category',
+      'type',
+      'addressType',
+      'name'
+    ].every((key) => isOptionalString(data[key])) &&
+    ['placeRank', 'buildingLevels', 'precisionMeters', 'distanceMeters'].every((key) => isOptionalNumber(data[key]))
   );
 }
 
