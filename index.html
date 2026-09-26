@@ -63,6 +63,11 @@
       [data-theme="high-contrast"] body.v4-page{font-size:16px}
       .v4-page .skip-link{position:fixed;top:-10rem;left:16px;background:var(--v4-orange);color:var(--v4-on-accent);padding:6px 12px;z-index:100;text-decoration:none;font-size:13px;transition:top .2s}
       .v4-page .skip-link:focus{top:8px}
+      /* Static hero inside #root (see the note there): one language block is shown, the one
+         theme-init.js puts on <html lang>. Specificity beats .fy-hero-text{display:grid} in the
+         bundled stylesheet, which is linked after this block. */
+      .fy-hero .fy-static-hero{display:none}
+      html[lang="ru"] .fy-static-hero[lang="ru"],html[lang="en"] .fy-static-hero[lang="en"],html[lang="uz"] .fy-static-hero[lang="uz"]{display:grid;gap:12px}
     </style>
 
     <!-- Theme before first paint (shared mechanism with morgunov.tech). The
@@ -161,7 +166,55 @@
     </script>
   </head>
   <body class="v4-page no-transition">
-    <div id="root"></div>
+    <div id="root">
+      <!-- Static hero: the copy the React hero renders (src/components/InfoBlock.tsx — appTitle,
+           introLead, introPoint1–4, introAction), one block per language, for a reader that runs
+           no JavaScript: an AI assistant, a text-only crawler, a link unfurler. Without it the
+           whole page was 86 characters of visible text — the <title> — and TofsDevOps reported
+           «ИИ-ассистенты и часть роботов видят пустую страницу». React clears the container on
+           mount and renders the live hero in its place; theme-init.js has already set <html lang>,
+           and the critical CSS above shows only the block in that language.
+           src/__tests__/i18n/staticHero.test.ts pins the three blocks to the dictionary. -->
+      <div class="v4-root">
+        <main class="fy-main">
+          <div class="fy-hero">
+            <section class="fy-hero-text fy-static-hero" lang="ru">
+              <h1 class="fy-h1">Проверьте фото перед тем, как делиться им</h1>
+              <p class="fy-tagline">Без вашего ведома фото может рассказать о том, где, когда и на что оно было снято.</p>
+              <ul class="fy-intro-list">
+                <li>Сервис наглядно показывает, что снимок может рассказать о вас, включая местоположение, погоду и даже то, где вы стояли и как держали телефон в момент съёмки.</li>
+                <li>В один клик удалите метаданные, скройте лица и текст и измените отпечаток картинки, по которому находят копии.</li>
+                <li>Автоматически скрывайте лица, тексты и номера машин.</li>
+                <li>Узнайте историю файла и найдите метки AI-генераторов и редакторов там, где они их оставляют.</li>
+              </ul>
+              <p class="fy-tagline fy-intro-action">Фотография остаётся в вашем браузере и не передаётся в сторонние сервисы. Использование бесплатно и без ограничений.</p>
+            </section>
+            <section class="fy-hero-text fy-static-hero" lang="en">
+              <h1 class="fy-h1">Check your photo before sharing it</h1>
+              <p class="fy-tagline">Without your knowledge, a photo can tell where, when and on which device it was taken.</p>
+              <ul class="fy-intro-list">
+                <li>The service shows what a photo can reveal about you: your location, the weather, even where you stood and how you held the phone at the moment of the shot.</li>
+                <li>Remove the metadata, hide faces and text and change the picture fingerprint copies are found by, in one click.</li>
+                <li>Hide faces, text and licence plates automatically.</li>
+                <li>See the file’s history and find the marks AI generators and editors leave, where they leave them.</li>
+              </ul>
+              <p class="fy-tagline fy-intro-action">The photo stays in your browser and is never sent to third-party services. Free to use, with no limits.</p>
+            </section>
+            <section class="fy-hero-text fy-static-hero" lang="uz">
+              <h1 class="fy-h1">Fotoni ulashishdan oldin tekshiring</h1>
+              <p class="fy-tagline">Siz bilmagan holda foto qayerda, qachon va qaysi qurilmada olinganini oshkor qilishi mumkin.</p>
+              <ul class="fy-intro-list">
+                <li>Xizmat surat siz haqingizda nimani aytishi mumkinligini ko‘rsatadi: joylashuv, ob-havo va hatto suratga olish paytida qayerda turganingiz va telefonni qanday ushlaganingiz.</li>
+                <li>Bir bosishda metadatani o‘chiring, yuz va matnni yashiring va nusxalar topiladigan rasm izini o‘zgartiring.</li>
+                <li>Yuzlar, matn va avtomobil raqamlarini avtomatik yashiring.</li>
+                <li>Fayl tarixini bilib oling va AI-generatorlar hamda tahrirlovchilar qoldiradigan belgilarni toping.</li>
+              </ul>
+              <p class="fy-tagline fy-intro-action">Foto brauzeringizda qoladi va uchinchi tomon xizmatlariga yuborilmaydi. Foydalanish bepul va cheklovsiz.</p>
+            </section>
+          </div>
+        </main>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
