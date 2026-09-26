@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- The page Cloudflare Pages serves, with a 404 status, for any path that is not an asset.
+         Second Vite entry (vite.config.ts): the DS links below are stamped at build like index.html's.
+         Without a dist/404.html Pages answers every path with index.html and 200 — the SPA fallback —
+         which a crawler reads as a site where every address exists (TofsDevOps: soft 404). The app has
+         no client routes, only #sec-* anchors, so nothing needs that fallback. -->
+    <title>Страница не найдена — Found You</title>
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" media="(prefers-color-scheme: light)" />
+    <link rel="icon" href="/favicon-dark.svg" type="image/svg+xml" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#edeae5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#14130f" media="(prefers-color-scheme: dark)" />
+
+    <!-- The same critical subset index.html inlines, so the first paint is themed. -->
+    <style>
+      :root{--v4-bg:#edeae5;--v4-paper:#f5f2ed;--v4-fg:#14110d;--v4-muted:#5a554c;--v4-dim:#6c6759;--v4-line:#c9c5bd;--v4-line-soft:#d8d4cc;--v4-orange:#d9531e;--v4-orange-text:#b03e10;--v4-on-accent:#14110d;--v4-on-fg:#f5f2ed;--v4-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;--v4-sans:"IBM Plex Sans",ui-sans-serif,-apple-system,"Segoe UI",sans-serif;--v4-label-size:11px;--v4-label-tracking:.1em;--v4-label-xs-size:10px;--v4-label-xs-tracking:.12em;--v4-label-weight:500;color-scheme:light dark}
+      [data-theme="dark"]{--v4-bg:#14130f;--v4-paper:#1c1a16;--v4-fg:#ece7dd;--v4-muted:#b8b0a2;--v4-dim:#8a8378;--v4-line:#3a3530;--v4-line-soft:#2a2620;--v4-orange:#ff6a2e;--v4-orange-text:#ff6a2e;--v4-on-accent:#14130f;--v4-on-fg:#14130f;color-scheme:dark}
+      [data-theme="high-contrast"]{--v4-bg:#000;--v4-paper:#0a0a0a;--v4-fg:#fff;--v4-muted:#f1eee7;--v4-dim:#d6d0c8;--v4-line:#fff;--v4-line-soft:#c8c8c8;--v4-orange:#ffd166;--v4-orange-text:#ffd166;--v4-on-accent:#000;--v4-on-fg:#000;color-scheme:dark}
+      *,*::before,*::after{box-sizing:border-box}
+      body{margin:0}
+      body.v4-page{background:var(--v4-bg);color:var(--v4-fg);font-family:var(--v4-sans);font-size:14px;line-height:1.55;letter-spacing:-0.005em}
+      [data-theme="high-contrast"] body.v4-page{font-size:16px}
+    </style>
+
+    <script src="/theme-init.js"></script>
+
+    <link rel="stylesheet" href="/ds/v1/fonts.css?v=dev" />
+    <link rel="stylesheet" href="/ds/v1/tokens.css?v=dev" />
+    <link rel="stylesheet" href="/ds/v1/base.css?v=dev" />
+    <link rel="stylesheet" href="/ds/v1/components.css?v=dev" />
+
+    <style>
+      .v4-root{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
+      .fy-404-brand{font-family:var(--v4-mono);font-size:var(--v4-label-size);letter-spacing:var(--v4-label-tracking);font-weight:var(--v4-label-weight);text-transform:uppercase;text-decoration:none;color:var(--v4-fg)}
+      .fy-404{flex:1 0 auto;padding:48px 16px 64px;max-width:640px}
+      .fy-404-code{font-family:var(--v4-mono);font-size:var(--v4-label-size);letter-spacing:var(--v4-label-tracking);text-transform:uppercase;color:var(--v4-dim);margin:0 0 12px}
+      .fy-404 h1{font-size:clamp(28px,4vw,40px);line-height:1.1;letter-spacing:-0.02em;font-weight:600;margin:0 0 16px}
+      .fy-404 p{font-size:17px;line-height:1.45;max-width:52ch;margin:0 0 24px;color:var(--v4-fg)}
+      /* One language block: the one theme-init.js put on <html lang>, ru when it did not run. */
+      .fy-404 .fy-404-text{display:none}
+      html[lang="ru"] .fy-404-text[lang="ru"],html[lang="en"] .fy-404-text[lang="en"],html[lang="uz"] .fy-404-text[lang="uz"]{display:block}
+    </style>
+  </head>
+  <body class="v4-page">
+    <div class="v4-root">
+      <header class="v4-bar">
+        <a class="fy-404-brand" href="/">Found You</a>
+      </header>
+      <main class="fy-404">
+        <p class="fy-404-code">404</p>
+        <section class="fy-404-text" lang="ru">
+          <h1>Такой страницы нет</h1>
+          <p>Found You — одна страница, и она по адресу <a href="/">foundyou.morgunov.tech</a>. Проверьте адрес или начните с главной.</p>
+          <a class="v4-btn v4-btn-primary" href="/">На главную</a>
+        </section>
+        <section class="fy-404-text" lang="en">
+          <h1>There is no such page</h1>
+          <p>Found You is a single page at <a href="/">foundyou.morgunov.tech</a>. Check the address or start from the home page.</p>
+          <a class="v4-btn v4-btn-primary" href="/">Home</a>
+        </section>
+        <section class="fy-404-text" lang="uz">
+          <h1>Bunday sahifa yo‘q</h1>
+          <p>Found You — bitta sahifa: <a href="/">foundyou.morgunov.tech</a>. Manzilni tekshiring yoki bosh sahifadan boshlang.</p>
+          <a class="v4-btn v4-btn-primary" href="/">Bosh sahifa</a>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

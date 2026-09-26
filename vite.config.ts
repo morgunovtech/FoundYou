@@ -28,7 +28,7 @@ function buildId(): string {
 
 /**
  * The design-system stylesheets live in public/ds/v1 and are linked from
- * index.html with `?v=dev`. At build time the stamp becomes a content hash
+ * index.html and 404.html with `?v=dev`. At build time the stamp becomes a content hash
  * (`src/build/dsVersionStamp.ts`, tested there), so a DS update busts the
  * cache while unchanged files keep theirs. A stylesheet index.html links but
  * public/ds/v1 does not hold fails the build rather than shipping `?v=dev`.
@@ -138,7 +138,17 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: 'hidden'
+    sourcemap: 'hidden',
+    // Two HTML entries: the app and 404.html, which Cloudflare Pages serves with a 404 status for
+    // any path that is not an asset. Without a dist/404.html Pages answers every path with
+    // index.html and 200 (the SPA fallback), which a crawler reads as a site where every address
+    // exists. Both entries go through dsVersionStamp.
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        notFound: path.resolve(__dirname, '404.html')
+      }
+    }
   },
   test: {
     include: ['src/**/__tests__/**/*.test.{ts,tsx}', 'src/**/*.test.{ts,tsx}'],
