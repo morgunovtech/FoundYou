@@ -1805,7 +1805,7 @@ export const messages = {
     poiCategory_shelter: 'shelter',
     poiCategory_other: 'Other: {category}',
     // --- Static site copy (src/site/siteContent.ts): the sections under the upload zone, the page meta, the footer version line ---
-    siteMetaTitle: 'Found You — check and remove photo metadata (EXIF, GPS) in your browser',
+    siteMetaTitle: 'Found You — check & remove photo metadata (EXIF, GPS) in your browser',
     siteMetaDescription: 'See what a photo reveals about you — location, time, device, faces, text — and download a cleaned copy. The file never leaves your browser. Free.',
     siteOgTitle: 'Found You — check a photo before you share it',
     siteOgImageAlt: 'Found You — photo metadata analyzer, everything in the browser',
@@ -2738,7 +2738,7 @@ export const messages = {
     poiCategory_shelter: 'boshpana',
     poiCategory_other: 'Boshqa: {category}',
     // --- Static site copy (src/site/siteContent.ts): the sections under the upload zone, the page meta, the footer version line ---
-    siteMetaTitle: 'Found You — foto metadatasini (EXIF, GPS) brauzerda tekshirish va tozalash',
+    siteMetaTitle: 'Found You — foto metadatasini (EXIF, GPS) tekshirish va tozalash',
     siteMetaDescription: 'Foto siz haqingizda nimani oshkor qilishini ko‘rsatadi — joy, vaqt, qurilma, yuzlar, matn — va tozalangan nusxa beradi. Fayl brauzerdan chiqmaydi. Bepul.',
     siteOgTitle: 'Found You — fotoni ulashishdan oldin tekshiring',
     siteOgImageAlt: 'Found You — foto metadatasi tahlili, hammasi brauzerda',

@@ -62,7 +62,8 @@ describe('the three language pages', () => {
       it('carries the title and description of its dictionary, at lengths a result page shows', () => {
         expect(html).toContain(`<title>${escapeHtml(dict.siteMetaTitle)}</title>`);
         expect(html).toContain(`<meta name="description" content="${escapeHtml(dict.siteMetaDescription)}" />`);
-        expect(dict.siteMetaTitle.length).toBeLessThanOrEqual(75);
+        // 70 is the upper bound the site monitor (TofsDevOps, title_len) accepts without a remark.
+        expect(dict.siteMetaTitle.length).toBeLessThanOrEqual(70);
         expect(dict.siteMetaDescription.length).toBeGreaterThanOrEqual(50);
         expect(dict.siteMetaDescription.length).toBeLessThanOrEqual(160);
       });
