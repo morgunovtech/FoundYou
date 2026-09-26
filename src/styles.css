@@ -1551,3 +1551,107 @@
   display: grid;
   gap: 12px;
 }
+
+/* --- Site copy: what the service reads, how it works, presets, geotags, questions
+   (src/site/siteContent.ts; the same markup is rendered statically for crawlers) --- */
+
+.fy-site {
+  max-width: 720px;
+}
+
+.fy-site-lead {
+  margin: 0 0 16px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.fy-site-terms {
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.fy-site-terms > div {
+  display: grid;
+  gap: 4px;
+}
+
+.fy-site-terms dt {
+  font-weight: 600;
+}
+
+.fy-site-terms dd {
+  margin: 0;
+  color: var(--v4-muted);
+  line-height: 1.5;
+}
+
+.fy-site-steps,
+.fy-site-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 10px;
+  line-height: 1.5;
+}
+
+.fy-site-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.fy-site-table th,
+.fy-site-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 10px 12px 10px 0;
+  border-bottom: 1px solid var(--v4-line-soft);
+}
+
+.fy-site-table thead th {
+  font-family: var(--v4-mono);
+  font-size: var(--v4-label-size);
+  letter-spacing: var(--v4-label-tracking);
+  text-transform: uppercase;
+  font-weight: var(--v4-label-weight);
+  color: var(--v4-muted);
+  border-bottom: 1px solid var(--v4-fg);
+}
+
+.fy-site-table tbody th {
+  font-weight: 500;
+  width: 34%;
+}
+
+.fy-site-qa + .fy-site-qa {
+  margin-top: 18px;
+}
+
+.fy-site-q {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+}
+
+.fy-site-qa p,
+.fy-site > p {
+  margin: 0;
+  line-height: 1.5;
+  max-width: 60ch;
+}
+
+.fy-site > p + p {
+  margin-top: 10px;
+}
+
+@media (max-width: 640px) {
+  /* Three columns do not fit a phone: the table scrolls sideways inside its section. */
+  .fy-site-table {
+    display: block;
+    overflow-x: auto;
+  }
+}

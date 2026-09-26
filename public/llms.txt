@@ -38,6 +38,13 @@ Russian, English, Uzbek; the first visit follows the browser's language list, th
 
 React, TypeScript, Vite, MediaPipe Tasks Vision (FaceDetector + ObjectDetector), Tesseract.js, c2pa (Content Credentials), exifr, libheif-js, MapLibre GL. Hosted on Cloudflare Pages with Pages Functions. Source repository: https://github.com/morgunovtech/meta-data
 
+## Pages
+
+- [Русский](https://foundyou.morgunov.tech/): the service in Russian (the default page)
+- [English](https://foundyou.morgunov.tech/en/): the service in English
+- [Oʻzbekcha](https://foundyou.morgunov.tech/uz/): the service in Uzbek
+- [Full reference](https://foundyou.morgunov.tech/llms-full.txt): every explanation the interface shows — what each fact means, the two cleanup presets, geotags per device, the questions — in one file
+
 ## URL
 
 https://foundyou.morgunov.tech/

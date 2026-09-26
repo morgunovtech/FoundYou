@@ -1,37 +1,15 @@
 <!DOCTYPE html>
-<html lang="ru" id="html-root">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <!-- Primary SEO -->
-    <title>Found You — проверьте фото перед тем, как делиться | Check a photo before you share it</title>
-    <meta name="description" content="Бесплатный онлайн-инструмент для анализа и удаления метаданных из фотографий. Извлекает EXIF, GPS, данные камеры, распознаёт текст (OCR), находит людей и объекты. Фото не покидает браузер; контекст места — по округлённым координатам, с уведомлением о том, что именно отправлено." />
-    <meta name="keywords" content="метаданные фото, EXIF, удалить геолокацию, анализ фотографий, приватность, OCR, распознавание текста, размытие лиц, metadata, photo privacy, remove EXIF" />
+    <!-- The locale-dependent head — title, description, canonical, hreflang, Open Graph, Twitter,
+         JSON-LD — is rendered here from the dictionary for each of the three pages (/, /en/, /uz/)
+         by localePages() in vite.config.ts (src/site/renderStatic.ts); the marker must stay. -->
+    <!-- fy:head -->
     <meta name="robots" content="index, follow" />
     <meta name="author" content="Morgunov Tech" />
-    <link rel="canonical" href="https://foundyou.morgunov.tech/" />
-
-    <!-- Open Graph -->
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://foundyou.morgunov.tech/" />
-    <meta property="og:title" content="Found You — проверьте фото перед тем, как делиться" />
-    <meta property="og:description" content="Бесплатный инструмент для анализа и удаления метаданных из фотографий. EXIF, GPS, OCR, детекция людей — фото не покидает браузер; контекст места по округлённым координатам." />
-    <meta property="og:image" content="https://foundyou.morgunov.tech/images/og-card-ru.png" />
-    <meta property="og:image:type" content="image/png" />
-    <meta property="og:image:width" content="1200" />
-    <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Found You — анализ метаданных фото, всё в браузере" />
-    <meta property="og:locale" content="ru_RU" />
-    <meta property="og:locale:alternate" content="en_US" />
-    <meta property="og:site_name" content="Found You" />
-
-    <!-- Twitter Card -->
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Found You — check a photo before you share it" />
-    <meta name="twitter:description" content="Free browser-based tool to analyze and remove photo metadata. EXIF, GPS, OCR, people detection — the photo never leaves your browser; place context from rounded coordinates only, and the page says exactly what was sent." />
-    <meta name="twitter:image" content="https://foundyou.morgunov.tech/images/og-card-en.png" />
-    <meta name="twitter:image:alt" content="Found You — photo metadata analyzer, everything in the browser" />
 
     <!-- Mobile & PWA -->
     <meta name="theme-color" content="#edeae5" media="(prefers-color-scheme: light)" />
@@ -63,11 +41,6 @@
       [data-theme="high-contrast"] body.v4-page{font-size:16px}
       .v4-page .skip-link{position:fixed;top:-10rem;left:16px;background:var(--v4-orange);color:var(--v4-on-accent);padding:6px 12px;z-index:100;text-decoration:none;font-size:13px;transition:top .2s}
       .v4-page .skip-link:focus{top:8px}
-      /* Static hero inside #root (see the note there): one language block is shown, the one
-         theme-init.js puts on <html lang>. Specificity beats .fy-hero-text{display:grid} in the
-         bundled stylesheet, which is linked after this block. */
-      .fy-hero .fy-static-hero{display:none}
-      html[lang="ru"] .fy-static-hero[lang="ru"],html[lang="en"] .fy-static-hero[lang="en"],html[lang="uz"] .fy-static-hero[lang="uz"]{display:grid;gap:12px}
     </style>
 
     <!-- Theme before first paint (shared mechanism with morgunov.tech). The
@@ -91,129 +64,15 @@
     <link rel="stylesheet" href="/ds/v1/base.css?v=dev" />
     <link rel="stylesheet" href="/ds/v1/components.css?v=dev" />
 
-    <!-- Structured Data: WebApplication (Schema.org) -->
-    <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "WebApplication",
-      "name": "Found You",
-      "alternateName": "Meta Data Insight",
-      "url": "https://foundyou.morgunov.tech/",
-      "image": "https://foundyou.morgunov.tech/images/og-card-en.png",
-      "description": "Free privacy-focused tool to analyze and remove metadata from photos. Extracts EXIF, GPS and camera info, performs OCR and detects people and objects. The photo never leaves your browser; place context is looked up from rounded coordinates only and is disclosed next to the result.",
-      "applicationCategory": "UtilitiesApplication",
-      "operatingSystem": "Any (browser-based)",
-      "browserRequirements": "Requires JavaScript and WebAssembly",
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "USD"
-      },
-      "featureList": [
-        "EXIF/XMP/IPTC/ICC metadata extraction",
-        "GPS location visualization on map",
-        "Face and object detection with blurring",
-        "OCR text recognition (Russian + English)",
-        "Metadata removal and photo cleanup",
-        "Anti-reverse-image-search protection",
-        "PRNU fingerprint removal",
-        "HEIC/HEIF format support",
-        "Photo processed locally — never uploaded; place context from rounded coordinates, disclosed next to the result",
-        "Verified cleanup: the exported file is re-parsed and shown to contain 0 metadata fields"
-      ],
-      "inLanguage": ["ru", "en", "uz"],
-      "creator": {
-        "@type": "Organization",
-        "name": "Morgunov Tech",
-        "url": "https://s.morgunov.tech"
-      },
-      "datePublished": "2024-06-01"
-    }
-    </script>
-
-    <!-- Structured Data: FAQPage for rich snippets -->
-    <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "FAQPage",
-      "mainEntity": [
-        {
-          "@type": "Question",
-          "name": "Безопасно ли загружать фото в Found You?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Да. Фотография обрабатывается локально в вашем браузере и никогда не отправляется на сервер: извлечение метаданных, OCR, детекция людей и объектов, размытие и очистка происходят на вашем устройстве. Единственное исключение — контекст места: если в фото есть GPS-координаты, на наш сервер автоматически уходят только округлённые координаты (точность около 11 м), дата и время съёмки и код страны, чтобы показать адрес, погоду, праздники, рельеф и объекты поблизости. Под результатом написано, что именно отправлено. Само фото не отправляется и в этом случае."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Какие метаданные можно извлечь из фотографии?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Found You извлекает EXIF (камера, дата, настройки съёмки), GPS-координаты, XMP, IPTC (авторские права, описания), ICC (цветовой профиль), а для PNG — текстовые чанки, включая prompt AI-генераторов. Также распознаёт текст на фото (OCR) и обнаруживает людей и объекты."
-          }
-        },
-        {
-          "@type": "Question",
-          "name": "Is Found You free to use?",
-          "acceptedAnswer": {
-            "@type": "Answer",
-            "text": "Yes, Found You is completely free. It works in your browser with no registration and no uploads; files up to 50 MB and 120 megapixels (60 on iPhone and iPad) are supported. All processing is done locally on your device; when a photo carries GPS, place context is looked up from rounded coordinates only and disclosed next to the result."
-          }
-        }
-      ]
-    }
-    </script>
   </head>
   <body class="v4-page no-transition">
     <div id="root">
-      <!-- Static hero: the copy the React hero renders (src/components/InfoBlock.tsx — appTitle,
-           introLead, introPoint1–4, introAction), one block per language, for a reader that runs
-           no JavaScript: an AI assistant, a text-only crawler, a link unfurler. Without it the
-           whole page was 86 characters of visible text — the <title> — and TofsDevOps reported
-           «ИИ-ассистенты и часть роботов видят пустую страницу». React clears the container on
-           mount and renders the live hero in its place; theme-init.js has already set <html lang>,
-           and the critical CSS above shows only the block in that language.
-           src/__tests__/i18n/staticHero.test.ts pins the three blocks to the dictionary. -->
-      <div class="v4-root">
-        <main class="fy-main">
-          <div class="fy-hero">
-            <section class="fy-hero-text fy-static-hero" lang="ru">
-              <h1 class="fy-h1">Проверьте фото перед тем, как делиться им</h1>
-              <p class="fy-tagline">Без вашего ведома фото может рассказать о том, где, когда и на что оно было снято.</p>
-              <ul class="fy-intro-list">
-                <li>Сервис наглядно показывает, что снимок может рассказать о вас, включая местоположение, погоду и даже то, где вы стояли и как держали телефон в момент съёмки.</li>
-                <li>В один клик удалите метаданные, скройте лица и текст и измените отпечаток картинки, по которому находят копии.</li>
-                <li>Автоматически скрывайте лица, тексты и номера машин.</li>
-                <li>Узнайте историю файла и найдите метки AI-генераторов и редакторов там, где они их оставляют.</li>
-              </ul>
-              <p class="fy-tagline fy-intro-action">Фотография остаётся в вашем браузере и не передаётся в сторонние сервисы. Использование бесплатно и без ограничений.</p>
-            </section>
-            <section class="fy-hero-text fy-static-hero" lang="en">
-              <h1 class="fy-h1">Check your photo before sharing it</h1>
-              <p class="fy-tagline">Without your knowledge, a photo can tell where, when and on which device it was taken.</p>
-              <ul class="fy-intro-list">
-                <li>The service shows what a photo can reveal about you: your location, the weather, even where you stood and how you held the phone at the moment of the shot.</li>
-                <li>Remove the metadata, hide faces and text and change the picture fingerprint copies are found by, in one click.</li>
-                <li>Hide faces, text and licence plates automatically.</li>
-                <li>See the file’s history and find the marks AI generators and editors leave, where they leave them.</li>
-              </ul>
-              <p class="fy-tagline fy-intro-action">The photo stays in your browser and is never sent to third-party services. Free to use, with no limits.</p>
-            </section>
-            <section class="fy-hero-text fy-static-hero" lang="uz">
-              <h1 class="fy-h1">Fotoni ulashishdan oldin tekshiring</h1>
-              <p class="fy-tagline">Siz bilmagan holda foto qayerda, qachon va qaysi qurilmada olinganini oshkor qilishi mumkin.</p>
-              <ul class="fy-intro-list">
-                <li>Xizmat surat siz haqingizda nimani aytishi mumkinligini ko‘rsatadi: joylashuv, ob-havo va hatto suratga olish paytida qayerda turganingiz va telefonni qanday ushlaganingiz.</li>
-                <li>Bir bosishda metadatani o‘chiring, yuz va matnni yashiring va nusxalar topiladigan rasm izini o‘zgartiring.</li>
-                <li>Yuzlar, matn va avtomobil raqamlarini avtomatik yashiring.</li>
-                <li>Fayl tarixini bilib oling va AI-generatorlar hamda tahrirlovchilar qoldiradigan belgilarni toping.</li>
-              </ul>
-              <p class="fy-tagline fy-intro-action">Foto brauzeringizda qoladi va uchinchi tomon xizmatlariga yuborilmaydi. Foydalanish bepul va cheklovsiz.</p>
-            </section>
-          </div>
-        </main>
-      </div>
+      <!-- The static copy of the page for a reader that runs no JavaScript — an AI assistant, a
+           text-only crawler, a link unfurler: the hero, the site copy, the «how to check» block
+           and the footer, in this page's language, rendered from the dictionary at build time
+           (src/site/renderStatic.ts). React clears the container on mount and renders the same
+           copy from the same model. src/__tests__/site/localePages.test.ts pins it. -->
+      <!-- fy:static -->
     </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

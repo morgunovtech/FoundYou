@@ -12,6 +12,7 @@ import { SiteFooter } from './components/SiteFooter';
 import { UploadZone } from './components/UploadZone';
 import { StickyActions } from './components/StickyActions';
 import { VerifyBlock } from './components/VerifyBlock';
+import { SiteContent } from './components/SiteContent';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useImageFile, type FileErrorCode, type FileWarningCode } from './hooks/useImageFile';
 import { useExifMetadata } from './hooks/useExifMetadata';
@@ -277,31 +278,20 @@ interface CleanExport {
   platformCapped: boolean;
 }
 
-const SEO_DESCRIPTIONS: Record<string, string> = {
-  ru: 'Бесплатный онлайн-инструмент для анализа и удаления метаданных из фотографий. EXIF, GPS, OCR, поиск людей и объектов. Фото не покидает браузер; контекст места — только по округлённым координатам, с раскрытием под результатом.',
-  en: 'Free browser-based tool to analyze and remove photo metadata. EXIF, GPS, OCR, people and object detection. The photo never leaves your browser; place context from rounded coordinates only, disclosed next to the result.',
-  uz: "Fotosuratlar metama'lumotlarini tahlil qilish va olib tashlash uchun bepul vosita. EXIF, GPS, OCR, odamlar va obyektlarni aniqlash. Surat brauzerdan chiqmaydi; joy konteksti faqat yaxlitlangan koordinatalar asosida va natija ostida ochiq ko‘rsatiladi.",
-};
-
-// «Анализ метаданных» sold a third of the product: the pixels, the place and the cleanup are the rest.
-const SEO_TITLES: Record<string, string> = {
-  ru: 'Found You — проверьте фото перед тем, как делиться',
-  en: 'Found You — check a photo before you share it',
-  uz: 'Found You — fotoni ulashishdan oldin tekshiring',
-};
-
 const App: React.FC = () => {
   const t = useT();
   const { lang } = useI18n();
 
-  // Update document title and meta description on language change
+  // The title and description a search engine reads from the rendered page must be the ones the
+  // static page carries (src/site/renderStatic.ts): the same two dictionary keys, so an in-place
+  // language switch keeps the tab and the meta in step with the copy.
   useEffect(() => {
-    document.title = SEO_TITLES[lang] ?? SEO_TITLES.ru;
+    document.title = t('siteMetaTitle');
     const metaDesc = document.querySelector('meta[name="description"]');
     if (metaDesc) {
-      metaDesc.setAttribute('content', SEO_DESCRIPTIONS[lang] ?? SEO_DESCRIPTIONS.ru);
+      metaDesc.setAttribute('content', t('siteMetaDescription'));
     }
-  }, [lang]);
+  }, [t]);
   const reducedMotion = usePrefersReducedMotion();
   /** «Open the picker» of the drop zone, for the sticky «new photo» button. */
   const pickerRef = useRef<(() => void) | null>(null);
@@ -1306,6 +1296,7 @@ const App: React.FC = () => {
               {notice.message}
             </p>
           ) : null}
+          <SiteContent />
           <VerifyBlock />
         </main>
         <StickyActions photoLoaded={Boolean(fileInfo)} onNewPhoto={() => pickerRef.current?.()} />
