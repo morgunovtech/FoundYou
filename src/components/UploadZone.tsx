@@ -174,23 +174,14 @@ export const UploadZone: React.FC<UploadZoneProps> = ({ loading, onFile, error, 
             if (event.target) event.target.value = '';
           }}
         />
-        <label
-          className="fy-drop-label"
-          htmlFor={uploadInputId}
-          role="button"
-          tabIndex={0}
-          aria-labelledby={`${uploadInputId}-label`}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              openPicker();
-            }
-          }}
-        >
-          {/* The button's own text is its name; without this the label read the two hints below as well. */}
-          <span id={`${uploadInputId}-label`} className="v4-btn v4-btn-primary" aria-live="polite">
+        {/* A real button carries the name and the keyboard; the label around it makes the hints
+            clickable too (a click on interactive content inside a label does not activate the
+            label, so the picker opens once). A label with role="button" was flagged by every
+            accessibility audit: the role is not allowed there, and its name did not match its text. */}
+        <label className="fy-drop-label" htmlFor={uploadInputId}>
+          <button type="button" className="v4-btn v4-btn-primary" onClick={openPicker} disabled={loading} aria-live="polite">
             {loading ? t('uploading') : t('uploadButton')}
-          </span>
+          </button>
           <p className="fy-drop-hint">{t('orDrop')}</p>
           <p className="fy-drop-meta">{t('uploadFormats', { limit: MAX_FILE_SIZE_MB })}</p>
         </label>

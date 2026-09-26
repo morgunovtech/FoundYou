@@ -1,7 +1,6 @@
 import React from 'react';
 import { useT } from '../i18n';
-
-const REPO_URL = 'https://github.com/morgunovtech/meta-data';
+import { REPO_URL } from '../site/siteContent';
 
 /**
  * «How to check that the photo goes nowhere» — the target of the trust link under the upload
