@@ -102,7 +102,7 @@ npm run build       # prepare:assets + typecheck + vite build
 Интерфейс построен на дизайн-системе morgunov.tech v1 (источник — репозиторий `about-me-page`, каталог `ds/v1`). Слой вендорится в репозиторий, а не подключается по ссылке:
 
 - `public/ds/v1/{fonts,tokens,base,components}.css` — копии файлов DS; `USAGE.md` рядом описывает контракт.
-- `public/fonts/*.woff2` — IBM Plex Sans и Mono (латиница и кириллица).
+- `public/fonts/*.woff2` — IBM Plex Sans и Mono (латиница и кириллица). Шрифты © IBM Corp. под SIL Open Font License 1.1 — текст в `public/fonts/OFL.txt`; MIT из `LICENSE` на них не распространяется.
 - `src/styles.css` — только страничные стили Found You с префиксом `.fy-`, поверх токенов `--v4-*`.
 
 Синхронизация с источником — копирование файлов из `about-me-page/ds/v1` и `about-me-page/fonts`. Хеши `?v=` для ссылок на DS в `index.html` проставляются при сборке (плагин `dsVersionStamp` в `vite.config.ts`), править их руками не нужно.
