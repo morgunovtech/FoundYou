@@ -12,7 +12,7 @@ import { formatMessage, type Language, type MessageKey } from '../i18n/messages.
  * dictionary held ~5 100 words of explanation that rendered only after a photo was loaded.
  */
 export const SITE_ORIGIN = 'https://foundyou.morgunov.tech';
-export const REPO_URL = 'https://github.com/morgunovtech/meta-data';
+export const REPO_URL = 'https://github.com/morgunovtech/FoundYou';
 export const AUTHOR_URL = 'https://s.morgunov.tech';
 
 export interface SiteTerm {

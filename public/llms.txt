@@ -36,7 +36,7 @@ Russian, English, Uzbek; the first visit follows the browser's language list, th
 
 ## Technology
 
-React, TypeScript, Vite, MediaPipe Tasks Vision (FaceDetector + ObjectDetector), Tesseract.js, c2pa (Content Credentials), exifr, libheif-js, MapLibre GL. Hosted on Cloudflare Pages with Pages Functions. Source repository: https://github.com/morgunovtech/meta-data
+React, TypeScript, Vite, MediaPipe Tasks Vision (FaceDetector + ObjectDetector), Tesseract.js, c2pa (Content Credentials), exifr, libheif-js, MapLibre GL. Hosted on Cloudflare Pages with Pages Functions. Source repository: https://github.com/morgunovtech/FoundYou
 
 ## Pages
 
