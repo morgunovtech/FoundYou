@@ -1,0 +1,27 @@
+# Auto-merge Dependabot PRs for minor/patch updates once CI passes (ported
+# from Tofs_DevOps_bot). Safe only because main is protected with the
+# "lint · typecheck · test · build" and "browser smoke" checks required —
+# without that rule `--auto` merges immediately, before CI runs. Requires
+# Settings → General → "Allow auto-merge". Majors stay for a human.
+name: Dependabot auto-merge
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
