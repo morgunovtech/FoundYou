@@ -32,3 +32,10 @@
 
 /images/*
   Cache-Control: public, max-age=604800
+
+# meta-data-2o8.pages.dev is Cloudflare's technical host for the Pages project
+# (`exifcleaner`); the published address is https://foundyou.morgunov.tech, so
+# search engines are told not to index the technical one. Preview deployments
+# (<hash>.meta-data-2o8.pages.dev) already get noindex from Cloudflare.
+https://:project.pages.dev/*
+  X-Robots-Tag: noindex
