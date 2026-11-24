@@ -107,6 +107,12 @@ describe('the three language pages', () => {
         expect(app.softwareVersion).toBe(build.version);
         expect(app.inLanguage).toBe(lang);
         expect(app.isAccessibleForFree).toBe(true);
+        // The author is the Person of s.morgunov.tech's own JSON-LD: the same @id joins the two.
+        const author = app.author as Record<string, unknown>;
+        expect(author['@type']).toBe('Person');
+        expect(author['@id']).toBe('https://s.morgunov.tech/#person');
+        expect(author.url).toBe('https://s.morgunov.tech/');
+        expect(author.name).toBe(lang === 'ru' ? 'Семён Моргунов' : 'Semyon Morgunov');
         expect(byType('WebSite')).toBeTruthy();
         expect(byType('Organization')).toBeTruthy();
       });
