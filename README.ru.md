@@ -2,7 +2,7 @@
 
 Веб-приложение для тех, кто собирается поделиться фотографией: оно показывает, что снимок выдаёт о месте, времени, устройстве и людях в кадре, и делает очищенную копию, никуда не загружая файл.
 
-**Сайт:** https://foundyou.morgunov.tech · **Лицензия:** [MIT](LICENSE) · **English version:** [README.md](README.md)
+**Сайт:** https://foundyou.morgunov.tech · **Лицензия:** [MIT](LICENSE) (код; про образец фото и карточки — [`NOTICE`](NOTICE)) · **English version:** [README.md](README.md)
 
 ## Что умеет
 
@@ -131,6 +131,9 @@ Cloudflare Pages собирает и выкладывает `main` через и
 - Проект Cloudflare Pages (`exifcleaner` в адресах проверки «Cloudflare Pages»; интеграция с Git собирает `main`) с собственным доменом `foundyou.morgunov.tech` — DNS-запись в зоне morgunov.tech, которая живёт в Cloudflare. Технический адрес проекта `meta-data-2o8.pages.dev` продолжает отвечать, а `public/_headers` отдаёт на нём `X-Robots-Tag: noindex`, чтобы поисковики индексировали только опубликованный адрес. Снос: убрать домен и удалить проект в панели Cloudflare.
 - На GitHub: защита ветки `main` с двумя обязательными проверками (`lint · typecheck · test · build` и `browser smoke`), «Allow auto-merge» (им пользуется workflow Dependabot: `gh pr merge --auto`) и Dependabot (`.github/dependabot.yml`).
 - Ключей API нет: все апстримы (Nominatim, Open-Meteo, Overpass, Nager.Date, Википедия, тайл-сервер OSM) работают без ключей. Общий `User-Agent` в `functions/api/_geo.ts` несёт адрес сайта и контактный e-mail, как требует политика Nominatim; при смене контакта его нужно обновить.
+- **Яндекс Вебмастер:** сайт добавлен и подтверждён мета-тегом `yandex-verification` в `index.html` (сам по себе тег ничего не создаёт). Снос: удалить сайт в Яндекс Вебмастере.
+- **Google Search Console и Bing Webmaster Tools:** в Search Console — ресурс с префиксом URL `https://foundyou.morgunov.tech/`, подтверждённый через доменный ресурс `morgunov.tech` (поэтому на странице нет тега `google-site-verification`); в Bing Webmaster Tools сайт импортирован из Search Console. Снос: удалить ресурс в Search Console и сайт в Bing Webmaster Tools.
+- **Мониторинг:** за `foundyou.morgunov.tech` следит TofsDevOps — собственный бот владельца (доступность, домен и сертификат, заголовки, поисковый индекс). Настраивается в боте, не в этом репозитории. Снос: убрать сайт там.
 
 ## Что почитать
 

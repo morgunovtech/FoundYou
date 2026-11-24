@@ -1,8 +1,9 @@
 /**
  * The design-system stylesheets live in public/ds/v1 and are linked from index.html with
  * `?v=dev`. At build time the stamp becomes a content hash (the first 8 hex characters of
- * the file's MD5, mirroring the source repo's scripts/version-stamp.py), so a DS update busts
- * the cache while unchanged files keep theirs.
+ * the file's MD5 — the same idea as the source repo's scripts/version-stamp.py, which uses
+ * sha1; the value only busts the local cache, so the algorithms need not match), so a DS
+ * update busts the cache while unchanged files keep theirs.
  *
  * Pure: `readFile` is handed in by `vite.config.ts` (bound to the ds dir) so the rewrite can
  * be tested without a filesystem. A reference whose file cannot be read is an error, not a
