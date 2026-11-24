@@ -55,11 +55,12 @@ function useIsNarrow(): boolean {
 }
 
 /**
- * Three fixed buttons in the bottom-right corner on the design system's `.v4-scroll-top`
- * pattern: «Наверх» (the DS arrow) and, once a photo is loaded, «К очистке» (a downward arrow
- * to section 03) and «Загрузить новое фото» (a picture-plus pictogram that opens the drop
- * zone's file picker). All appear after the first screen has been scrolled past, stay out of
- * the Tab order until then (the DS class toggles visibility) and disappear in print.
+ * Three fixed buttons in the bottom-right corner, `.fy-scroll-top` in styles.css (the design
+ * system's former `.v4-scroll-top`, kept here since DS v1 dropped its scroll chrome): «Наверх»
+ * (the arrow) and, once a photo is loaded, «К очистке» (a downward arrow to section 03) and
+ * «Загрузить новое фото» (a picture-plus pictogram that opens the drop zone's file picker). All
+ * appear after the first screen has been scrolled past, stay out of the Tab order until then
+ * (the class toggles visibility) and disappear in print.
  *
  * «К очистке» is navigation, not a call to action: the facts section runs long, and section 03
  * is otherwise several screens of scrolling away. It moves the viewport and nothing else.
@@ -92,7 +93,7 @@ export const StickyActions: React.FC<StickyActionsProps> = ({ photoLoaded, onNew
       {photoLoaded ? (
         <button
           type="button"
-          className={`v4-scroll-top fy-sticky-new${visible}`}
+          className={`fy-scroll-top fy-sticky-new${visible}`}
           onClick={onNewPhoto}
           aria-label={t('newPhotoLabel')}
           title={t('newPhotoLabel')}
@@ -116,7 +117,7 @@ export const StickyActions: React.FC<StickyActionsProps> = ({ photoLoaded, onNew
       {photoLoaded ? (
         <button
           type="button"
-          className={`v4-scroll-top fy-sticky-cleanup${visible}`}
+          className={`fy-scroll-top fy-sticky-cleanup${visible}`}
           onClick={toCleanup}
           aria-label={t('toCleanupLabel')}
           title={t('toCleanupLabel')}
@@ -126,7 +127,7 @@ export const StickyActions: React.FC<StickyActionsProps> = ({ photoLoaded, onNew
       ) : null}
       <button
         type="button"
-        className={`v4-scroll-top${visible}`}
+        className={`fy-scroll-top${visible}`}
         onClick={() => window.scrollTo({ top: 0, behavior: reducedMotion ? 'auto' : 'smooth' })}
         aria-label={t('scrollTopLabel')}
         title={t('scrollTopLabel')}

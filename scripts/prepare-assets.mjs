@@ -5,7 +5,7 @@
  *
  *   public/ocr/                tesseract.js worker + tesseract.js-core wasm builds
  *   public/ocr/lang/           rus / eng traineddata (LSTM "4.0.0_best_int" variant)
- *   public/mediapipe/wasm/     @mediapipe/tasks-vision runtime (SIMD and no-SIMD loader + wasm)
+ *   public/mediapipe/wasm/     @mediapipe/tasks-vision runtime (loader + wasm; the no-SIMD pair while the package ships one)
  *   public/zxing/              zxing-wasm reader (Aztec, PDF417, DataMatrix, Code 128 …)
  *   public/mediapipe/models/   BlazeFace short-range (faces) + EfficientDet-Lite2 (COCO objects)
  *
@@ -97,16 +97,19 @@ const INCLUDE_RAW_WASM = process.env.PREPARE_ASSETS_RAW_WASM === '1';
 
 /**
  * `FilesetResolver.forVisionTasks(basePath)` (node_modules/@mediapipe/tasks-vision/vision_bundle.mjs)
- * requests `${basePath}/vision_wasm_internal.js` + `.wasm`, or the `_nosimd_` pair when the
- * browser lacks WebAssembly SIMD. The `vision_wasm_module_*` builds are only used with the
- * `useModule = true` argument, which src/hooks/useImageAnalysis.ts never passes.
+ * requests `${basePath}/vision_wasm_internal.js` + `.wasm`. The `vision_wasm_module_*` builds are
+ * only used with the `useModule = true` argument, which src/hooks/useImageAnalysis.ts never passes.
  */
-const MEDIAPIPE_WASM_FILES = [
-  'vision_wasm_internal.js',
-  'vision_wasm_internal.wasm',
-  'vision_wasm_nosimd_internal.js',
-  'vision_wasm_nosimd_internal.wasm'
-];
+const MEDIAPIPE_WASM_FILES = ['vision_wasm_internal.js', 'vision_wasm_internal.wasm'];
+
+/**
+ * Up to 1.2.0 the resolver probed for WebAssembly SIMD and asked for this pair on a browser
+ * without it. 1.2.3 dropped both the probe and the pair from the package (every current engine has
+ * SIMD; Safari since 16.4), so there the SIMD build is the only one and a browser without SIMD
+ * ends in «detection unavailable». The pair is copied when the installed package ships it and
+ * skipped when it does not; half a pair is a broken install and fails.
+ */
+const MEDIAPIPE_WASM_NOSIMD_FILES = ['vision_wasm_nosimd_internal.js', 'vision_wasm_nosimd_internal.wasm'];
 
 /**
  * Model files from the MediaPipe model bucket, pinned to version directory `1` (byte-identical
@@ -277,7 +280,19 @@ async function prepareTesseract(summary) {
 
 async function prepareMediaPipe(summary) {
   const wasmSrcDir = path.join(NODE_MODULES, '@mediapipe', 'tasks-vision', 'wasm');
-  for (const f of MEDIAPIPE_WASM_FILES) {
+  const nosimdPresent = await Promise.all(
+    MEDIAPIPE_WASM_NOSIMD_FILES.map(async (f) => (await fileStat(path.join(wasmSrcDir, f))) !== null)
+  );
+  const shipsNoSimd = nosimdPresent.every(Boolean);
+  if (!shipsNoSimd && nosimdPresent.some(Boolean)) {
+    const missing = MEDIAPIPE_WASM_NOSIMD_FILES.filter((_, i) => !nosimdPresent[i]).map((f) => rel(path.join(wasmSrcDir, f)));
+    throw new Error(`Missing source ${missing.join(', ')} — run \`npm install\` first`);
+  }
+  if (!shipsNoSimd) {
+    console.log(`[prepare-assets] @mediapipe/tasks-vision ${versions.mediapipe} ships no no-SIMD runtime; SIMD build only`);
+  }
+  const wasmFiles = shipsNoSimd ? [...MEDIAPIPE_WASM_FILES, ...MEDIAPIPE_WASM_NOSIMD_FILES] : MEDIAPIPE_WASM_FILES;
+  for (const f of wasmFiles) {
     await copyIfNeeded(path.join(wasmSrcDir, f), path.join(MEDIAPIPE_WASM_DIR, f), summary);
   }
   await Promise.all(

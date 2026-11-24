@@ -16,7 +16,11 @@ import { rotateCanvas, unrotateBox, unrotatePoint, type Quarter } from '../utils
 
 /* ── self-hosted MediaPipe assets (see scripts/prepare-assets.mjs) ── */
 
-/** Directory with `vision_wasm[_nosimd]_internal.{js,wasm}`; FilesetResolver picks the SIMD variant itself. */
+/**
+ * Directory with `vision_wasm_internal.{js,wasm}`, which FilesetResolver names itself. Up to
+ * tasks-vision 1.2.0 it also held the `_nosimd_` pair the resolver chose on a browser without
+ * WebAssembly SIMD; from 1.2.3 the package ships the SIMD build only (see prepare-assets).
+ */
 const WASM_BASE_PATH = `${MEDIAPIPE_BASE}/wasm`;
 /*
  * Two BlazeFace models, because each is blind to the other's case. Measured on a five-person

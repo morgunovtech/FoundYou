@@ -11,7 +11,7 @@ linking these files — no npm, no package install.
 | `tokens.css` | colour + type tokens (`--v4-*`) for 4 themes | **the brand source of truth** |
 | `fonts.css` | `@font-face` for IBM Plex Sans + Mono | yes |
 | `base.css` | reset, body/type defaults, `.sr-only`, `.skip-link` | yes |
-| `components.css` | top bar, language switch, theme switcher, buttons (`.v4-btn`), section heads, lists, prose, footer, scroll chrome, focus ring, `.v4-root` shell | yes |
+| `components.css` | top bar, language switch, theme switcher, buttons (`.v4-btn`), section heads, lists, prose, footer, focus ring, `.v4-root` shell | yes |
 
 **Not** in the layer (page-specific to s.morgunov.tech, do not expect them):
 hero, stats strip, career/ventures tables, product/use cards, /collaborate
@@ -40,12 +40,12 @@ Paste into any service's `<head>`. Load order matters:
 <link rel="preload" href="https://s.morgunov.tech/ds/v1/fonts.css?v=64eea157" as="style" onload="this.onload=null;this.rel='stylesheet'" />
 <link rel="preload" href="https://s.morgunov.tech/ds/v1/tokens.css?v=fa7fc139" as="style" onload="this.onload=null;this.rel='stylesheet'" />
 <link rel="preload" href="https://s.morgunov.tech/ds/v1/base.css?v=0e404315" as="style" onload="this.onload=null;this.rel='stylesheet'" />
-<link rel="preload" href="https://s.morgunov.tech/ds/v1/components.css?v=434c30e7" as="style" onload="this.onload=null;this.rel='stylesheet'" />
+<link rel="preload" href="https://s.morgunov.tech/ds/v1/components.css?v=f7d07a70" as="style" onload="this.onload=null;this.rel='stylesheet'" />
 <noscript>
   <link rel="stylesheet" href="https://s.morgunov.tech/ds/v1/fonts.css?v=64eea157" />
   <link rel="stylesheet" href="https://s.morgunov.tech/ds/v1/tokens.css?v=fa7fc139" />
   <link rel="stylesheet" href="https://s.morgunov.tech/ds/v1/base.css?v=0e404315" />
-  <link rel="stylesheet" href="https://s.morgunov.tech/ds/v1/components.css?v=434c30e7" />
+  <link rel="stylesheet" href="https://s.morgunov.tech/ds/v1/components.css?v=f7d07a70" />
 </noscript>
 ```
 
