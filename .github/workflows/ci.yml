@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Started by ds-sync.yml after it pushes the sync branch: a push made with
+  # GITHUB_TOKEN starts no run by itself.
+  workflow_dispatch:
 
 # A read-only token for every job: nothing here pushes, comments or publishes.
 permissions:
@@ -29,6 +32,10 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      # The vendored design system (public/ds/v1, public/fonts, the critical token
+      # lines) hashes as ds.json says; a hand edit of a copy fails here.
+      - run: node scripts/ds-sync.mjs --check
 
       - run: npm run lint
 

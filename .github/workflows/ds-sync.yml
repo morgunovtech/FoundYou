@@ -1,0 +1,63 @@
+# Dependabot for the design system. Once a week (and on demand) the vendored
+# copy of the morgunov.tech design system — public/ds/v1, public/fonts, the
+# critical token lines in index.html and 404.html — is fetched again from
+# https://s.morgunov.tech (scripts/ds-sync.mjs --write, the manifest is
+# ds.json). When anything changed, the run pushes the branch `ds-sync` (its
+# own branch: a force-push replaces a stale unmerged sync) and opens one PR.
+# A human merges it: the page changes its look. CI checks the copy on every
+# PR (ds-sync.mjs --check), so a hand edit of a vendored file fails the build.
+#
+# Prerequisites, either one:
+#   - the repository setting «Allow GitHub Actions to create and approve pull
+#     requests» (Settings → Actions → General → Workflow permissions), with
+#     the default GITHUB_TOKEN; a push made with it starts no CI run by
+#     itself, which is why the last step dispatches ci.yml on the branch;
+#   - or a fine-grained PAT in the DS_SYNC_TOKEN secret (this repository,
+#     contents + pull requests: write): then CI also starts on its own.
+name: DS sync
+
+on:
+  schedule:
+    - cron: '40 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  sync:
+    name: sync the vendored design system
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+
+      # The script has no dependencies: no npm ci.
+      - id: sync
+        run: |
+          node scripts/ds-sync.mjs --write | tee "$RUNNER_TEMP/sync.log"
+          echo "summary=$(tail -n 1 "$RUNNER_TEMP/sync.log" | sed 's/^summary: //')" >> "$GITHUB_OUTPUT"
+
+      - if: steps.sync.outputs.summary != 'no change'
+        env:
+          GH_TOKEN: ${{ secrets.DS_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+          SUMMARY: ${{ steps.sync.outputs.summary }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B ds-sync
+          git add -A
+          git commit -m "DS sync: $SUMMARY"
+          git push --force origin ds-sync
+          if [ -z "$(gh pr list --head ds-sync --state open --json number --jq '.[0].number')" ]; then
+            gh pr create --base main --head ds-sync --title "DS sync: $SUMMARY" \
+              --body "The vendored morgunov.tech design system, synced from https://s.morgunov.tech by .github/workflows/ds-sync.yml: $SUMMARY. A human merges it: the page changes its look."
+          fi
+          # A push made with GITHUB_TOKEN starts no workflow: ask for the run.
+          gh workflow run ci.yml --ref ds-sync

@@ -76,7 +76,7 @@ The image, the file name and the rest of the metadata are not sent.
 - **In the browser:** `exifr` (metadata), `libheif-js` (HEIC), `@mediapipe/tasks-vision` (faces and objects), `tesseract.js` (OCR), `c2pa` (Content Credentials), `jsqr` and `zxing-wasm` (codes), `maplibre-gl` (map), `@photostructure/tz-lookup` (time zone of the place).
 - **Server side:** Cloudflare Pages Functions in TypeScript (`functions/api/`), sharing helpers in `functions/api/_geo.ts` and one Overpass query in `functions/api/_overpass.ts`. Only `/api/*` is routed to Functions (`public/_routes.json`).
 - **Quality:** Vitest, ESLint, Prettier, a browser smoke test on `playwright-core`. GitHub Actions runs lint, typecheck, tests, build and the smoke test on every pull request and push to `main`.
-- **Design:** the morgunov.tech v1 design system, vendored into `public/ds/v1/`. Fonts are IBM Plex Sans and Mono (© IBM Corp.) under the SIL Open Font License 1.1 (`public/fonts/OFL.txt`); the MIT license does not cover them.
+- **Design:** the morgunov.tech v1 design system, vendored into `public/ds/v1/` and synced from https://s.morgunov.tech automatically (`ds.json` lists every file with its hash, `scripts/ds-sync.mjs --check` runs in CI, `.github/workflows/ds-sync.yml` opens a PR once a week when the origin changed). Fonts are IBM Plex Sans and Mono (© IBM Corp.) under the SIL Open Font License 1.1 (`public/fonts/OFL.txt`); the MIT license does not cover them.
 
 ```
 src/            the app: App.tsx, components/, hooks/, utils/ (analysis and cleanup), i18n/,
