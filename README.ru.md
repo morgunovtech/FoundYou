@@ -76,7 +76,7 @@
 - **В браузере:** `exifr` (метаданные), `libheif-js` (HEIC), `@mediapipe/tasks-vision` (лица и объекты), `tesseract.js` (OCR), `c2pa` (Content Credentials), `jsqr` и `zxing-wasm` (коды), `maplibre-gl` (карта), `@photostructure/tz-lookup` (часовой пояс места).
 - **Серверная часть:** Cloudflare Pages Functions на TypeScript (`functions/api/`) с общими помощниками в `functions/api/_geo.ts` и одним запросом Overpass в `functions/api/_overpass.ts`. На Functions направляется только `/api/*` (`public/_routes.json`).
 - **Качество:** Vitest, ESLint, Prettier, браузерный smoke-тест на `playwright-core`. GitHub Actions запускает линтер, проверку типов, тесты, сборку и smoke-тест на каждый пул-реквест и пуш в `main`.
-- **Дизайн:** дизайн-система morgunov.tech v1, скопированная в `public/ds/v1/`. Шрифты — IBM Plex Sans и Mono (© IBM Corp.) под SIL Open Font License 1.1 (`public/fonts/OFL.txt`); лицензия MIT на них не распространяется.
+- **Дизайн:** дизайн-система morgunov.tech v1, скопированная в `public/ds/v1/` и синхронизируемая с https://s.morgunov.tech автоматически (`ds.json` перечисляет каждый файл с его хешем, `scripts/ds-sync.mjs --check` работает в CI, `.github/workflows/ds-sync.yml` раз в неделю открывает PR, когда источник изменился). Шрифты — IBM Plex Sans и Mono (© IBM Corp.) под SIL Open Font License 1.1 (`public/fonts/OFL.txt`); лицензия MIT на них не распространяется.
 
 ```
 src/            приложение: App.tsx, components/, hooks/, utils/ (анализ и очистка), i18n/,
