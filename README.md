@@ -128,7 +128,7 @@ The build needs internet access: `prepare:assets` downloads the MediaPipe models
 
 ## What it creates outside the repo
 
-- A Cloudflare Pages project (`exifcleaner` in the «Cloudflare Pages» check URLs; the Git integration builds `main`) with the custom domain `foundyou.morgunov.tech` — a DNS record in the morgunov.tech zone, which is on Cloudflare. Teardown: remove the custom domain and delete the project in the Cloudflare dashboard.
+- A Cloudflare Pages project (`exifcleaner` in the «Cloudflare Pages» check URLs; the Git integration builds `main`) with the custom domain `foundyou.morgunov.tech` — a DNS record in the morgunov.tech zone, which is on Cloudflare. The project's technical host `meta-data-2o8.pages.dev` keeps answering, and `public/_headers` sends `X-Robots-Tag: noindex` there so search engines index the published address only. Teardown: remove the custom domain and delete the project in the Cloudflare dashboard.
 - On GitHub: branch protection on `main` with two required checks (`lint · typecheck · test · build` and `browser smoke`), «Allow auto-merge» (the Dependabot workflow calls `gh pr merge --auto`) and Dependabot (`.github/dependabot.yml`).
 - No API keys anywhere: every upstream (Nominatim, Open-Meteo, Overpass, Nager.Date, Wikipedia, the OSM tile server) is keyless. The shared `User-Agent` in `functions/api/_geo.ts` carries the site's address and a contact e-mail, as Nominatim's usage policy requires; update it if the contact changes.
 

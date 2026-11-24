@@ -128,7 +128,7 @@ Cloudflare Pages собирает и выкладывает `main` через и
 
 ## Что проект создаёт снаружи
 
-- Проект Cloudflare Pages (`exifcleaner` в адресах проверки «Cloudflare Pages»; интеграция с Git собирает `main`) с собственным доменом `foundyou.morgunov.tech` — DNS-запись в зоне morgunov.tech, которая живёт в Cloudflare. Снос: убрать домен и удалить проект в панели Cloudflare.
+- Проект Cloudflare Pages (`exifcleaner` в адресах проверки «Cloudflare Pages»; интеграция с Git собирает `main`) с собственным доменом `foundyou.morgunov.tech` — DNS-запись в зоне morgunov.tech, которая живёт в Cloudflare. Технический адрес проекта `meta-data-2o8.pages.dev` продолжает отвечать, а `public/_headers` отдаёт на нём `X-Robots-Tag: noindex`, чтобы поисковики индексировали только опубликованный адрес. Снос: убрать домен и удалить проект в панели Cloudflare.
 - На GitHub: защита ветки `main` с двумя обязательными проверками (`lint · typecheck · test · build` и `browser smoke`), «Allow auto-merge» (им пользуется workflow Dependabot: `gh pr merge --auto`) и Dependabot (`.github/dependabot.yml`).
 - Ключей API нет: все апстримы (Nominatim, Open-Meteo, Overpass, Nager.Date, Википедия, тайл-сервер OSM) работают без ключей. Общий `User-Agent` в `functions/api/_geo.ts` несёт адрес сайта и контактный e-mail, как требует политика Nominatim; при смене контакта его нужно обновить.
 
