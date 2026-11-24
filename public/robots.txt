@@ -1,31 +1,41 @@
 # Found You — Photo Metadata Analyzer
 # https://foundyou.morgunov.tech/
 
+# Content signals: search and AI answers may use this site; see https://contentsignals.org
 User-agent: *
 Allow: /
+Content-Signal: search=yes, ai-input=yes
 Sitemap: https://foundyou.morgunov.tech/sitemap.xml
 
 # AI / Agentic Search crawlers — explicitly allowed
 User-agent: GPTBot
 Allow: /
+Content-Signal: search=yes, ai-input=yes
 
 User-agent: ChatGPT-User
 Allow: /
+Content-Signal: search=yes, ai-input=yes
 
 User-agent: Google-Extended
 Allow: /
+Content-Signal: search=yes, ai-input=yes
 
 User-agent: PerplexityBot
 Allow: /
+Content-Signal: search=yes, ai-input=yes
 
 User-agent: ClaudeBot
 Allow: /
+Content-Signal: search=yes, ai-input=yes
 
 User-agent: Applebot-Extended
 Allow: /
+Content-Signal: search=yes, ai-input=yes
 
 User-agent: Bytespider
 Allow: /
+Content-Signal: search=yes, ai-input=yes
 
 User-agent: cohere-ai
 Allow: /
+Content-Signal: search=yes, ai-input=yes

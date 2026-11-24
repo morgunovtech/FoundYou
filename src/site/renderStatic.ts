@@ -31,6 +31,22 @@ export const OG_IMAGE: Record<Language, string> = {
 
 export const OG_LOCALE: Record<Language, string> = { ru: 'ru_RU', en: 'en_US', uz: 'uz_UZ' };
 
+/**
+ * The author as his own site declares him (the `Person` node of the JSON-LD on s.morgunov.tech):
+ * the same `@id` and `url`, so a search engine joins the two; the name in the Russian page's
+ * script there, in the English one's elsewhere (the Uzbek page is Latin-script too).
+ */
+export function authorPerson(lang: Language): Record<string, string> {
+  const ru = lang === 'ru';
+  return {
+    '@type': 'Person',
+    '@id': `${AUTHOR_URL}/#person`,
+    name: ru ? 'Семён Моргунов' : 'Semyon Morgunov',
+    alternateName: ru ? 'Semyon Morgunov' : 'Семён Моргунов',
+    url: `${AUTHOR_URL}/`
+  };
+}
+
 export function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -91,6 +107,7 @@ export function structuredData(lang: Language, build: BuildInfo): Record<string,
         inLanguage: lang,
         featureList: (what?.terms ?? []).map((item) => `${item.term} — ${item.text}`),
         creator: { '@id': organisationId },
+        author: authorPerson(lang),
         isPartOf: { '@id': `${url}#website` }
       },
       {
