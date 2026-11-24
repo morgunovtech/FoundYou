@@ -2,7 +2,7 @@
 
 A web app for anyone about to share a photo: it shows what the picture gives away about place, time, device and the people in it, and makes a cleaned copy without uploading the file anywhere.
 
-**Live:** https://foundyou.morgunov.tech · **License:** [MIT](LICENSE) · **Русская версия:** [README.ru.md](README.ru.md)
+**Live:** https://foundyou.morgunov.tech · **License:** [MIT](LICENSE) (code; see [`NOTICE`](NOTICE) for the sample photo and the cards) · **Русская версия:** [README.ru.md](README.ru.md)
 
 ## What it does
 
@@ -131,6 +131,9 @@ The build needs internet access: `prepare:assets` downloads the MediaPipe models
 - A Cloudflare Pages project (`exifcleaner` in the «Cloudflare Pages» check URLs; the Git integration builds `main`) with the custom domain `foundyou.morgunov.tech` — a DNS record in the morgunov.tech zone, which is on Cloudflare. The project's technical host `meta-data-2o8.pages.dev` keeps answering, and `public/_headers` sends `X-Robots-Tag: noindex` there so search engines index the published address only. Teardown: remove the custom domain and delete the project in the Cloudflare dashboard.
 - On GitHub: branch protection on `main` with two required checks (`lint · typecheck · test · build` and `browser smoke`), «Allow auto-merge» (the Dependabot workflow calls `gh pr merge --auto`) and Dependabot (`.github/dependabot.yml`).
 - No API keys anywhere: every upstream (Nominatim, Open-Meteo, Overpass, Nager.Date, Wikipedia, the OSM tile server) is keyless. The shared `User-Agent` in `functions/api/_geo.ts` carries the site's address and a contact e-mail, as Nominatim's usage policy requires; update it if the contact changes.
+- **Yandex Webmaster:** the site is added and verified by the `yandex-verification` meta tag in `index.html` (the tag by itself creates nothing). Teardown: remove the site in Yandex Webmaster.
+- **Google Search Console and Bing Webmaster Tools:** a URL-prefix property `https://foundyou.morgunov.tech/` in Search Console, verified through the `morgunov.tech` domain property (which is why the page carries no `google-site-verification` tag); Bing Webmaster Tools has the site imported from Search Console. Teardown: delete the property in Search Console and the site in Bing Webmaster Tools.
+- **Monitoring:** TofsDevOps, the owner's own bot, watches `foundyou.morgunov.tech` (availability, domain and certificate, headers, search index). It is configured in the bot, not in this repository. Teardown: remove the site there.
 
 ## Further reading
 

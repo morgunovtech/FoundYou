@@ -1,0 +1,15 @@
+Personal content notice
+
+Note: the MIT licence (LICENSE) covers the source code and the morgunov.tech
+design system vendored into public/ds/v1/. The design system is © Semyon
+Morgunov, MIT, copied from https://github.com/morgunovtech/about-me-page —
+this line is the attribution its MIT notice asks for.
+
+Personal content — the sample photograph public/images/demo.jpg (the author's
+own photo: a person and a dog) and the link-preview cards
+public/images/og-card-ru.png and public/images/og-card-en.png — is © 2026
+Semyon Morgunov, all rights reserved. Re-use of personal content requires
+written permission.
+
+The IBM Plex fonts in public/fonts/ are © IBM Corp. under the SIL Open Font
+License 1.1 — see public/fonts/OFL.txt.
