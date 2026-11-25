@@ -13,6 +13,8 @@ import { formatMessage, type Language, type MessageKey } from '../i18n/messages.
  */
 export const SITE_ORIGIN = 'https://foundyou.morgunov.tech';
 export const REPO_URL = 'https://github.com/morgunovtech/FoundYou';
+/** Where the footer's build mark leads: the history of versions (ds/v1/USAGE.md, «Build mark»). */
+export const CHANGELOG_URL = `${REPO_URL}/blob/main/CHANGELOG.md`;
 export const AUTHOR_URL = 'https://s.morgunov.tech';
 
 export interface SiteTerm {

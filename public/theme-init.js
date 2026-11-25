@@ -45,4 +45,14 @@
     if (!l) l = bases.length > 0 ? 'en' : 'ru';
   }
   d.lang = l;
+  // A language link followed as a plain link — the bar before the app has mounted, the bar of
+  // the 404 page, which has no app — is a choice like any other: remember it, or the rule above
+  // sends a reader with «English» saved straight back from / to /en/.
+  document.addEventListener('click', function (event) {
+    var target = event.target;
+    var link = target && target.closest ? target.closest('a.v4-lang-link[hreflang]') : null;
+    var chosen = link ? link.getAttribute('hreflang') : null;
+    if (chosen !== 'ru' && chosen !== 'en' && chosen !== 'uz') return;
+    try { localStorage.setItem('meta-data-lang', chosen); } catch (e) { /* storage unavailable */ }
+  });
 })();

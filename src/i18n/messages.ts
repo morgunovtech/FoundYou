@@ -752,7 +752,6 @@ export const messages = {
     credIngredients: 'Исходников',
     credValid: 'Подпись проверена',
     credInvalid: 'Подпись не прошла проверку: {codes}',
-    footerBuild: 'сборка',
     footerPrivacy: 'Файлы не покидают браузер · без cookies и трекеров',
     resolutionOriginal: 'Оригинал',
     resolutionMessenger: 'Мессенджер (1280px)',
@@ -938,9 +937,8 @@ export const messages = {
     siteFaq6Q: 'Это бесплатно и есть ли ограничения?',
     siteFaq6A: 'Бесплатно, без регистрации и без ограничения на число файлов. Один файл — до 50 МБ и 120 мегапикселей (60 на iPhone и iPad); форматы JPEG, PNG, WebP, HEIC, AVIF, GIF, BMP.',
     siteAboutTitle: 'Кто это сделал',
-    siteAboutText: 'Found You делает Morgunov Tech. Сервис вырос из простого вопроса: что фотография, отправленная коллеге или выложенная в объявлении, рассказывает о человеке без его ведома. Код распространяется под лицензией MIT; версия и дата сборки — внизу страницы.',
-    siteAboutLink: 'Другие проекты автора',
-    footerVersion: 'версия {version} от {date}'
+    siteAboutText: 'Found You делает Morgunov Tech. Сервис вырос из простого вопроса: что фотография, отправленная коллеге или выложенная в объявлении, рассказывает о человеке без его ведома. Код распространяется под лицензией MIT; версия — внизу страницы, по ней открывается история изменений.',
+    siteAboutLink: 'Другие проекты автора'
   },
   en: {
     appTitle: 'Check your photo before sharing it',
@@ -1355,7 +1353,7 @@ export const messages = {
     themeDark: 'Dark',
     themeAuto: 'Auto',
     themeHighContrast: 'High contrast',
-    themeMenuLabel: 'Switch theme',
+    themeMenuLabel: 'Change colour theme',
     langMenuLabel: 'change language',
     skipToContent: 'Skip to main content',
     uploading: 'Loading…',
@@ -1684,7 +1682,6 @@ export const messages = {
     credIngredients: 'Ingredients',
     credValid: 'Signature verified',
     credInvalid: 'Signature failed validation: {codes}',
-    footerBuild: 'build',
     footerPrivacy: 'Files never leave the browser · no cookies, no trackers',
     resolutionOriginal: 'Original',
     resolutionMessenger: 'Messenger (1280px)',
@@ -1870,9 +1867,8 @@ export const messages = {
     siteFaq6Q: 'Is it free, and are there limits?',
     siteFaq6A: 'Free, with no account and no limit on the number of files. One file: up to 50 MB and 120 megapixels (60 on iPhone and iPad); formats JPEG, PNG, WebP, HEIC, AVIF, GIF, BMP.',
     siteAboutTitle: 'Who made this',
-    siteAboutText: 'Found You is made by Morgunov Tech. The service grew out of a simple question: what does a photo sent to a colleague or posted in a listing say about a person without their knowledge. The code is released under the MIT licence; the version and build date are at the bottom of the page.',
-    siteAboutLink: 'More of the author’s projects',
-    footerVersion: 'version {version}, {date}'
+    siteAboutText: 'Found You is made by Morgunov Tech. The service grew out of a simple question: what does a photo sent to a colleague or posted in a listing say about a person without their knowledge. The code is released under the MIT licence; the version is at the bottom of the page and opens the history of changes.',
+    siteAboutLink: 'More of the author’s projects'
   },
   uz: {
     appTitle: 'Fotoni ulashishdan oldin tekshiring',
@@ -2617,7 +2613,6 @@ export const messages = {
     credIngredients: 'Manbalar',
     credValid: 'Imzo tasdiqlandi',
     credInvalid: 'Imzo tekshiruvdan o‘tmadi: {codes}',
-    footerBuild: 'yig‘ma',
     footerPrivacy: 'Fayllar brauzerdan chiqmaydi · cookie va trekerlarsiz',
     resolutionOriginal: 'Asl',
     resolutionMessenger: 'Messenjer (1280px)',
@@ -2803,9 +2798,8 @@ export const messages = {
     siteFaq6Q: 'Bu bepulmi va cheklovlar bormi?',
     siteFaq6A: 'Bepul, ro‘yxatdan o‘tishsiz va fayllar soni cheklanmagan. Bitta fayl — 50 MB va 120 megapikselgacha (iPhone va iPad’da 60); formatlar: JPEG, PNG, WebP, HEIC, AVIF, GIF, BMP.',
     siteAboutTitle: 'Buni kim yaratgan',
-    siteAboutText: 'Found You’ni Morgunov Tech yaratadi. Xizmat oddiy savoldan o‘sib chiqqan: hamkasbga yuborilgan yoki e’longa qo‘yilgan foto odam haqida uning xabarisiz nimalarni aytib beradi. Kod MIT litsenziyasi ostida tarqatiladi; versiya va yig‘ma sanasi — sahifaning pastida.',
-    siteAboutLink: 'Muallifning boshqa loyihalari',
-    footerVersion: 'versiya {version}, {date}'
+    siteAboutText: 'Found You’ni Morgunov Tech yaratadi. Xizmat oddiy savoldan o‘sib chiqqan: hamkasbga yuborilgan yoki e’longa qo‘yilgan foto odam haqida uning xabarisiz nimalarni aytib beradi. Kod MIT litsenziyasi ostida tarqatiladi; versiya — sahifaning pastida, uni bossangiz o‘zgarishlar tarixi ochiladi.',
+    siteAboutLink: 'Muallifning boshqa loyihalari'
   }
 };
 

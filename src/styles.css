@@ -30,45 +30,6 @@
   flex: 1 0 auto;
 }
 
-/* Brand slot in the top bar. Same metrics as .v4-bar-mid but never
-   collapses into the mobile «Menu» panel — two links always fit. */
-.fy-brand {
-  display: flex;
-  align-items: center;
-  gap: 6px 22px;
-  flex-wrap: wrap;
-  color: var(--v4-muted);
-  min-width: 0;
-}
-
-.fy-brand a {
-  color: inherit;
-  text-decoration: none;
-  padding: 8px 4px;
-  white-space: nowrap;
-  transition: color 0.15s ease;
-}
-
-.fy-brand a[aria-current="page"] {
-  color: var(--v4-fg);
-}
-
-.fy-brand a:hover,
-.fy-brand a:focus-visible {
-  color: var(--v4-fg);
-  text-decoration: underline;
-  text-decoration-color: var(--v4-orange);
-  text-underline-offset: 4px;
-}
-
-/* Language menu: three items, current one checked. Markup mirrors the
-   theme menu so both panels open identical rows. */
-.fy-lang .v4-menu-item[lang] {
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 13px;
-}
-
 /* --- Hero -------------------------------------------------------------- */
 
 .fy-hero {
@@ -1233,11 +1194,16 @@
 }
 
 /* «Проверка кадра»: three results, each a heading, how / what, the verdict, the map or chart, a caveat. */
-/* Section number at the heading's size: the DS label size (11px) reads as a stray caption
-   next to a 22px title. The vendored DS file stays untouched; this is the page layer. */
+/* Section number: mono, muted, at the heading's own size. The family layer dropped its
+   `.v4-section-num` in about-me-page v1.5.0 (sections of a page carry no number there), so the
+   whole rule lives here now; the steps of this page — look, read, clean — keep theirs. */
 .fy-section-num {
+  font-family: var(--v4-mono);
   font-size: 22px;
   letter-spacing: 0;
+  font-weight: var(--v4-label-weight);
+  color: var(--v4-muted);
+  flex-shrink: 0;
 }
 
 @media (max-width: 640px) {

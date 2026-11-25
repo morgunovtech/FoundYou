@@ -22,3 +22,6 @@ export function replaceCriticalLines(html: string, lines: Record<string, string>
 
 /** One line per difference between the manifest and the tree; empty when in sync. */
 export function findings(manifest: DsManifest, read: (relPath: string) => Uint8Array | null): string[];
+
+/** The address `--write` fetches: the file under a query the origin's CDN has not cached. */
+export function freshUrl(origin: string, file: string, stamp?: number): string;

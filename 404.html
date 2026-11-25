@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- The page Cloudflare Pages serves, with a 404 status, for any path that is not an asset.
-         Second Vite entry (vite.config.ts): the DS links below are stamped at build like index.html's.
+         Second Vite entry (vite.config.ts): the DS links below are stamped at build like index.html's,
+         and the family chrome is written in at the fy:* markers of the body.
          Without a dist/404.html Pages answers every path with index.html and 200 — the SPA fallback —
          which a crawler reads as a site where every address exists (TofsDevOps: soft 404). The app has
          no client routes, only #sec-* anchors, so nothing needs that fallback. -->
@@ -17,7 +18,7 @@
 
     <!-- The same critical subset index.html inlines, so the first paint is themed. -->
     <style>
-      :root{--v4-bg:#edeae5;--v4-paper:#f5f2ed;--v4-fg:#14110d;--v4-muted:#5a554c;--v4-dim:#6c6759;--v4-line:#c9c5bd;--v4-line-soft:#d8d4cc;--v4-orange:#d9531e;--v4-orange-text:#b03e10;--v4-on-accent:#14110d;--v4-on-fg:#f5f2ed;--v4-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;--v4-sans:"IBM Plex Sans",ui-sans-serif,-apple-system,"Segoe UI",sans-serif;--v4-label-size:11px;--v4-label-tracking:0.1em;--v4-label-xs-size:10px;--v4-label-xs-tracking:0.12em;--v4-label-weight:500;color-scheme:light dark}
+      :root{--v4-bg:#edeae5;--v4-paper:#f5f2ed;--v4-fg:#14110d;--v4-muted:#5a554c;--v4-dim:#6c6759;--v4-line:#c9c5bd;--v4-line-soft:#d8d4cc;--v4-orange:#d9531e;--v4-orange-text:#b03e10;--v4-on-accent:#14110d;--v4-on-fg:#f5f2ed;--v4-mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;--v4-sans:"IBM Plex Sans",ui-sans-serif,-apple-system,"Segoe UI",sans-serif;--v4-label-size:12px;--v4-label-tracking:0.1em;--v4-label-xs-size:12px;--v4-label-xs-tracking:0.1em;--v4-label-weight:500;color-scheme:light dark}
       [data-theme="dark"]{--v4-bg:#14130f;--v4-paper:#1c1a16;--v4-fg:#ece7dd;--v4-muted:#b8b0a2;--v4-dim:#8a8378;--v4-line:#3a3530;--v4-line-soft:#2a2620;--v4-orange:#ff6a2e;--v4-orange-text:#ff6a2e;--v4-on-accent:#14130f;--v4-on-fg:#14130f;color-scheme:dark}
       [data-theme="high-contrast"]{--v4-bg:#000000;--v4-paper:#0a0a0a;--v4-fg:#ffffff;--v4-muted:#f1eee7;--v4-dim:#d6d0c8;--v4-line:#ffffff;--v4-line-soft:#c8c8c8;--v4-orange:#ffd166;--v4-orange-text:#ffd166;--v4-on-accent:#000000;--v4-on-fg:#000000;color-scheme:dark}
       *,*::before,*::after{box-sizing:border-box}
@@ -35,7 +36,6 @@
 
     <style>
       .v4-root{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column}
-      .fy-404-brand{font-family:var(--v4-mono);font-size:var(--v4-label-size);letter-spacing:var(--v4-label-tracking);font-weight:var(--v4-label-weight);text-transform:uppercase;text-decoration:none;color:var(--v4-fg)}
       .fy-404{flex:1 0 auto;padding:48px 16px 64px;max-width:640px}
       .fy-404-code{font-family:var(--v4-mono);font-size:var(--v4-label-size);letter-spacing:var(--v4-label-tracking);text-transform:uppercase;color:var(--v4-dim);margin:0 0 12px}
       .fy-404 h1{font-size:clamp(28px,4vw,40px);line-height:1.1;letter-spacing:-0.02em;font-weight:600;margin:0 0 16px}
@@ -43,14 +43,17 @@
       /* One language block: the one theme-init.js put on <html lang>, ru when it did not run. */
       .fy-404 .fy-404-text{display:none}
       html[lang="ru"] .fy-404-text[lang="ru"],html[lang="en"] .fy-404-text[lang="en"],html[lang="uz"] .fy-404-text[lang="uz"]{display:block}
+      /* The chrome comes once per language too (data-fy-l); the copies of the other two are not rendered. */
+      html:not([lang="ru"]) [data-fy-l="ru"],html:not([lang="en"]) [data-fy-l="en"],html:not([lang="uz"]) [data-fy-l="uz"]{display:none}
     </style>
   </head>
   <body class="v4-page">
+    <!-- The family chrome, once per language: vite.config.ts (localePages) writes the skip link, the
+         bar and the footer at these markers from the same renderer the three pages use. -->
+    <!-- fy:skips -->
     <div class="v4-root">
-      <header class="v4-bar">
-        <a class="fy-404-brand" href="/">Found You</a>
-      </header>
-      <main class="fy-404">
+      <!-- fy:bars -->
+      <main id="main" class="fy-404">
         <p class="fy-404-code">404</p>
         <section class="fy-404-text" lang="ru">
           <h1>Такой страницы нет</h1>
@@ -68,6 +71,8 @@
           <a class="v4-btn v4-btn-primary" href="/">Bosh sahifa</a>
         </section>
       </main>
+      <!-- fy:foots -->
     </div>
+    <script defer src="/ds/v1/chrome.js?v=dev"></script>
   </body>
 </html>

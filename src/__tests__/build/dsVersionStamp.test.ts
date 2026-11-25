@@ -40,11 +40,20 @@ describe('stampDsVersions', () => {
     );
   });
 
+  it('stamps the layer script 404.html loads the same way', () => {
+    const files = { 'chrome.js': '(() => {})();' };
+    const html = '<script defer src="/ds/v1/chrome.js?v=dev"></script>';
+    expect(stampDsVersions(html, readerOver(files))).toBe(
+      `<script defer src="/ds/v1/chrome.js?v=${md5Short(files['chrome.js'])}"></script>`
+    );
+  });
+
   it('leaves unrelated ?v=dev references untouched', () => {
     const html = [
       '<link rel="stylesheet" href="/styles.css?v=dev">',
       '<link rel="stylesheet" href="/ds/v2/tokens.css?v=dev">',
-      '<script src="/ds/v1/app.js?v=dev"></script>'
+      '<script src="/ds/v1/app.mjs?v=dev"></script>',
+      '<script src="/src/chrome.js?v=dev"></script>'
     ].join('\n');
     const reader = (name: string): Buffer => {
       throw new Error(`should not be asked for ${name}`);

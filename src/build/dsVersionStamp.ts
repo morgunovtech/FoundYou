@@ -1,5 +1,5 @@
 /**
- * The design-system stylesheets live in public/ds/v1 and are linked from index.html with
+ * The design-system files live in public/ds/v1 and are linked from index.html and 404.html with
  * `?v=dev`. At build time the stamp becomes a content hash (the first 8 hex characters of
  * the file's MD5 — the same idea as the source repo's scripts/version-stamp.py, which uses
  * sha1; the value only busts the local cache, so the algorithms need not match), so a DS
@@ -11,12 +11,14 @@
  */
 import { createHash } from 'node:crypto';
 
-/** One `/ds/v1/<name>.css?v=dev` reference; names may carry digits and hyphens. */
-const DS_REFERENCE = /\/ds\/v1\/([a-z0-9-]+)\.css\?v=dev/g;
+/**
+ * One `/ds/v1/<name>.css?v=dev` or `.js?v=dev` reference (the stylesheets, and `chrome.js` on
+ * 404.html); names may carry digits and hyphens.
+ */
+const DS_REFERENCE = /\/ds\/v1\/([a-z0-9-]+\.(?:css|js))\?v=dev/g;
 
 export function stampDsVersions(html: string, readFile: (name: string) => Buffer): string {
-  return html.replace(DS_REFERENCE, (_match, name: string) => {
-    const file = `${name}.css`;
+  return html.replace(DS_REFERENCE, (_match, file: string) => {
     let bytes: Buffer;
     try {
       bytes = readFile(file);

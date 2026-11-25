@@ -46,6 +46,9 @@
 
 .v4-bar-mid a {
   color: inherit;
+  /* The caption weight on every width; the links used to take it only inside
+     the phone menu, which made the nav a caption style of its own. */
+  font-weight: var(--v4-label-weight);
   text-decoration: none;
   padding: 8px 4px;
   /* Keep multi-word labels («Обо мне», «Своё дело») on one line —
@@ -162,10 +165,13 @@ html:not([data-js]) .v4-dropdown:is(:focus-within, :hover) > .v4-menu {
 
 .v4-menu-item {
   display: block;
+  position: relative;
   background: transparent;
   border: 1px solid transparent;
   color: var(--v4-fg);
-  padding: 10px 10px;
+  /* 24px on the left: the room where the selected item's mark sits, so the
+     labels of a menu stay on one edge. */
+  padding: 10px 10px 10px 24px;
   font-size: var(--v4-label-size);
   font-weight: var(--v4-label-weight);
   text-transform: uppercase;
@@ -183,9 +189,28 @@ html:not([data-js]) .v4-dropdown:is(:focus-within, :hover) > .v4-menu {
   color: var(--v4-orange-text);
 }
 
-.v4-menu-item[aria-checked="true"] {
-  color: var(--v4-orange-text);
-  border-color: var(--v4-orange);
+/* The selected item carries ONE sign, and not colour alone: a round mark
+   before the label. (It used to be orange text inside an orange frame — two
+   signs of one state, next to the orange of hover.) */
+.v4-menu-item[aria-checked="true"]::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: var(--v4-orange);
+}
+
+/* The script parks focus on a toggle after a pointer click opens its menu
+   and when the menu closes (so Escape and the arrows work), and the browser
+   then paints the keyboard focus ring around a button the visitor has just
+   clicked. The script marks such a focus with data-pointer-focus: no ring
+   there. A toggle reached from the keyboard keeps its ring. */
+.v4-dropdown > [data-pointer-focus]:focus-visible {
+  outline: none;
 }
 
 /* Touch target: the header controls are 36px on screen and 44px to a finger.
@@ -298,6 +323,127 @@ html:not([data-js]) .v4-dropdown:is(:focus-within, :hover) > .v4-menu {
   border-color: var(--v4-orange);
 }
 
+/* Pressed, disabled, busy: a tap gets an answer and a disabled button does not
+   look live. */
+.v4-btn:active {
+  background: var(--v4-muted);
+  border-color: var(--v4-muted);
+  color: var(--v4-bg);
+}
+
+.v4-btn-primary:active {
+  /* Lighter again, never darker — same reason as the hover rule. */
+  filter: brightness(1.12);
+  background: var(--v4-orange);
+  border-color: var(--v4-orange);
+  color: var(--v4-on-accent);
+}
+
+/* Disabled is a dashed outline in the tertiary ink: it reads without colour
+   and in high contrast, where a grey fill would swallow the label. */
+.v4-btn:disabled,
+.v4-btn[aria-disabled="true"]:not(.is-busy) {
+  background: transparent;
+  border: 1px dashed var(--v4-dim);
+  color: var(--v4-dim);
+  cursor: not-allowed;
+  filter: none;
+}
+
+/* Busy keeps the button's look and its focus; the running-now square of
+   .v4-live-dot sits before the label in the label's own colour. */
+.v4-btn.is-busy {
+  cursor: progress;
+}
+
+.v4-btn.is-busy::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentColor;
+  animation: v4-pulse 2.4s ease-in-out infinite;
+}
+
+/* A phone keeps :hover on the last tapped element, so an outlined button stayed
+   inverted and a bar control stayed orange after the tap. Where the device
+   cannot hover, hover paints nothing; the pressed and focused looks stay. */
+@media (hover: none) {
+  .v4-btn:hover:not(:focus-visible, :active, :disabled, [aria-disabled="true"]) {
+    background: transparent;
+    color: var(--v4-fg);
+  }
+
+  .v4-btn-primary:hover:not(:focus-visible, :active, :disabled, [aria-disabled="true"]) {
+    filter: none;
+    background: var(--v4-orange);
+    color: var(--v4-on-accent);
+  }
+
+  .v4-bar-btn:hover:not(:focus-visible),
+  .v4-icon-btn:hover:not(:focus-visible) {
+    color: var(--v4-fg);
+  }
+}
+
+/* --- Service mark: «MORGUNOV.TECH / FINGERPRINT» at the left of the bar of a
+   family service. The family name leads home (s.morgunov.tech); the service
+   name follows it. The main site has no mark — it is the family. --- */
+.v4-service {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--v4-mono);
+  font-size: var(--v4-label-size);
+  font-weight: var(--v4-label-weight);
+  letter-spacing: var(--v4-label-tracking);
+  text-transform: uppercase;
+  color: var(--v4-fg);
+  text-decoration: none;
+  white-space: nowrap;
+  margin-right: 22px;
+  padding: 8px 0;
+}
+
+.v4-service-sep {
+  color: var(--v4-dim);
+}
+
+.v4-service-name {
+  color: var(--v4-muted);
+  min-width: 0;
+  transition: color 0.15s ease;
+}
+
+.v4-service:hover .v4-service-name,
+.v4-service:focus-visible .v4-service-name {
+  color: var(--v4-orange-text);
+}
+
+/* 640px and below: only the service name fits beside «Меню» and the two
+   controls. The family name leaves the screen, not the accessible name. */
+@media (max-width: 640px) {
+  .v4-service {
+    margin-right: 12px;
+    min-width: 0;
+  }
+  .v4-service-family,
+  .v4-service-sep {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+  .v4-service-name {
+    color: var(--v4-fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
 /* --- Mobile top bar: one row ---
    Below 640px the seven nav links no longer wrap into two rows: the nav
    collapses into a «Меню» dropdown (left) while the language and theme
@@ -390,15 +536,6 @@ html:not([data-js]) .v4-dropdown:is(:focus-within, :hover) > .v4-menu {
   border-bottom: 1px solid var(--v4-fg);
 }
 
-.v4-section-num {
-  font-family: var(--v4-mono);
-  font-size: var(--v4-label-size);
-  color: var(--v4-muted);
-  text-transform: uppercase;
-  letter-spacing: var(--v4-label-tracking);
-  font-weight: var(--v4-label-weight);
-  flex-shrink: 0;
-}
 
 .v4-h2 {
   font-size: 22px;
@@ -486,6 +623,14 @@ html:not([data-js]) .v4-dropdown:is(:focus-within, :hover) > .v4-menu {
   margin-bottom: 0;
 }
 
+/* Measure: a paragraph or a list item never runs past 62ch. Without it a
+   paragraph at 1280px ran 1168px, 156 characters a line. */
+.v4-prose p,
+p.v4-prose,
+.v4-list li {
+  max-width: 62ch;
+}
+
 /* IBM Plex ships 400/500/600 only — UA-default 700 would be synthesized
    (smeared) bold. base.css sets strong/b to 600 site-wide; the two rules
    below keep the prose and list idioms explicit for the inline critical
@@ -544,10 +689,13 @@ html:not([data-js]) .v4-dropdown:is(:focus-within, :hover) > .v4-menu {
 /* Live indicator dot (current role in #02 + active product in #05).
    Pulses to suggest «вот это сейчас работает». Reduced-motion users get
    a static dot via the global animation-duration: 0.001ms override. */
+/* The one round shape of the system: a live dot reads as «on air», a square of
+   the same size reads as a list bullet. */
 .v4-live-dot {
   display: inline-block;
   width: 6px;
   height: 6px;
+  border-radius: 50%;
   background: var(--v4-orange);
   flex-shrink: 0;
   animation: v4-pulse 2.4s ease-in-out infinite;
@@ -593,9 +741,20 @@ html:not([data-js]) .v4-dropdown:is(:focus-within, :hover) > .v4-menu {
   text-decoration-color: var(--v4-orange-text);
 }
 
+/* The build mark: the release as a link to the changelog on GitHub. Data in
+   mono, plain, like every mono value. */
+.v4-foot .v4-build {
+  font-family: var(--v4-mono);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .v4-foot code {
   font-family: var(--v4-mono);
   font-size: inherit;
+  /* The build hash is data, not a label: regular weight, like every mono value. */
+  font-weight: 400;
   letter-spacing: 0;
   text-transform: none;
 }
@@ -612,10 +771,12 @@ html:not([data-js]) .v4-dropdown:is(:focus-within, :hover) > .v4-menu {
   .v4-root {
     padding: 20px 18px 32px;
   }
-  /* Set on body (not .v4-root) so the high-contrast 16px rule in base.css
-     keeps winning by specificity — HC must not shrink on phones. */
+  /* Phones read at 16px (13.5px before v1.3.0): three sizes on a phone — 16px
+     for anything read as a sentence, 14px for a secondary line, 12px for
+     captions and mono meta. Set on body (not .v4-root), next to the
+     high-contrast 16px rule in base.css. */
   body.v4-page {
-    font-size: 13.5px;
+    font-size: 16px;
   }
   .v4-section {
     margin-bottom: 28px;
@@ -626,6 +787,9 @@ html:not([data-js]) .v4-dropdown:is(:focus-within, :hover) > .v4-menu {
   }
   .v4-h2 {
     font-size: 18px;
+  }
+  .v4-terms {
+    font-size: 14px;
   }
   .v4-foot {
     flex-direction: column;
