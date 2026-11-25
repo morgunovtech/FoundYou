@@ -31,7 +31,11 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      - run: npm ci
+      # No dependency gets to run an install script here. The lock file marks three packages
+      # as having one — @swc/core (checks that its optional native binary loads), tesseract.js
+      # (a funding notice) and fsevents (macOS only) — and none is needed to lint, test,
+      # build or run the page. `prepare:assets` below is the repository's own script.
+      - run: npm ci --ignore-scripts
 
       # The vendored design system (public/ds/v1, public/fonts, the critical token
       # lines) hashes as ds.json says; a hand edit of a copy fails here.
@@ -59,7 +63,8 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
-      - run: npm ci
+      # As in `verify`: no dependency install scripts.
+      - run: npm ci --ignore-scripts
 
       # Detection needs the self-hosted models. The smoke draws its own fixture in the
       # browser and extends it with scripts/make-exif-fixture.mjs, so no git-ignored file
