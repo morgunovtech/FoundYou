@@ -72,6 +72,16 @@ describe('resolveModel', () => {
       released: null
     });
     expect(resolveModel('Samsung', 'SM-X999')).toEqual({ name: 'SM-X999', released: null });
+    expect(resolveModel('Samsung', 'SM-X999', 'Samsung  Galaxy\tS25+   Front  Camera')).toEqual({
+      name: 'Galaxy S25+',
+      released: null
+    });
+  });
+  it('reads a hostile lens tag in linear time', () => {
+    const started = performance.now();
+    expect(resolveModel('Samsung', 'SM-X999', `Galaxy${' '.repeat(200_000)}x`).name).toBe('SM-X999');
+    expect(resolveModel('Samsung', 'SM-X999', 'Galaxy '.repeat(30_000)).name).toBe('SM-X999');
+    expect(performance.now() - started).toBeLessThan(500);
   });
   it('knows a few Huawei codes and leaves other makers as written', () => {
     expect(resolveModel('Huawei', 'ELS-NX9')).toEqual({ name: 'P40 Pro', released: '2020-03' });

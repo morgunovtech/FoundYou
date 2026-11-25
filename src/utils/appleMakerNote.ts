@@ -59,6 +59,12 @@ const TYPE_SIZES: Record<number, number> = {
   12: 8
 };
 
+/**
+ * Whether a string value holds anything but NUL padding. A loop, not `/\0+$/`: the bytes come
+ * from the file, and that pattern rescans every run of NULs that is not at the end.
+ */
+const hasText = (bytes: Uint8Array): boolean => bytes.some((byte) => byte !== 0);
+
 const ascii = (bytes: Uint8Array, start: number, length: number): string => {
   const end = Math.min(bytes.length, start + length);
   let text = '';
@@ -125,10 +131,10 @@ function parseAppleMakerNoteStrict(bytes: Uint8Array): AppleMakerNote | null {
         }
         break;
       case TAG_BURST_UUID:
-        result.burst = ascii(value, 0, value.length).replace(/\0+$/, '').length > 0;
+        result.burst = hasText(value);
         break;
       case TAG_CONTENT_IDENTIFIER:
-        result.livePhoto = ascii(value, 0, value.length).replace(/\0+$/, '').length > 0;
+        result.livePhoto = hasText(value);
         break;
       case TAG_IMAGE_CAPTURE_TYPE:
         if (type === 9 || type === 4) result.captureType = CAPTURE_TYPES[view.getInt32(start, littleEndian)] ?? null;

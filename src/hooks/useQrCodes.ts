@@ -34,7 +34,7 @@ export function useQrCodes(
     // A new file: the previous codes (and their boxes) must not reach its profile or its blur.
     setCodes([]);
     setLoading(true);
-    (async () => {
+    void (async () => {
       try {
         const image = await (getImage ? getImage(fileInfo) : loadImage(fileInfo.dataUrl));
         const found = await findQrCodes(image, fileInfo.width, fileInfo.height);

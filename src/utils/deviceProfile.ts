@@ -311,6 +311,9 @@ interface ModelMatch {
 }
 
 /** Marketing name and launch month for a make/model pair, the raw model when unknown. */
+/** EXIF `LensModel` is read up to this length; the longest real one is a few dozen characters. */
+const LENS_MODEL_MAX = 256;
+
 export function resolveModel(make: string | null, model: string, lensModel?: string | null): ModelMatch {
   const raw = model.trim().replace(/\s+/g, ' ');
   const key = normalise(raw);
@@ -323,7 +326,10 @@ export function resolveModel(make: string | null, model: string, lensModel?: str
   if (make === 'Samsung') {
     const code = SAMSUNG_CODES.find(([pattern]) => pattern.test(raw.toUpperCase()));
     // The lens tag spells the marketing name out («Samsung Galaxy S23 Ultra Rear Camera»).
-    const fromLens = /Galaxy\s+([A-Za-z0-9+ ]+?)\s+(?:Rear|Front)\s+Camera/i.exec(lensModel ?? '');
+    // The tag comes from the file: cut to a length no real lens name reaches and with the
+    // whitespace collapsed, so the pattern has one way to read every character.
+    const lens = (lensModel ?? '').slice(0, LENS_MODEL_MAX).replace(/\s+/g, ' ');
+    const fromLens = /Galaxy ((?:[A-Za-z0-9+]+ )+?)(?:Rear|Front) Camera/i.exec(lens);
     const name = code?.[1] ?? (fromLens ? `Galaxy ${fromLens[1].trim()}` : raw);
     return { name, released: code?.[2] ?? null };
   }

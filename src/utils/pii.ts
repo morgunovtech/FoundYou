@@ -21,7 +21,7 @@ export interface PiiFinding {
 // `\b` in JavaScript is ASCII-only, so a Cyrillic word never sits on a "word boundary": the
 // edges are spelled out as "no letter or digit on either side" instead, with the `u` flag.
 const DOCUMENT_WORDS =
-  /(?<![\p{L}\p{N}])(passport|паспорт|pasport|passeport|reisepass|boarding\s*pass|посадочн\p{L}*|driver'?s?\s*licen[cs]e|водительск\p{L}*|удостоверени\p{L}*|guvohnoma|id\s*card|identity\s*card|permis|residence\s*permit|виза|инн|stir(?=\s*[:№#]?\s*\d)|jshshir|пинфл|снилс|полис|receipt|чек|chek|invoice|счёт-фактура|kvitansiya|квитанция)(?![\p{L}\p{N}])/iu;
+  /(?<![\p{L}\p{N}])(passport|паспорт|pasport|passeport|reisepass|boarding\s*pass|посадочн\p{L}*|driver'?s?\s*licen[cs]e|водительск\p{L}*|удостоверени\p{L}*|guvohnoma|id\s*card|identity\s*card|permis|residence\s*permit|виза|инн|stir(?=\s*(?:[:№#]\s*)?\d)|jshshir|пинфл|снилс|полис|receipt|чек|chek|invoice|счёт-фактура|kvitansiya|квитанция)(?![\p{L}\p{N}])/iu;
 
 /** Luhn check for a digit string. */
 export function luhn(digits: string): boolean {

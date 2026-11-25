@@ -48,7 +48,7 @@ export function placesInFrame(
   fovDegrees: number | null | undefined
 ): FramedPlace[] {
   if (heading == null || !Number.isFinite(heading)) return [];
-  const fov = Number.isFinite(fovDegrees ?? NaN) ? (fovDegrees as number) : 70;
+  const fov = Number.isFinite(fovDegrees ?? Number.NaN) ? (fovDegrees as number) : 70;
   const halfCone = fov / 2 + HEADING_SLACK_DEGREES;
 
   return places

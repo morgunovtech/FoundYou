@@ -87,6 +87,21 @@ describe('parseGenerator', () => {
     expect(parseGenerator('c2pa-rs/0.36.0')).toBe('c2pa-rs 0.36.0');
     expect(parseGenerator('Leica Camera AG M11-P')).toBe('Leica Camera AG M11-P');
   });
+
+  it('keeps the first product of several and the whole string when no token has a slash', () => {
+    expect(parseGenerator('Adobe_Firefly/1.0 (Mac) c2pa-rs/0.31.0')).toBe('Adobe Firefly 1.0');
+    expect(parseGenerator('My  Tool/2 extra')).toBe('My');
+    expect(parseGenerator('tool /2')).toBe('tool 2');
+    expect(parseGenerator('  spaced out  ')).toBe('spaced out');
+  });
+
+  it('reads a hostile claim generator in linear time', () => {
+    // Each of these took seconds with the split / replace patterns the function used to run.
+    const started = performance.now();
+    parseGenerator(`a${' '.repeat(200_000)}b`);
+    parseGenerator(`a/${'('.repeat(200_000)}\n`);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
 });
 
 describe('summarizeManifestStore', () => {

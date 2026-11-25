@@ -80,8 +80,8 @@ export function hammingDistance(a: string, b: string): number | null {
   if (a.length !== b.length || a.length === 0) return null;
   let distance = 0;
   for (let i = 0; i < a.length; i++) {
-    const x = parseInt(a[i], 16);
-    const y = parseInt(b[i], 16);
+    const x = Number.parseInt(a[i], 16);
+    const y = Number.parseInt(b[i], 16);
     if (Number.isNaN(x) || Number.isNaN(y)) return null;
     let diff = x ^ y;
     while (diff) {

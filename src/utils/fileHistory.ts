@@ -92,7 +92,7 @@ function pickTag<T = unknown>(source: Record<string, unknown> | undefined, keys:
 }
 
 const toInt = (value: unknown): number | null => {
-  const n = typeof value === 'string' ? Number(value) : typeof value === 'number' ? value : NaN;
+  const n = typeof value === 'string' ? Number(value) : typeof value === 'number' ? value : Number.NaN;
   return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 };
 

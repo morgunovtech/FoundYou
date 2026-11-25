@@ -11,7 +11,7 @@
  *
  * Idempotent: a copy is skipped when the destination already has the source's
  * size and is not older than it; a download is skipped when the destination
- * exists with the pinned size and MD5. Fails loudly on missing sources, HTTP
+ * exists with the pinned size and SHA-256. Fails loudly on missing sources, HTTP
  * errors, a stalled download, or a size/hash mismatch. Node >= 22.13 (the
  * `engines` field in package.json), ESM, no deps.
  *
@@ -113,8 +113,9 @@ const MEDIAPIPE_WASM_NOSIMD_FILES = ['vision_wasm_nosimd_internal.js', 'vision_w
 
 /**
  * Model files from the MediaPipe model bucket, pinned to version directory `1` (byte-identical
- * to `latest` as of 2026-09-15) and verified by size + MD5 (GCS exposes the MD5 as the ETag /
- * `x-goog-hash`). To move to a newer revision, bump the URL, size and hash here deliberately;
+ * to `latest` as of 2026-09-15) and verified by size + SHA-256 (taken on 2026-11-25 from
+ * the files that matched the MD5 GCS publishes as the ETag / `x-goog-hash`, which was the pin
+ * until then). To move to a newer revision, bump the URL, size and hash here deliberately;
  * the runtime itself only ever fetches from /mediapipe/models on the app's own origin.
  */
 const MEDIAPIPE_MODELS_BASE_URL = 'https://storage.googleapis.com/mediapipe-models/';
@@ -123,7 +124,7 @@ const MEDIAPIPE_MODELS = [
     file: 'blaze_face_short_range.tflite',
     url: `${MEDIAPIPE_MODELS_BASE_URL}face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite`,
     size: 229_746,
-    md5: 'a3dd6ec31725290770b97cec0cbf94c9'
+    sha256: 'b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f'
   },
   {
     // The far pass: BlazeFace full range sees faces that are small in the frame (a group photo),
@@ -132,7 +133,7 @@ const MEDIAPIPE_MODELS = [
     file: 'blaze_face_full_range.tflite',
     url: `${MEDIAPIPE_MODELS_BASE_URL}face_detector/blaze_face_full_range/float16/1/blaze_face_full_range.tflite`,
     size: 1_083_786,
-    md5: '5de376fcc855273c5c720766d36523a0'
+    sha256: '3698b18f063835bc609069ef052228fbe86d9c9a6dc8dcb7c7c2d69aed2b181b'
   },
   {
     // Lite2 (448×448 input) over Lite0 (320×320): noticeably better on small and partly hidden
@@ -140,7 +141,7 @@ const MEDIAPIPE_MODELS = [
     file: 'efficientdet_lite2.tflite',
     url: `${MEDIAPIPE_MODELS_BASE_URL}object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite`,
     size: 12_138_859,
-    md5: '3c5d155842c308a5f6d07bf5513d3c12'
+    sha256: '5d4ebec1029bc9907aeadb9e7b4ac9cb1da6a19d01ad375210a9ae18ba173302'
   }
 ];
 
@@ -169,8 +170,8 @@ async function fileSize(p) {
   return (await fileStat(p))?.size ?? -1;
 }
 
-function md5(buf) {
-  return createHash('md5').update(buf).digest('hex');
+function sha256(buf) {
+  return createHash('sha256').update(buf).digest('hex');
 }
 
 /**
@@ -195,12 +196,12 @@ async function copyIfNeeded(src, dest, summary) {
 }
 
 /**
- * Downloads `url` to `dest` unless a file with the expected size and MD5 is already there.
+ * Downloads `url` to `dest` unless a file with the expected size and SHA-256 is already there.
  * A wrong size or hash (truncated earlier run, upstream change) is re-fetched once and, if
  * still wrong, aborts the build — better than shipping a model that will not load.
  */
-async function downloadIfNeeded({ url, size, md5: expectedMd5 }, dest, summary) {
-  if ((await fileSize(dest)) === size && md5(await readFile(dest)) === expectedMd5) {
+async function downloadIfNeeded({ url, size, sha256: expected }, dest, summary) {
+  if ((await fileSize(dest)) === size && sha256(await readFile(dest)) === expected) {
     summary.push({ file: rel(dest), size, action: 'kept' });
     return;
   }
@@ -232,9 +233,9 @@ async function downloadIfNeeded({ url, size, md5: expectedMd5 }, dest, summary) 
   if (buf.byteLength !== size) {
     throw new Error(`${url}: expected ${size} bytes, got ${buf.byteLength} — pinned model changed upstream?`);
   }
-  const actualMd5 = md5(buf);
-  if (actualMd5 !== expectedMd5) {
-    throw new Error(`${url}: MD5 ${actualMd5} does not match pinned ${expectedMd5}`);
+  const actual = sha256(buf);
+  if (actual !== expected) {
+    throw new Error(`${url}: SHA-256 ${actual} does not match pinned ${expected}`);
   }
   // Write to a temp name and rename so an interrupted run never leaves a
   // truncated file behind under the final name.
@@ -365,7 +366,7 @@ function printSummary(summary) {
   }
   console.log('\n[prepare-assets] totals:');
   let total = 0;
-  for (const [dir, acc] of [...byDir.entries()].sort()) {
+  for (const [dir, acc] of [...byDir.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     total += acc.bytes;
     console.log(`  ${dir.padEnd(width)}  ${formatBytes(acc.bytes).padStart(10)}  (${acc.files} files)`);
   }

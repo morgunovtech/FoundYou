@@ -115,6 +115,15 @@ describe('analyzeEditingHistory: software profiles', () => {
     expect(analyze({ Software: software })).toEqual(UNTOUCHED);
   });
 
+  it('reads the Canon form with and without the colon, and a hostile value in linear time', () => {
+    expect(isCameraFirmware('Firmware Version 1.1.0')).toBe(true);
+    expect(isCameraFirmware('Camera Firmware : v2.0')).toBe(true);
+    expect(isCameraFirmware('firmware:1')).toBe(true);
+    const started = performance.now();
+    expect(isCameraFirmware(`firmware${' '.repeat(200_000)}x`)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   it.each(['MyEditor 1.0', 'PhotoScape X v4.2', 'Snapseed 2.19', 'Pixelmator Pro 3.5', 'Midjourney', 'AUTOMATIC1111'])(
     'real software %j is still reported',
     (software) => {
