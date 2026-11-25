@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { type DigitalProfile, type ProfileSection, type ProfileSectionKind } from '../utils/heuristics/digitalProfile';
+import { type DigitalProfile, type ProfilePart, type ProfileSection, type ProfileSectionKind } from '../utils/heuristics/digitalProfile';
 import type { StructuredMetadata, BasicFileInfo } from '../types/metadata';
 import type { BoundingBox } from '../types/detection';
 import type { OCRResult } from '../hooks/useOCR';
-import type { ProData } from '../App';
+import type { ProData } from '../utils/profileBuild';
 import { useI18n, useT } from '../i18n';
 import { useGeoContext } from '../hooks/useGeoContext';
 import { buildProGroups } from '../utils/proTable';
@@ -39,6 +39,8 @@ interface StoryBlockProps {
   metadata: StructuredMetadata | null;
   profile: DigitalProfile | null;
   proData: ProData | null;
+  /** The profile was attempted for this file and could not be built at all: not «still pending». */
+  profileFailed?: boolean;
   detections: BoundingBox[];
   ocrResult: OCRResult | null;
   ocrLoading: boolean;
@@ -78,6 +80,11 @@ const MISSING_KEYS: Record<'date' | 'location' | 'device', MessageKey> = {
   device: 'leakMissingDevice'
 };
 
+const UNDETERMINED_KEYS: Record<ProfilePart, MessageKey> = {
+  time: 'factsPartTime',
+  origin: 'factsPartOrigin'
+};
+
 /**
  * Section 02 — what the photo says about you: one card per fact (where it was taken, when,
  * how, text, plates, QR codes, documents, what it was taken on), each with its data only, and
@@ -91,6 +98,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
   metadata,
   profile,
   proData,
+  profileFailed = false,
   detections,
   ocrResult,
   ocrLoading,
@@ -200,6 +208,13 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     () => (profile ? profile.missing.map((fact) => t(MISSING_KEYS[fact])).join(', ') : ''),
     [profile, t]
   );
+
+  /** Parts of the analysis that failed on this file, in words, for the line under the index. */
+  const leakUndetermined = useMemo(
+    () => (profile ? profile.undetermined.map((part) => t(UNDETERMINED_KEYS[part])).join(', ') : ''),
+    [profile, t]
+  );
+  const originUndetermined = profile ? profile.undetermined.includes('origin') : false;
 
   const stanceRow = stance ? (
     <StanceFact key="stance" stance={stance} geo={geo} metadata={metadata} remote={remote} accuracyLabel={accuracyLabel} />
@@ -363,9 +378,10 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
     <section className="v4-section" aria-labelledby="sec-story">
       <SectionHead num="02" title={t('factsTitle')} id="sec-story" />
 
+      {/* Three states, one line: still working, could not be built, or (below) built. */}
       {!profile ? (
         <p className="fy-hint" role="status">
-          {t('factsPending')}
+          {t(profileFailed ? 'factsFailed' : 'factsPending')}
         </p>
       ) : null}
 
@@ -384,6 +400,7 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
           <p className="fy-hint">{profile.leakLevel.description}</p>
           {leakContributors ? <p className="fy-hint">{t('leakIndexContributors', { items: leakContributors })}</p> : null}
           {leakMissing ? <p className="fy-hint">{t('leakIndexMissing', { items: leakMissing })}</p> : null}
+          {leakUndetermined ? <p className="fy-hint">{t('factsPartial', { items: leakUndetermined })}</p> : null}
           <Explainer title={t('leakIndexExplainTitle')}>
             <p>{t('leakIndexExplainBody')}</p>
           </Explainer>
@@ -403,9 +420,11 @@ const StoryBlockInner: React.FC<StoryBlockProps> = ({
             credentials={credentials}
             stance={stance}
             timeProfile={timeProfile}
+            undetermined={originUndetermined}
           />
         ) : null}
-        {profile ? <FrameChecksCard fileInfo={fileInfo} jpeg={jpeg} /> : null}
+        {/* Reads the pixels and the tables itself, so it is there when the profile is not. */}
+        {profile || profileFailed ? <FrameChecksCard fileInfo={fileInfo} jpeg={jpeg} /> : null}
       </div>
 
       {profile ? (

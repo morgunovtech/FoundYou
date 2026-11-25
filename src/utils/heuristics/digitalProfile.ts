@@ -58,6 +58,13 @@ export interface LeakLevel {
 /** A fact the file does not carry at all; listed under the leak index instead of as an empty card. */
 export type MissingFact = 'date' | 'location' | 'device';
 
+/**
+ * A part of the analysis that threw on this file and was left out (`buildProfile`): the reading
+ * of the shot time, or the group of heuristics behind the origin verdict (name, size, editing
+ * tags, stripped detector, JPEG tables, screenshot score, history).
+ */
+export type ProfilePart = 'time' | 'origin';
+
 export interface DigitalProfile {
   sections: ProfileSection[];
   leakScore: number;
@@ -65,6 +72,11 @@ export interface DigitalProfile {
   serialNumbers: string[];
   /** What the file says nothing about, in a fixed order: date, location, device. */
   missing: MissingFact[];
+  /**
+   * Parts that could not be worked out for this file. Their sections are absent rather than
+   * filled with a neutral answer, so the index counts less than the file may state.
+   */
+  undetermined: ProfilePart[];
 }
 
 /* ── leak level ─────────────────────────────────────────── */
@@ -232,14 +244,17 @@ export interface ProfileInput {
   /** Parsed Content Credentials (C2PA), when the file carries them. */
   credentials?: ContentCredentials | null;
   credentialsStatus?: CredentialsStatus;
-  filename: FilenameAnalysis;
-  resolution: ResolutionAnalysis;
-  stripped: StrippedAnalysis;
-  editing: EditingAnalysis;
+  /** The four origin heuristics and their verdict are null together, when `undetermined` has `origin`. */
+  filename: FilenameAnalysis | null;
+  resolution: ResolutionAnalysis | null;
+  stripped: StrippedAnalysis | null;
+  editing: EditingAnalysis | null;
   hash: HashResult | null;
   temporal: TemporalInsight[];
   /** The one verdict on where the file has been since the shutter (`judgeOrigin`). */
-  origin: OriginJudgement;
+  origin: OriginJudgement | null;
+  /** Parts of the analysis that failed on this file; their sections are left out. */
+  undetermined?: ProfilePart[];
   metadata: StructuredMetadata | null;
   detections: BoundingBox[];
   ocrResult: OCRResult | null;
@@ -258,10 +273,11 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   const t = (key: MessageKey, params?: Record<string, string | number>) => formatMessage(lang, key, params);
   const sections: ProfileSection[] = [];
   const exif = metadata?.groups?.exif ?? {};
+  const undetermined = input.undetermined ?? [];
 
   // ── Device ──
   // `||`, not `??`: an unknown filename yields `device: ''`, which must fall through to the resolution guess.
-  const device = metadata?.cameraModel || filename.device || resolution.possibleDevices[0] || null;
+  const device = metadata?.cameraModel || filename?.device || resolution?.possibleDevices[0] || null;
   if (device) {
     const fromExif = !!metadata?.cameraModel;
     sections.push({
@@ -312,6 +328,17 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
       title: TEXTS.timeTitle[lang],
       text: t('profileTimeNone'),
       subtext: t('profileTimeNoneSub'),
+      leakPoints: 0,
+      severity: 'low',
+    });
+  } else if (undetermined.includes('time')) {
+    // The card stays, so the date and the zone rows the page works out on its own keep their
+    // place; what is missing is what this reading adds (night, weekend, the points for them).
+    sections.push({
+      kind: 'time',
+      title: TEXTS.timeTitle[lang],
+      text: t('profileUndetermined'),
+      subtext: null,
       leakPoints: 0,
       severity: 'low',
     });
@@ -399,7 +426,11 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   const cred = input.credentials ?? null;
   const credStatus = input.credentialsStatus ?? 'idle';
   const signer = cred ? (cred.issuer ?? cred.generator ?? 'C2PA') : '';
-  if (cred && cred.generative !== 'none') {
+  // Without the editing tags the answer would be «признаков ИИ нет» on a file nobody read:
+  // the row is left out, and the Content Credentials rows of the card still say what they know.
+  if (!editing) {
+    // nothing: `undetermined` names the part
+  } else if (cred && cred.generative !== 'none') {
     sections.push({
       kind: 'ai',
       title: TEXTS.aiTitle[lang],
@@ -462,8 +493,10 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     });
   }
 
-  // ── Editing (always show) ──
-  if (editing.edited) {
+  // ── Editing (always show, unless the tags could not be read) ──
+  if (!editing) {
+    // nothing: `undetermined` names the part
+  } else if (editing.edited) {
     sections.push({
       kind: 'editing',
       title: t('profileEditingTitle'),
@@ -486,7 +519,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   // ── Origin (always show): the one judge's verdict with its grounds. ──
   // The stripped detector, the quantization tables, the Live Photo marker and the size cap used
   // to speak here each on their own and disagreed on the same file; `judgeOrigin` hears them all.
-  {
+  if (origin) {
     const described = describeOrigin(origin, t);
     const passedThrough = origin.verdict === 'messenger' || origin.verdict === 'stripped';
     sections.push({
@@ -500,7 +533,7 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   }
 
   // ── Content type ──
-  if (resolution.contentHint) {
+  if (resolution?.contentHint) {
     sections.push({
       kind: 'content',
       title: t('profileContentTitle'),
@@ -540,9 +573,10 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
   const leakScore = Math.min(100, sections.reduce((s, sec) => s + sec.leakPoints, 0));
 
   const missing: MissingFact[] = [];
-  if (temporal.length === 0 && !metadata?.dateFault) missing.push('date');
+  // «В файле нет» is a statement about the file: not made for a part nobody managed to read.
+  if (temporal.length === 0 && !metadata?.dateFault && !undetermined.includes('time')) missing.push('date');
   if (!metadata?.gps) missing.push('location');
-  if (!device) missing.push('device');
+  if (!device && !undetermined.includes('origin')) missing.push('device');
 
   return {
     sections,
@@ -550,5 +584,6 @@ export function generateDigitalProfile(input: ProfileInput): DigitalProfile {
     leakLevel: getLeakLevel(leakScore, lang),
     serialNumbers: serials,
     missing,
+    undetermined,
   };
 }

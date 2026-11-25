@@ -1,6 +1,6 @@
 import React from 'react';
 import type { BasicFileInfo, StructuredMetadata } from '../../types/metadata';
-import type { ProData } from '../../App';
+import type { ProData } from '../../utils/profileBuild';
 import type { ProfileSection, ProfileSectionKind } from '../../utils/heuristics/digitalProfile';
 import { ORIGIN_KINDS } from '../../utils/heuristics/digitalProfile';
 import type { ContentCredentialsState } from '../../hooks/useContentCredentials';
@@ -29,6 +29,12 @@ interface OriginCardProps {
   stance: Stance | null;
   /** The camera and place zones and the GPS drift. */
   timeProfile: TimeProfile | null;
+  /**
+   * The heuristics behind the origin verdict failed on this file (`profile.undetermined`). The
+   * history rows are replaced by one line saying so: with no history they would read «не
+   * редактировался», which nobody established.
+   */
+  undetermined?: boolean;
 }
 
 /** Content Credentials, when the file carries them: who signed, with what, and whether it held. */
@@ -72,7 +78,7 @@ const CredentialsDetails: React.FC<{ credentials: ContentCredentialsState }> = (
  * exposure against the sun, the timestamps against each other, the Live / Motion Photo as a
  * sign of an untouched original, serial numbers and Content Credentials.
  */
-export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, fileInfo, metadata, proData, credentials, stance, timeProfile }) => {
+export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, fileInfo, metadata, proData, credentials, stance, timeProfile, undetermined = false }) => {
   const t = useT();
   const { lang } = useI18n();
 
@@ -88,7 +94,7 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
   const parts = Array.from(ORIGIN_KINDS)
     .map((kind) => sectionsByKind.get(kind))
     .filter((section): section is ProfileSection => Boolean(section));
-  if (parts.length === 0) return null;
+  if (parts.length === 0 && !undetermined) return null;
 
   const ai = sectionsByKind.get('ai');
   const serial = sectionsByKind.get('serial');
@@ -134,7 +140,10 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
   });
   // The marker survives a re-save along with the rest of the metadata, so it only vouches for the
   // pixels when nothing else says they were written again; otherwise it says what it can.
-  const originalSign = metadata?.apple?.livePhoto
+  // Both wordings of this row lean on the verdict («не пересохраняли» / «перезаписана»): no verdict, no row.
+  const originalSign = undetermined
+    ? null
+    : metadata?.apple?.livePhoto
     ? t(writtenAgain ? 'originalLivePhotoKept' : 'originalLivePhoto')
     : metadata?.samsung?.motionPhotoBytes != null
       ? t(writtenAgain ? 'originalMotionPhotoKept' : 'originalMotionPhoto')
@@ -202,33 +211,37 @@ export const OriginCard: React.FC<OriginCardProps> = ({ sectionsByKind, device, 
       <div className="fy-fact-details fy-origin">
         {device ? <DeviceRows device={device} metadata={metadata} /> : null}
         <h4 className="v4-h3">{t('historyTitle')}</h4>
-        <dl className="fy-spec fy-spec--tight">
-          {originText ? (
-            <>
-              <dt>{t('originRowTitle')}</dt>
-              <dd>
-                <span>{originText.headline}</span>
-                {originText.reasons.length > 0 ? <span className="fy-muted">{originText.reasons.join('; ')}</span> : null}
-              </dd>
-            </>
-          ) : null}
-          <dt>{t('historyCreated')}</dt>
-          <dd>
-            <span>{createdText}</span>
-            {driftNote ? <span className="fy-muted">{driftNote}</span> : null}
-          </dd>
-          <dt>{t('historyEdited')}</dt>
-          <dd>
-            <span>{editedText}</span>
-            {editedNote ? <span className="fy-muted">{editedNote}</span> : null}
-            {signs.map((event, index) => (
-              <span key={`${event.kind}-${index}`} className="fy-history-sign">
-                {event.kind === 'thumbnail' && metadata?.thumbnail ? <img src={metadata.thumbnail.url} alt="" width={96} /> : null}
-                <span className="fy-muted">{signText(event)}</span>
-              </span>
-            ))}
-          </dd>
+        {undetermined ? (
+          <p className="fy-hint">{t('originUndetermined')}</p>
+        ) : (
+          <dl className="fy-spec fy-spec--tight">
+            {originText ? (
+              <>
+                <dt>{t('originRowTitle')}</dt>
+                <dd>
+                  <span>{originText.headline}</span>
+                  {originText.reasons.length > 0 ? <span className="fy-muted">{originText.reasons.join('; ')}</span> : null}
+                </dd>
+              </>
+            ) : null}
+            <dt>{t('historyCreated')}</dt>
+            <dd>
+              <span>{createdText}</span>
+              {driftNote ? <span className="fy-muted">{driftNote}</span> : null}
+            </dd>
+            <dt>{t('historyEdited')}</dt>
+            <dd>
+              <span>{editedText}</span>
+              {editedNote ? <span className="fy-muted">{editedNote}</span> : null}
+              {signs.map((event, index) => (
+                <span key={`${event.kind}-${index}`} className="fy-history-sign">
+                  {event.kind === 'thumbnail' && metadata?.thumbnail ? <img src={metadata.thumbnail.url} alt="" width={96} /> : null}
+                  <span className="fy-muted">{signText(event)}</span>
+                </span>
+              ))}
+            </dd>
         </dl>
+        )}
         <h4 className="v4-h3">{t('authenticityTitle')}</h4>
         <dl className="fy-spec fy-spec--tight">
           {ai ? (

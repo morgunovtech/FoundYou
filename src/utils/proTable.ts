@@ -2,7 +2,7 @@ import type { DigitalProfile } from './heuristics/digitalProfile';
 import type { StructuredMetadata, BasicFileInfo } from '../types/metadata';
 import type { BoundingBox } from '../types/detection';
 import type { OCRResult } from '../hooks/useOCR';
-import type { ProData } from '../App';
+import type { ProData } from './profileBuild';
 import type { MessageKey } from '../i18n';
 import type { QrCode } from './qr';
 import type { PiiFinding } from './pii';
