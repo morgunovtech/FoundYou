@@ -41,41 +41,12 @@ import type {
 import type { BasicFileInfo } from './types/metadata';
 import { generateSceneNarrative } from './utils/sceneNarrative';
 import { analyzeFilename } from './utils/heuristics/filenameAnalyzer';
-import { analyzeResolution } from './utils/heuristics/resolutionAnalyzer';
-import { detectStrippedMetadata, hasCameraExif } from './utils/heuristics/strippedDetector';
-import { judgeOrigin, type OriginJudgement } from './utils/originJudge';
-import { judgeCompression, type CompressionVerdict } from './utils/jpegQuant';
-import { scoreScreenshot, type ScreenshotScore } from './utils/screenshot';
-import { buildFileHistory, type FileEvent } from './utils/fileHistory';
 import { useContainerSignals } from './hooks/useContainerSignals';
 import { useFrameStats } from './hooks/useFrameStats';
-import { analyzeEditingHistory } from './utils/heuristics/editingHistory';
-import { generateFileHash } from './utils/heuristics/hashAnalyzer';
-import { analyzeDateTime } from './utils/heuristics/temporalAnalyzer';
-import { generateDigitalProfile, predictLeakAfter, type DigitalProfile } from './utils/heuristics/digitalProfile';
-import type { FilenameAnalysis } from './utils/heuristics/filenameAnalyzer';
-import type { ResolutionAnalysis } from './utils/heuristics/resolutionAnalyzer';
-import type { StrippedAnalysis } from './utils/heuristics/strippedDetector';
-import type { EditingAnalysis } from './utils/heuristics/editingHistory';
-import type { HashResult } from './utils/heuristics/hashAnalyzer';
-import type { TemporalInsight } from './utils/heuristics/temporalAnalyzer';
+import { generateFileHash, type HashResult } from './utils/heuristics/hashAnalyzer';
+import { predictLeakAfter, type DigitalProfile } from './utils/heuristics/digitalProfile';
+import { buildProfile, type ProData, type ProfileBuild } from './utils/profileBuild';
 
-export interface ProData {
-  filename: FilenameAnalysis;
-  resolution: ResolutionAnalysis;
-  stripped: StrippedAnalysis;
-  editing: EditingAnalysis;
-  hash: HashResult | null;
-  temporal: TemporalInsight[];
-  /** The one verdict on where the file has been since the shutter, with its grounds. */
-  origin: OriginJudgement;
-  /** The JPEG tables against the maker in EXIF; null for other containers. */
-  compression: CompressionVerdict | null;
-  /** The screenshot probability with its reasons. */
-  screenshot: ScreenshotScore;
-  /** What happened to the file after the shutter, as dated events. */
-  history: FileEvent[];
-}
 import {
   applyAntiSearch,
   applyAntiSearchMeasured,
@@ -204,7 +175,15 @@ function qualityForMode(mode: QualityMode, sourceQuality: number | null): number
 
 /** A PNG or a screenshot-named file: no sensor noise to weaken, no quality knob, nothing to re-encode for. */
 function isScreenLikeFile(name: string, mimeType: string, lang: 'ru' | 'en' | 'uz'): boolean {
-  return mimeType === 'image/png' || analyzeFilename(name, lang).isScreenshot;
+  if (mimeType === 'image/png') return true;
+  try {
+    return analyzeFilename(name, lang).isScreenshot;
+  } catch (err) {
+    // Called while rendering and from the file handler: a name the patterns choke on must not
+    // take the page down or leave the picked file unprocessed. The profile reports it itself.
+    console.warn('filename', err);
+    return false;
+  }
 }
 
 function createAnonymisedName(extension: string): string {
@@ -355,11 +334,14 @@ const App: React.FC = () => {
   /**
    * The profile is stored with the file it was built for and read back only while that file
    * is the current one, so section 02 never shows another photo's facts while this one is
-   * still being analysed.
+   * still being analysed. An entry with `profile: null` is an analysis that ran and failed —
+   * not the same as no entry, which is one still running.
    */
-  const [profileEntry, setProfileEntry] = useState<{ file: BasicFileInfo; profile: DigitalProfile; proData: ProData } | null>(null);
-  const digitalProfile = profileEntry && profileEntry.file === fileInfo ? profileEntry.profile : null;
-  const proData = profileEntry && profileEntry.file === fileInfo ? profileEntry.proData : null;
+  const [profileEntry, setProfileEntry] = useState<{ file: BasicFileInfo; profile: DigitalProfile | null; proData: ProData | null } | null>(null);
+  const currentProfile = profileEntry && profileEntry.file === fileInfo ? profileEntry : null;
+  const digitalProfile = currentProfile?.profile ?? null;
+  const proData = currentProfile?.proData ?? null;
+  const profileFailed = currentProfile !== null && currentProfile.profile === null;
 
   /**
    * The byte hash and the perceptual hash, once per file. They used to be recomputed inside the
@@ -395,115 +377,35 @@ const App: React.FC = () => {
     if (!fileHash) return; // the hashes arrive once per file (above); the profile follows them
 
     let cancelled = false;
-    void (async () => {
-      const originalName = fileInfo.originalName ?? fileInfo.file.name;
-      const filenameResult = analyzeFilename(originalName, lang);
-      const resolutionResult = analyzeResolution(fileInfo.width, fileInfo.height, lang);
-      const exif = metadata?.groups?.exif ?? {};
-      const xmp = metadata?.groups?.xmp ?? {};
-      const editingResult = analyzeEditingHistory(exif, xmp, lang, metadata?.groups?.png ?? null, metadata?.groups?.iptc ?? null);
-      // Make / Model / DateTimeOriginal, not the six-field resolution stub every re-encoder
-      // writes: a Telegram file carries that stub and used to count as «metadata preserved».
-      const cameraExif = hasCameraExif(exif);
-      const strippedResult = detectStrippedMetadata({
-        filename: originalName,
-        filenameAnalysis: filenameResult,
-        mimeType: fileInfo.mimeType,
-        width: fileInfo.width,
-        height: fileInfo.height,
-        hasExif: cameraExif,
-        hasSoftwareTag: !!(exif.Software ?? exif.software ?? xmp.CreatorTool ?? xmp.creatorTool),
-        // PNG text chunks, XMP and IPTC are metadata too: a generator's «parameters» chunk is
-        // exactly the thing the card used to call «метаданные были удалены».
-        hasOtherMetadata:
-          Object.keys(metadata?.groups?.png ?? {}).length > 0 ||
-          Object.keys(xmp).length > 0 ||
-          Object.keys(metadata?.groups?.iptc ?? {}).length > 0,
-        lang,
-      });
-      // Wall-clock of the camera, not the viewer's zone: "night photo" must be night where it was taken.
-      const temporalResult = analyzeDateTime(metadata?.shotDateLocal ?? metadata?.shotDate, lang);
-      const hashResult = fileHash.hash;
-      const originalMime = fileInfo.originalMimeType ?? fileInfo.mimeType;
-      const compression = jpeg ? judgeCompression(jpeg, metadata?.cameraMake) : null;
-      const screenshot = scoreScreenshot({
-        filenameScreenshot: filenameResult.isScreenshot,
-        knownScreenSize: resolutionResult.isScreenshot,
-        hasCameraExif: Boolean(metadata?.cameraMake || metadata?.cameraModel),
-        hasShotDate: Boolean(metadata?.shotDateLocal),
-        mimeType: originalMime,
-        flatRatio: frame?.flatRatio ?? null
-      });
-      const history = buildFileHistory({
-        metadata: metadata ?? null,
-        editing: editingResult,
-        stripped: strippedResult,
-        credentials: credentials.data ?? null,
-        lastModified: (fileInfo.originalFile ?? fileInfo.file).lastModified || null,
-        width: fileInfo.originalWidth ?? fileInfo.width,
-        height: fileInfo.originalHeight ?? fileInfo.height,
-        phash: hashResult?.phash ?? null
-      });
-      // One verdict over every sign, so the rows of the origin card stop contradicting each other.
-      const origin = judgeOrigin({
-        mimeType: originalMime,
-        width: fileInfo.width,
-        height: fileInfo.height,
-        hasCameraExif: cameraExif,
-        filename: filenameResult,
-        stripped: strippedResult,
-        editing: editingResult,
-        compression,
-        livePhoto: Boolean(metadata?.apple?.livePhoto),
-        motionPhoto: metadata?.samsung?.motionPhotoBytes != null,
-        modifiedLater: history.some((event) => event.kind === 'modified' && event.at != null),
-        resized: history.some((event) => event.kind === 'resized'),
-        thumbnailDiffers: history.some((event) => event.kind === 'thumbnail' && event.same === false),
-        screenshotLikely: filenameResult.isScreenshot || screenshot.level === 'likely' || screenshot.level === 'certain'
-      });
-      // Yield once so a burst of arrivals (OCR, then plates and documents) coalesces into one profile.
-      await Promise.resolve();
-
+    // Yield once so a burst of arrivals (OCR, then plates and documents) coalesces into one profile.
+    void Promise.resolve().then(() => {
       if (cancelled) return;
-
-      const profile = generateDigitalProfile({
-        filename: filenameResult,
-        resolution: resolutionResult,
-        stripped: strippedResult,
-        editing: editingResult,
-        hash: hashResult,
-        temporal: temporalResult,
-        origin,
-        metadata: metadata ?? null,
-        detections,
-        ocrResult: ocrResult ?? null,
-        plates: plateCandidates,
-        qrCodes,
-        pii: piiFindings,
-        credentials: credentials.data,
-        credentialsStatus: credentials.status,
-        originalFilename: originalName,
-        lang,
-      });
-      setProfileEntry({
-        file: fileInfo,
-        profile,
-        proData: {
-          filename: filenameResult,
-          resolution: resolutionResult,
-          stripped: strippedResult,
-          editing: editingResult,
-          hash: hashResult,
-          temporal: temporalResult,
-          origin,
-          compression,
-          screenshot,
-          history
-        }
-      });
-    })().catch((err) => {
-      // A throw in one of the heuristics over file metadata must not end as an unhandled rejection.
-      console.warn('digital-profile', err);
+      /*
+       * The heuristics read whatever a stranger's file carries, so one of them can throw.
+       * `buildProfile` leaves out the part that failed and builds the rest; if it cannot build
+       * anything, the entry is stored as failed. Either way the section leaves «factsPending»:
+       * a rejection that was only logged kept «Собираем факты…» on the page for good.
+       */
+      let built: ProfileBuild | null = null;
+      try {
+        built = buildProfile({
+          fileInfo,
+          metadata: metadata ?? null,
+          hash: fileHash.hash,
+          jpeg,
+          frame,
+          credentials: { status: credentials.status, data: credentials.data },
+          detections,
+          ocrResult: ocrResult ?? null,
+          plates: plateCandidates,
+          qrCodes,
+          pii: piiFindings,
+          lang
+        });
+      } catch (err) {
+        console.warn('digital-profile', err);
+      }
+      setProfileEntry({ file: fileInfo, profile: built?.profile ?? null, proData: built?.proData ?? null });
     });
     return () => { cancelled = true; };
   }, [fileInfo, metadata, detections, ocrResult, plateCandidates, qrCodes, piiFindings, credentials.data, credentials.status, analysisLoading, ocrLoading, lang, fileHash, jpeg, frame]);
@@ -1210,6 +1112,7 @@ const App: React.FC = () => {
                 metadata={metadata}
                 profile={digitalProfile}
                 proData={proData}
+                profileFailed={profileFailed}
                 jpeg={jpeg}
                 frame={frame}
                 detections={detections}
