@@ -134,6 +134,7 @@ Cloudflare Pages собирает и выкладывает `main` через и
 - **Яндекс Вебмастер:** сайт добавлен и подтверждён мета-тегом `yandex-verification` в `index.html` (сам по себе тег ничего не создаёт). Снос: удалить сайт в Яндекс Вебмастере.
 - **Google Search Console и Bing Webmaster Tools:** в Search Console — ресурс с префиксом URL `https://foundyou.morgunov.tech/`, подтверждённый через доменный ресурс `morgunov.tech` (поэтому на странице нет тега `google-site-verification`); в Bing Webmaster Tools сайт импортирован из Search Console. Снос: удалить ресурс в Search Console и сайт в Bing Webmaster Tools.
 - **Мониторинг:** за `foundyou.morgunov.tech` следит TofsDevOps — собственный бот владельца (доступность, домен и сертификат, заголовки, поисковый индекс). Настраивается в боте, не в этом репозитории. Снос: убрать сайт там.
+- **SonarQube Cloud:** приложение GitHub на этом репозитории и проект `morgunovtech_FoundYou` (автоматический анализ, в репозитории нет ни конфига, ни токена). Снос: удалить проект на sonarcloud.io и убрать репозиторий из установки приложения.
 
 ## Что почитать
 

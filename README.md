@@ -134,6 +134,7 @@ The build needs internet access: `prepare:assets` downloads the MediaPipe models
 - **Yandex Webmaster:** the site is added and verified by the `yandex-verification` meta tag in `index.html` (the tag by itself creates nothing). Teardown: remove the site in Yandex Webmaster.
 - **Google Search Console and Bing Webmaster Tools:** a URL-prefix property `https://foundyou.morgunov.tech/` in Search Console, verified through the `morgunov.tech` domain property (which is why the page carries no `google-site-verification` tag); Bing Webmaster Tools has the site imported from Search Console. Teardown: delete the property in Search Console and the site in Bing Webmaster Tools.
 - **Monitoring:** TofsDevOps, the owner's own bot, watches `foundyou.morgunov.tech` (availability, domain and certificate, headers, search index). It is configured in the bot, not in this repository. Teardown: remove the site there.
+- **SonarQube Cloud:** the GitHub App on this repository and the project `morgunovtech_FoundYou` (automatic analysis, no config or token in the repo). Teardown: delete the project on sonarcloud.io and remove the repository from the app's installation.
 
 ## Further reading
 
