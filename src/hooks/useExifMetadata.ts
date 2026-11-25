@@ -173,7 +173,7 @@ export function useExifMetadata(fileInfo: BasicFileInfo | null): UseExifMetadata
       }
     };
 
-    parse();
+    void parse();
 
     return () => {
       active = false;
@@ -392,7 +392,7 @@ export function gpsInstant(dateStamp: unknown, timeStamp: unknown): string | und
 
   let parts: number[] | undefined;
   if (Array.isArray(timeStamp)) {
-    parts = timeStamp.map((part) => toNumber(part) ?? NaN);
+    parts = timeStamp.map((part) => toNumber(part) ?? Number.NaN);
   } else if (typeof timeStamp === 'string') {
     parts = timeStamp.trim().split(':').map((part) => Number(part));
   } else if (timeStamp instanceof Date && !Number.isNaN(timeStamp.getTime())) {

@@ -372,7 +372,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!fileInfo) return;
     let cancelled = false;
-    (async () => {
+    void (async () => {
       let hash: HashResult | null = null;
       try {
         const decoded = await getSourceImage(fileInfo).catch(() => null);
@@ -395,7 +395,7 @@ const App: React.FC = () => {
     if (!fileHash) return; // the hashes arrive once per file (above); the profile follows them
 
     let cancelled = false;
-    (async () => {
+    void (async () => {
       const originalName = fileInfo.originalName ?? fileInfo.file.name;
       const filenameResult = analyzeFilename(originalName, lang);
       const resolutionResult = analyzeResolution(fileInfo.width, fileInfo.height, lang);
@@ -501,7 +501,10 @@ const App: React.FC = () => {
           history
         }
       });
-    })();
+    })().catch((err) => {
+      // A throw in one of the heuristics over file metadata must not end as an unhandled rejection.
+      console.warn('digital-profile', err);
+    });
     return () => { cancelled = true; };
   }, [fileInfo, metadata, detections, ocrResult, plateCandidates, qrCodes, piiFindings, credentials.data, credentials.status, analysisLoading, ocrLoading, lang, fileHash, jpeg, frame]);
 

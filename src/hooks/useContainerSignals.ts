@@ -23,7 +23,7 @@ export function useContainerSignals(fileInfo: BasicFileInfo | null): JpegSignals
       return undefined;
     }
     let active = true;
-    (async () => {
+    void (async () => {
       let signals: JpegSignals | null;
       try {
         signals = parseJpegSignals(new Uint8Array(await file.slice(0, HEAD_BYTES).arrayBuffer()));

@@ -188,12 +188,29 @@ export interface ManifestStoreLike {
   validationResults?: { activeManifest?: { failure?: Array<{ code: string }> } } | null;
 }
 
+/**
+ * The text before the first whitespace that is followed by another `product/version` token —
+ * what `value.split(/\s+(?=\S+\/)/)[0]` gave, in one pass: the string comes from the file's
+ * manifest, and that pattern re-reads a long run of whitespace from every position in it.
+ */
+function firstProduct(value: string): string {
+  const parts = value.split(/(\s+)/); // token, separator, token, separator, …
+  let offset = 0;
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    offset += parts[i].length;
+    if (parts[i + 2].indexOf('/', 1) > 0) return value.slice(0, offset);
+    offset += parts[i + 1].length;
+  }
+  return value;
+}
+
 /** "Adobe_Photoshop/25.0 (Windows)" → "Adobe Photoshop 25.0" */
 export function parseGenerator(value: string): string {
-  const first = value.split(/\s+(?=\S+\/)/)[0] ?? value;
+  const first = firstProduct(value);
   const [name, version] = first.split('/');
   const cleanName = (name ?? '').replace(/_/g, ' ').trim();
-  const cleanVersion = (version ?? '').replace(/\(.*$/, '').trim();
+  const paren = (version ?? '').indexOf('(');
+  const cleanVersion = (paren < 0 ? (version ?? '') : (version ?? '').slice(0, paren)).trim();
   return [cleanName, cleanVersion].filter(Boolean).join(' ').trim() || value.trim();
 }
 

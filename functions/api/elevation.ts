@@ -26,7 +26,7 @@ export const onRequest = defineHandler(async ({ url, context }) => {
 
     // `Number(null)` is 0, which would be cached for a month as sea level: only a real number counts.
     const first = Array.isArray(payload?.elevation) ? payload.elevation[0] : undefined;
-    const value = typeof first === 'number' ? first : NaN;
+    const value = typeof first === 'number' ? first : Number.NaN;
     if (!Number.isFinite(value)) {
       return json({ ok: false, error: 'upstream-invalid' }, 502);
     }

@@ -95,7 +95,8 @@ export function criticalLines(tokensCss) {
         const value = d
           .slice(colon + 1)
           .replace(/\s+/g, ' ')
-          .replace(/\s*,\s*/g, ',')
+          // Whitespace is already single spaces here, so « ?, ?» is the whole of «\s*,\s*».
+          .replace(/ ?, ?/g, ',')
           .trim();
         return `${prop}:${value}`;
       });

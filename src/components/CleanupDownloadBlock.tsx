@@ -113,7 +113,7 @@ function tokenRgba(name: string, alpha: number, fallback: string): string {
   const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   const match = /^#([0-9a-f]{6})$/i.exec(raw);
   if (!match) return fallback;
-  const n = parseInt(match[1], 16);
+  const n = Number.parseInt(match[1], 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 

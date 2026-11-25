@@ -24,7 +24,7 @@ export function useFrameStats(fileInfo: BasicFileInfo | null): FrameStats | null
   useEffect(() => {
     if (!file) return undefined;
     let active = true;
-    (async () => {
+    void (async () => {
       let stats: FrameStats | null = null;
       try {
         // Decode at the working size, not the file's: a 60 MP upload on an iPhone is a ~240 MB

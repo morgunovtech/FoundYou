@@ -181,7 +181,7 @@ const encloses = (outer: Span, inner: Span) =>
 const FIRMWARE_PATTERNS: RegExp[] = [
   /^v?\d+(?:\.\d+)*[a-z]?$/i, // iPhone "17.5.1", DJI "v01.00.0500", "1.0"
   /^ver(?:sion)?\.?\s*v?\d+(?:\.\d+)*$/i, // Nikon/Panasonic "Ver.1.10", Olympus "Version 1.0"
-  /^(?:camera\s+)?firmware(?:\s+version)?\s*:?\s*v?\d+(?:\.\d+)*$/i, // Canon "Firmware Version 1.1.0"
+  /^(?:camera\s+)?firmware(?:\s+version)?\s*(?::\s*)?v?\d+(?:\.\d+)*$/i, // Canon "Firmware Version 1.1.0"
   /\bver\.?\s?\d+(?:\.\d+)+\s*$/i, // Fujifilm "Digital Camera X-T4 Ver1.02", Ricoh "GR III Ver1.00"
   /^[A-Z0-9-]+\s+v\d+(?:\.\d+)+\s*$/, // Sony "ILCE-7M3 v3.10" (model code + version)
   /^[A-Z](?=[A-Z0-9]*\d)[A-Z0-9]{7,}$/, // Samsung build ID "S918BXXS4BXA1", "G991BXXU5DVJ8"

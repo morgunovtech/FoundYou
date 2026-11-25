@@ -31,7 +31,7 @@ export function useContentCredentials(fileInfo: BasicFileInfo | null): ContentCr
   useEffect(() => {
     if (!file) return;
     let active = true;
-    (async () => {
+    void (async () => {
       let state: ContentCredentialsState;
       try {
         const bytes = new Uint8Array(await file.arrayBuffer());

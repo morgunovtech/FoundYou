@@ -81,7 +81,7 @@ const SEQUENCE_NAME_REGEX = /^(?:IMG_|_?DSC_?)(\d{4,5})(?:\s?\(\d+\))?\.[A-Za-z0
 function estimatePhotoIndex(filename: string): { photoIndex: number; estimatedMonths: number } | null {
   const match = SEQUENCE_NAME_REGEX.exec(filename);
   if (!match) return null;
-  const index = parseInt(match[1], 10);
+  const index = Number.parseInt(match[1], 10);
   if (index <= 0) return null;
   const photosPerDay = 5;
   const estimatedDays = Math.round(index / photosPerDay);
