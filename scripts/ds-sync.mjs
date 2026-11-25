@@ -2,7 +2,8 @@
 /**
  * ds-sync.mjs — keeps the vendored morgunov.tech design system equal to its origin.
  *
- *   public/ds/v1/*.css, USAGE.md   the layer, byte for byte as https://s.morgunov.tech/ds/v1/ serves it
+ *   public/ds/v1/*.css, chrome.js, USAGE.md   the layer, byte for byte as https://s.morgunov.tech/ds/v1/
+ *                                  serves it (chrome.js drives the menus of 404.html; the app has its own)
  *   public/fonts/*.woff2, OFL.txt  IBM Plex, the same files the origin serves under /fonts/
  *   index.html, 404.html           the three critical token lines (:root, dark, high-contrast),
  *                                  minified from tokens.css so the first paint is themed
@@ -201,6 +202,22 @@ function check() {
 }
 
 /**
+ * The address `--write` asks the origin for. The origin serves `/ds/*` and `/fonts/*` as
+ * `immutable` for a year, and its CDN keeps the copy of the plain address — the one without
+ * `?v=` — across releases: measured 2026-11-25, ten hours after about-me-page v1.5.0, the same
+ * `tokens.css` answered with the old bytes or the new ones depending on the edge node and the
+ * `Accept-Encoding` (age 35 500 s on the stale copies), so a sync could find «no change», or
+ * vendor a version older than the one it had. A query the CDN has never seen is a new cache
+ * object, and the request reaches the current deployment.
+ * @param {string} origin
+ * @param {string} file
+ * @param {number} [stamp]
+ */
+export function freshUrl(origin, file, stamp = Date.now()) {
+  return `${origin}/${file}?sync=${stamp}`;
+}
+
+/**
  * @param {string} url
  * @returns {Promise<Uint8Array>}
  */
@@ -214,7 +231,7 @@ async function write() {
   const manifest = readManifest();
   const changed = [];
   for (const [file, before] of Object.entries(manifest.files)) {
-    const bytes = await download(`${manifest.origin}/${file}`);
+    const bytes = await download(freshUrl(manifest.origin, file));
     const after = shortHash(bytes);
     const target = path.join(ROOT, manifest.root, file);
     const same = existsSync(target) && shortHash(readFileSync(target)) === after;

@@ -1,18 +1,12 @@
 import React from 'react';
 import { useTheme, type ThemePreference } from '../theme';
-import { useT, type MessageKey } from '../i18n';
+import { useT } from '../i18n';
+import { THEME_OPTIONS } from '../site/chrome';
 import { Dropdown } from './Dropdown';
 
-const OPTIONS: Array<{ value: ThemePreference; labelKey: MessageKey }> = [
-  { value: 'light', labelKey: 'themeLight' },
-  { value: 'dark', labelKey: 'themeDark' },
-  { value: 'auto', labelKey: 'themeAuto' },
-  { value: 'high-contrast', labelKey: 'themeHighContrast' }
-];
-
 /**
- * Icon-only theme menu from the design system. Which of the three glyphs is
- * visible is decided by `[data-theme]` on <html> in components.css, so the
+ * The family theme menu: the icon button and the four themes in the family's order. Which of
+ * the three glyphs is visible is decided by `[data-theme]` on <html> in components.css, so the
  * button needs no state of its own.
  */
 export const ThemeSwitcher: React.FC = () => {
@@ -21,10 +15,12 @@ export const ThemeSwitcher: React.FC = () => {
 
   return (
     <Dropdown
-      className="fy-theme"
+      name="theme"
       toggleClassName="v4-icon-btn"
+      menuClassName="v4-theme-menu"
+      itemClassName="v4-theme-btn"
       toggleLabel={t('themeMenuLabel')}
-      items={OPTIONS.map((option) => ({
+      items={THEME_OPTIONS.map((option) => ({
         value: option.value,
         label: t(option.labelKey),
         checked: preference === option.value

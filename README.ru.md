@@ -76,7 +76,7 @@
 - **В браузере:** `exifr` (метаданные), `libheif-js` (HEIC), `@mediapipe/tasks-vision` (лица и объекты), `tesseract.js` (OCR), `c2pa` (Content Credentials), `jsqr` и `zxing-wasm` (коды), `maplibre-gl` (карта), `@photostructure/tz-lookup` (часовой пояс места).
 - **Серверная часть:** Cloudflare Pages Functions на TypeScript (`functions/api/`) с общими помощниками в `functions/api/_geo.ts` и одним запросом Overpass в `functions/api/_overpass.ts`. На Functions направляется только `/api/*` (`public/_routes.json`).
 - **Качество:** Vitest, ESLint, Prettier, браузерный smoke-тест на `playwright-core`. GitHub Actions запускает линтер, проверку типов, тесты, сборку и smoke-тест на каждый пул-реквест и пуш в `main`.
-- **Дизайн:** дизайн-система morgunov.tech v1, скопированная в `public/ds/v1/` и синхронизируемая с https://s.morgunov.tech автоматически (`ds.json` перечисляет каждый файл с его хешем, `scripts/ds-sync.mjs --check` работает в CI, `.github/workflows/ds-sync.yml` раз в неделю открывает PR, когда источник изменился). Шрифты — IBM Plex Sans и Mono (© IBM Corp.) под SIL Open Font License 1.1 (`public/fonts/OFL.txt`); лицензия MIT на них не распространяется.
+- **Дизайн:** дизайн-система morgunov.tech v1, скопированная в `public/ds/v1/` и синхронизируемая с https://s.morgunov.tech автоматически (`ds.json` перечисляет каждый файл с его хешем, `scripts/ds-sync.mjs --check` работает в CI, `.github/workflows/ds-sync.yml` раз в неделю открывает PR, когда источник изменился). Шапка и подвал — общие для семейства (`public/ds/v1/USAGE.md`, «Service chrome»): знак «MORGUNOV.TECH / FOUND YOU», меню языка и темы, подвал «название · год · версия»; `src/__tests__/site/chrome.test.tsx` держит по этому контракту и статические страницы, и шапку на React. Шрифты — IBM Plex Sans и Mono (© IBM Corp.) под SIL Open Font License 1.1 (`public/fonts/OFL.txt`); лицензия MIT на них не распространяется.
 
 ```
 src/            приложение: App.tsx, components/, hooks/, utils/ (анализ и очистка), i18n/,
@@ -124,7 +124,7 @@ Cloudflare Pages собирает и выкладывает `main` через и
 - **Build output directory:** `dist`
 - **Node:** версия из `.nvmrc`; при необходимости задайте `NODE_VERSION`.
 
-Сборке нужен доступ в интернет: `prepare:assets` скачивает модели MediaPipe, которых нет в репозитории. `public/_headers` и `public/_routes.json` копируются в `dist/` как есть. В футере есть ссылка на выложенный коммит (`CF_PAGES_COMMIT_SHA`).
+Сборке нужен доступ в интернет: `prepare:assets` скачивает модели MediaPipe, которых нет в репозитории. `public/_headers` и `public/_routes.json` копируются в `dist/` как есть. В подвале — релиз: `version` из `package.json`, верхняя запись `CHANGELOG.md`, ссылкой на этот файл на GitHub; выложенный коммит (`CF_PAGES_COMMIT_SHA`) записан в `<meta name="build">` трёх страниц.
 
 ## Что проект создаёт снаружи
 

@@ -1,7 +1,7 @@
 import React from 'react';
 
 interface SectionHeadProps {
-  /** Two-digit mono index («01») — the design-system section idiom. */
+  /** Two-digit mono index («01»): the step of the page. */
   num: string;
   title: string;
   /** id of the heading, referenced by the section's aria-labelledby. */
@@ -11,14 +11,14 @@ interface SectionHeadProps {
 }
 
 /**
- * `.v4-section-head`: mono number on the title's baseline, rule underneath. The number also
- * carries `.fy-section-num`, which lifts it from the design system's 11 px label size to the
- * heading's own size — the vendored `public/ds/v1` is synced from `about-me-page` and is never
- * edited here, so the override lives in `styles.css`.
+ * `.v4-section-head`: mono number on the title's baseline, rule underneath. The number is this
+ * page's own (`.fy-section-num` in `styles.css`): the family layer has had no section number
+ * since about-me-page v1.5.0, where sections of a page are not a sequence. Here they are the
+ * three steps of one job, in order.
  */
 export const SectionHead: React.FC<SectionHeadProps> = ({ num, title, id, children }) => (
   <div className="v4-section-head">
-    <span className="v4-section-num fy-section-num" aria-hidden="true">
+    <span className="fy-section-num" aria-hidden="true">
       {num}
     </span>
     <h2 className="v4-h2" id={id}>

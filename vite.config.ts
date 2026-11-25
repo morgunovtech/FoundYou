@@ -8,7 +8,7 @@ import { defineConfig, type Plugin, type ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 // The real extension: Vite's future native config loader resolves imports as Node does.
 import { stampDsVersions } from './src/build/dsVersionStamp.ts';
-import { renderLlmsFull, renderLocalePage, renderSitemap, type BuildInfo } from './src/site/renderStatic.ts';
+import { renderLlmsFull, renderLocalePage, renderNotFoundPage, renderSitemap, type BuildInfo } from './src/site/renderStatic.ts';
 import type { Language } from './src/i18n/messages.ts';
 import { readVersions } from './scripts/asset-versions.mjs';
 
@@ -62,7 +62,9 @@ function localePages(): Plugin {
       handler(html, ctx) {
         const entry = path.relative(__dirname, ctx.filename).split(path.sep).join('/');
         const lang = PAGE_LANGUAGES[entry];
-        return lang ? renderLocalePage(template(), lang, BUILD) : html;
+        if (lang) return renderLocalePage(template(), lang, BUILD);
+        // 404.html is one file for every language: it gets the family chrome once per language.
+        return entry === '404.html' ? renderNotFoundPage(html, BUILD) : html;
       }
     },
     configureServer(server: ViteDevServer) {
@@ -192,9 +194,7 @@ function functionsDevProxy() {
 export default defineConfig({
   plugins: [react(), functionsDevProxy(), localePages(), dsVersionStamp()],
   define: {
-    __BUILD__: JSON.stringify(BUILD.id),
     __VERSION__: JSON.stringify(BUILD.version),
-    __BUILD_DATE__: JSON.stringify(BUILD.date),
     // The versioned asset directories `prepare:assets` writes; `src/assetPaths.ts` reads them.
     __ASSET_VERSIONS__: JSON.stringify(readVersions(__dirname))
   },

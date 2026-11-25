@@ -4,6 +4,7 @@ import {
   CRITICAL_PAGES,
   criticalLines,
   findings,
+  freshUrl,
   replaceCriticalLines,
   shortHash,
   type DsManifest
@@ -128,6 +129,19 @@ describe('findings', () => {
     ]);
     expect(findings(manifest, treeOver({ ...synced, 'public/fonts/a.woff2': undefined as never }))).toContain(
       'fonts/a.woff2: missing under public/ (run --write)'
+    );
+  });
+});
+
+describe('freshUrl', () => {
+  // The plain address is cached by the origin's CDN for a year and survives a release; a query
+  // it has never seen reaches the deployment (measured 2026-11-25, see scripts/ds-sync.mjs).
+  it('asks for every file under a query the CDN has not cached', () => {
+    expect(freshUrl('https://s.morgunov.tech', 'ds/v1/tokens.css', 1764062400000)).toBe(
+      'https://s.morgunov.tech/ds/v1/tokens.css?sync=1764062400000'
+    );
+    expect(freshUrl('https://s.morgunov.tech', 'ds/v1/tokens.css')).not.toBe(
+      freshUrl('https://s.morgunov.tech', 'ds/v1/tokens.css', 1)
     );
   });
 });

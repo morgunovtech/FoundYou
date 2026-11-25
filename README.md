@@ -76,7 +76,7 @@ The image, the file name and the rest of the metadata are not sent.
 - **In the browser:** `exifr` (metadata), `libheif-js` (HEIC), `@mediapipe/tasks-vision` (faces and objects), `tesseract.js` (OCR), `c2pa` (Content Credentials), `jsqr` and `zxing-wasm` (codes), `maplibre-gl` (map), `@photostructure/tz-lookup` (time zone of the place).
 - **Server side:** Cloudflare Pages Functions in TypeScript (`functions/api/`), sharing helpers in `functions/api/_geo.ts` and one Overpass query in `functions/api/_overpass.ts`. Only `/api/*` is routed to Functions (`public/_routes.json`).
 - **Quality:** Vitest, ESLint, Prettier, a browser smoke test on `playwright-core`. GitHub Actions runs lint, typecheck, tests, build and the smoke test on every pull request and push to `main`.
-- **Design:** the morgunov.tech v1 design system, vendored into `public/ds/v1/` and synced from https://s.morgunov.tech automatically (`ds.json` lists every file with its hash, `scripts/ds-sync.mjs --check` runs in CI, `.github/workflows/ds-sync.yml` opens a PR once a week when the origin changed). Fonts are IBM Plex Sans and Mono (© IBM Corp.) under the SIL Open Font License 1.1 (`public/fonts/OFL.txt`); the MIT license does not cover them.
+- **Design:** the morgunov.tech v1 design system, vendored into `public/ds/v1/` and synced from https://s.morgunov.tech automatically (`ds.json` lists every file with its hash, `scripts/ds-sync.mjs --check` runs in CI, `.github/workflows/ds-sync.yml` opens a PR once a week when the origin changed). The bar and the footer are the family's own (`public/ds/v1/USAGE.md`, «Service chrome»): the mark «MORGUNOV.TECH / FOUND YOU», the language and theme menus, and a footer of name · year · version; `src/__tests__/site/chrome.test.tsx` holds both the static pages and the React header to that contract. Fonts are IBM Plex Sans and Mono (© IBM Corp.) under the SIL Open Font License 1.1 (`public/fonts/OFL.txt`); the MIT license does not cover them.
 
 ```
 src/            the app: App.tsx, components/, hooks/, utils/ (analysis and cleanup), i18n/,
@@ -124,7 +124,7 @@ Cloudflare Pages builds and deploys from `main` through its Git integration; Fun
 - **Build output directory:** `dist`
 - **Node:** the version from `.nvmrc`; set `NODE_VERSION` if needed.
 
-The build needs internet access: `prepare:assets` downloads the MediaPipe models, which are not stored in the repository. `public/_headers` and `public/_routes.json` are copied into `dist/` as is. The footer links to the deployed commit (`CF_PAGES_COMMIT_SHA`).
+The build needs internet access: `prepare:assets` downloads the MediaPipe models, which are not stored in the repository. `public/_headers` and `public/_routes.json` are copied into `dist/` as is. The footer names the release — `version` in `package.json`, the top entry of `CHANGELOG.md` — as a link to that file on GitHub; the deployed commit (`CF_PAGES_COMMIT_SHA`) is in `<meta name="build">` of the three pages.
 
 ## What it creates outside the repo
 

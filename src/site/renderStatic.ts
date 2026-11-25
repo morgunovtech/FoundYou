@@ -1,6 +1,7 @@
 import { formatMessage, type Language, type MessageKey } from '../i18n/messages.ts';
 import { LANGUAGES, localePath } from '../i18n/locale.ts';
-import { AUTHOR_URL, REPO_URL, SITE_ORIGIN, heroCopy, siteSections, verifyCopy, type SiteSection } from './siteContent.ts';
+import { FAMILY_URL, LANGUAGE_NAMES, SERVICE_NAME, THEME_OPTIONS } from './chrome.ts';
+import { AUTHOR_URL, CHANGELOG_URL, REPO_URL, SITE_ORIGIN, heroCopy, siteSections, verifyCopy, type SiteSection } from './siteContent.ts';
 
 /**
  * The static side of the three language pages: the `<head>` a search engine reads (title,
@@ -15,7 +16,7 @@ export interface BuildInfo {
   version: string;
   /** The date of the commit being built, `YYYY-MM-DD`. */
   date: string;
-  /** The short commit hash (the footer's «сборка»). */
+  /** The short commit hash: `<meta name="build">` in the head of the three pages. */
   id: string;
 }
 
@@ -140,6 +141,8 @@ export function renderHead(lang: Language, build: BuildInfo): string {
     `<link rel="canonical" href="${pageUrl(lang)}" />`,
     ...LANGUAGES.map((other) => `<link rel="alternate" hreflang="${other}" href="${pageUrl(other)}" />`),
     `<link rel="alternate" hreflang="x-default" href="${pageUrl('ru')}" />`,
+    // The deployed commit, for whoever checks a release: the footer names the version only.
+    `<meta name="build" content="${escapeHtml(build.id)}" />`,
     '',
     '<!-- Open Graph -->',
     '<meta property="og:type" content="website" />',
@@ -206,6 +209,84 @@ function renderSection(section: SiteSection): string {
   ].join('\n');
 }
 
+const CHEVRON =
+  '<svg class="v4-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>';
+
+const THEME_ICONS = [
+  '<svg class="v4-icon-sun" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3"></circle><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M3.5 12.5l1.4-1.4M11.1 4.9l1.4-1.4"></path></svg>',
+  '<svg class="v4-icon-moon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 9A6 6 0 1 1 7 2.5a4.5 4.5 0 0 0 6.5 6.5z"></path></svg>',
+  '<svg class="v4-icon-contrast" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="8" r="6"></circle><path d="M8 2v12a6 6 0 0 0 0-12z" fill="currentColor"></path></svg>'
+].join('');
+
+/**
+ * How one copy of the chrome is written into a page. The three language pages carry it once;
+ * 404.html is one file for every language and carries it three times, each copy marked with its
+ * language and shown by `html[lang]` — so the ids take a suffix there.
+ */
+export interface ChromeOptions {
+  /** Appended to every id (`lang-menu-en`). */
+  idSuffix?: string;
+  /** Extra attributes of the outer element, with the leading space (` lang="en" data-fy-l="en"`). */
+  attrs?: string;
+}
+
+/** The link a keyboard reader meets first: straight to the content (`#main`). */
+export function renderSkipLink(lang: Language, options: ChromeOptions = {}): string {
+  return `<a href="#main" class="skip-link"${options.attrs ?? ''}>${escapeHtml(t(lang, 'skipToContent'))}</a>`;
+}
+
+/**
+ * The family bar as a string: the markup of `public/ds/v1/USAGE.md`, «Service chrome» — the
+ * mark, the language menu (links to the same page in each language), the theme menu (four items
+ * in the family's order). `components/SiteHeader.tsx` draws the same markup in React;
+ * `src/__tests__/site/chrome.test.ts` compares the two.
+ */
+export function renderBar(lang: Language, options: ChromeOptions = {}): string {
+  const id = (name: string) => `${name}${options.idSuffix ?? ''}`;
+  const code = lang.toUpperCase();
+  const languages = LANGUAGES.map(
+    (entry) =>
+      `<a class="v4-menu-item v4-lang-link" role="menuitemradio" aria-checked="${entry === lang}" href="${localePath(entry)}" hreflang="${entry}" lang="${entry}">${escapeHtml(LANGUAGE_NAMES[entry])}</a>`
+  );
+  const themes = THEME_OPTIONS.map(
+    (option) =>
+      `<button class="v4-menu-item v4-theme-btn" type="button" role="menuitemradio" data-theme-value="${option.value}" aria-checked="false">${escapeHtml(t(lang, option.labelKey))}</button>`
+  );
+  return [
+    `<header class="v4-bar" id="${id('top')}"${options.attrs ?? ''}>`,
+    `<a class="v4-service" href="${FAMILY_URL}"><span class="v4-service-family">morgunov.tech</span><span class="v4-service-sep" aria-hidden="true">/</span><span class="v4-service-name">${escapeHtml(SERVICE_NAME)}</span></a>`,
+    '<div class="v4-bar-right">',
+    '<div class="v4-dropdown v4-lang">',
+    `<button class="v4-bar-btn v4-lang-btn" type="button" aria-haspopup="menu" aria-controls="${id('lang-menu')}" id="${id('lang-toggle')}" aria-label="${escapeHtml(`${code} — ${t(lang, 'langMenuLabel')}`)}">${code}${CHEVRON}</button>`,
+    `<div class="v4-menu" id="${id('lang-menu')}" role="menu" aria-labelledby="${id('lang-toggle')}">`,
+    ...languages,
+    '</div>',
+    '</div>',
+    '<div class="v4-dropdown v4-theme">',
+    `<button class="v4-icon-btn" type="button" aria-haspopup="menu" aria-controls="${id('theme-menu')}" id="${id('theme-toggle')}" aria-label="${escapeHtml(t(lang, 'themeMenuLabel'))}">${THEME_ICONS}</button>`,
+    `<div class="v4-menu v4-theme-menu" id="${id('theme-menu')}" role="menu" aria-labelledby="${id('theme-toggle')}">`,
+    ...themes,
+    '</div>',
+    '</div>',
+    '</div>',
+    '</header>'
+  ].join('\n');
+}
+
+/**
+ * The family footer: name · year · the build mark on the left, the privacy line on the right,
+ * and nothing else. The build mark is the release as a link to the changelog on GitHub.
+ */
+export function renderFoot(lang: Language, build: BuildInfo, options: ChromeOptions = {}): string {
+  const year = build.date.slice(0, 4);
+  return [
+    `<footer class="v4-foot"${options.attrs ?? ''}>`,
+    `<span>morgunov.tech / found you · ${year} · <a class="v4-build" href="${CHANGELOG_URL}" target="_blank" rel="noopener noreferrer">v${escapeHtml(build.version)}</a></span>`,
+    `<span class="v4-foot-privacy">${escapeHtml(t(lang, 'footerPrivacy'))}</span>`,
+    '</footer>'
+  ].join('\n');
+}
+
 /**
  * The body a reader without JavaScript gets, with the classes the React tree uses, so the first
  * paint and the mounted page look the same. The hero's `h1` carries no id: the smoke test waits
@@ -214,12 +295,10 @@ function renderSection(section: SiteSection): string {
 export function renderStaticBody(lang: Language, build: BuildInfo): string {
   const hero = heroCopy(lang);
   const verify = verifyCopy(lang);
-  const year = build.date.slice(0, 4);
   return [
+    renderSkipLink(lang),
     '<div class="v4-root">',
-    '<header class="v4-bar" id="top">',
-    `<div class="fy-brand"><a href="${localePath(lang)}" aria-current="page">Found You</a><a href="${AUTHOR_URL}" rel="noopener noreferrer">s.morgunov.tech</a></div>`,
-    '</header>',
+    renderBar(lang),
     '<main id="main" class="fy-main">',
     '<section class="fy-hero">',
     '<div class="fy-hero-text">',
@@ -240,12 +319,31 @@ export function renderStaticBody(lang: Language, build: BuildInfo): string {
     '</ol>',
     '</section>',
     '</main>',
-    '<footer class="v4-foot">',
-    `<span>Found You · morgunov.tech · ${year} · ${escapeHtml(t(lang, 'footerVersion', { version: build.version, date: build.date }))} · ${escapeHtml(t(lang, 'footerBuild'))} <code>${escapeHtml(build.id)}</code></span>`,
-    `<span class="v4-foot-privacy">${escapeHtml(t(lang, 'footerPrivacy'))}</span>`,
-    '</footer>',
+    renderFoot(lang, build),
     '</div>'
   ].join('\n');
+}
+
+/**
+ * 404.html: one file Cloudflare Pages serves for every unknown address, in whichever of the
+ * three languages `theme-init.js` puts on `<html lang>`. It carries the chrome once per language
+ * at the `<!-- fy:skips -->`, `<!-- fy:bars -->` and `<!-- fy:foots -->` markers; the page's own
+ * rule shows the copy of the current language. The menus are driven by the layer's `chrome.js`
+ * — there is no React on this page.
+ */
+export function renderNotFoundPage(template: string, build: BuildInfo): string {
+  const parts: Array<[string, (lang: Language, options: ChromeOptions) => string]> = [
+    ['<!-- fy:skips -->', renderSkipLink],
+    ['<!-- fy:bars -->', renderBar],
+    ['<!-- fy:foots -->', (lang, options) => renderFoot(lang, build, options)]
+  ];
+  let page = template;
+  for (const [marker, render] of parts) {
+    if (!page.includes(marker)) throw new Error(`locale-pages: 404.html has no ${marker} marker`);
+    const copies = LANGUAGES.map((lang) => render(lang, { idSuffix: `-${lang}`, attrs: ` lang="${lang}" data-fy-l="${lang}"` }));
+    page = page.replace(marker, copies.join('\n'));
+  }
+  return page;
 }
 
 /**

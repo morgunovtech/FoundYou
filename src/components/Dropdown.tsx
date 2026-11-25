@@ -1,132 +1,168 @@
-import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 
 /**
- * The design-system dropdown (`.v4-dropdown`): a toggle button plus a paper
- * panel of `menuitemradio` buttons. Behaviour mirrors morgunov.tech/script.js:
- * `.is-open` on the container and `aria-expanded` on the toggle; closes on
- * Escape, outside pointer, focus leaving, or a pick; ArrowUp/Down/Home/End
- * move between items; focus returns to the toggle on close.
+ * The family dropdown (`.v4-dropdown`): a toggle button and a panel of `menuitemradio` items —
+ * the language menu and the theme menu of the bar. The markup is the contract of
+ * `public/ds/v1/USAGE.md` («Service chrome»), and the behaviour is the one `ds/v1/chrome.js`
+ * gives every other page of the family, written again only because React owns this DOM:
+ *
+ * - `.is-open` on the container, `aria-expanded` on the toggle; one menu open at a time;
+ * - opened from the keyboard (Enter / Space), focus goes to the first item; opened with the
+ *   pointer, it is parked on the toggle so Escape and the arrows work;
+ * - ArrowUp / ArrowDown / Home / End move between items; Escape, a click outside, focus leaving
+ *   and a pick all close it, and a pick or Escape hands focus back to the toggle;
+ * - a focus the script put on the toggle after a pointer action carries `data-pointer-focus`
+ *   (no ring: the visitor has just clicked there); any key press takes the mark off.
  */
 export interface DropdownItem {
   value: string;
   label: string;
   checked: boolean;
-  /** BCP-47 tag when the label is written in another language (language menu). */
+  /** BCP-47 tag when the label is written in another language (the language menu). */
   lang?: string;
+  /** A link item: the address of the same page in that language. Without it the item is a button. */
+  href?: string;
 }
 
 interface DropdownProps {
-  /** Extra class on the container: `v4-lang` or `v4-theme`. */
-  className: string;
-  /** Toggle look: `v4-bar-btn` (text) or `v4-icon-btn` (icon only). */
+  /** `lang` or `theme`: the container class `v4-<name>` and the ids `<name>-toggle`, `<name>-menu`. */
+  name: 'lang' | 'theme';
+  /** Toggle look: `v4-bar-btn v4-lang-btn` (text) or `v4-icon-btn` (icon only). */
   toggleClassName: string;
   toggleLabel: string;
   toggleChildren: React.ReactNode;
   menuClassName?: string;
+  /** `v4-lang-link` or `v4-theme-btn`, next to `v4-menu-item`. */
+  itemClassName: string;
   items: DropdownItem[];
   onSelect: (value: string) => void;
 }
 
+// What the visitor used last, for the whole page — the same two listeners as chrome.js.
+let byPointer = false;
+if (typeof document !== 'undefined') {
+  document.addEventListener(
+    'pointerdown',
+    () => {
+      byPointer = true;
+    },
+    true
+  );
+  document.addEventListener(
+    'keydown',
+    () => {
+      byPointer = false;
+      document.querySelectorAll('.v4-dropdown > [data-pointer-focus]').forEach((el) => {
+        el.removeAttribute('data-pointer-focus');
+      });
+    },
+    true
+  );
+}
+
 export const Dropdown: React.FC<DropdownProps> = ({
-  className,
+  name,
   toggleClassName,
   toggleLabel,
   toggleChildren,
   menuClassName,
+  itemClassName,
   items,
   onSelect
 }) => {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const toggleRef = useRef<HTMLButtonElement | null>(null);
-  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const reactId = useId().replace(/:/g, '');
-  const toggleId = `dd-toggle-${reactId}`;
-  const menuId = `dd-menu-${reactId}`;
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  // Set by a keyboard activation of the toggle; read once the panel is shown.
+  const focusFirstRef = useRef(false);
+  const toggleId = `${name}-toggle`;
+  const menuId = `${name}-menu`;
 
-  const close = useCallback((restoreFocus: boolean) => {
-    setOpen(false);
-    if (restoreFocus) toggleRef.current?.focus();
+  const focusToggle = useCallback((options?: FocusOptions) => {
+    const toggle = toggleRef.current;
+    if (!toggle) return;
+    if (byPointer) toggle.setAttribute('data-pointer-focus', '');
+    toggle.focus(options);
   }, []);
 
-  // Focus the checked item (or the first) once the panel is shown — once. The switchers build
-  // `items` afresh on every render and the header re-renders with every progress tick of the
-  // analysis, so depending on `items` here snapped the focus back to the checked row while a
-  // keyboard user was already arrowing through the open menu.
-  const itemsRef = useRef(items);
+  const menuItems = () => Array.from(menuRef.current?.querySelectorAll<HTMLElement>('button, a') ?? []);
+
+  // Keyboard open: the first item takes focus once the panel is displayed.
   useEffect(() => {
-    itemsRef.current = items;
-  });
-  useEffect(() => {
-    if (!open) return;
-    const checkedIndex = Math.max(0, itemsRef.current.findIndex((item) => item.checked));
-    itemRefs.current[checkedIndex]?.focus();
+    if (!open || !focusFirstRef.current) return;
+    focusFirstRef.current = false;
+    menuItems()[0]?.focus();
   }, [open]);
 
-  // Outside pointer and focus leaving the component both close it.
+  // A click anywhere outside closes the menu — this is also what keeps one menu open at a time.
   useEffect(() => {
     if (!open) return undefined;
-    const root = rootRef.current;
-    if (!root) return undefined;
-    const onPointerDown = (event: PointerEvent) => {
-      if (!root.contains(event.target as Node)) close(false);
+    const onDocumentClick = (event: MouseEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
-    const onFocusOut = (event: FocusEvent) => {
-      const next = event.relatedTarget as Node | null;
-      if (next && !root.contains(next)) close(false);
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    root.addEventListener('focusout', onFocusOut);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      root.removeEventListener('focusout', onFocusOut);
-    };
-  }, [open, close]);
+    document.addEventListener('click', onDocumentClick);
+    return () => document.removeEventListener('click', onDocumentClick);
+  }, [open]);
 
-  const onToggleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      setOpen(true);
-    } else if (event.key === 'Escape' && open) {
-      event.preventDefault();
-      close(true);
+  // Safari and Firefox on macOS do not focus a button on mousedown: the press only blurs the
+  // current focus, and the focus-out below would close the menu before the click lands.
+  const onMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (open || toggleRef.current?.contains(event.target as Node)) event.preventDefault();
+  };
+
+  const onToggleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    const willOpen = !open;
+    setOpen(willOpen);
+    if (!willOpen) return;
+    // detail 0 is a keyboard activation; a pointer click reports its count.
+    if (event.detail === 0) {
+      focusFirstRef.current = true;
+    } else if (!rootRef.current?.contains(document.activeElement)) {
+      focusToggle({ preventScroll: true });
     }
   };
 
-  const onMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    const buttons = itemRefs.current.filter((el): el is HTMLButtonElement => Boolean(el));
-    const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
-    let next: number;
-    switch (event.key) {
-      case 'ArrowDown':
-        next = current < buttons.length - 1 ? current + 1 : 0;
-        break;
-      case 'ArrowUp':
-        next = current > 0 ? current - 1 : buttons.length - 1;
-        break;
-      case 'Home':
-        next = 0;
-        break;
-      case 'End':
-        next = buttons.length - 1;
-        break;
-      case 'Escape':
-        event.preventDefault();
-        close(true);
-        return;
-      case 'Tab':
-        close(false);
-        return;
-      default:
-        return;
+  const onFocusOut = (event: React.FocusEvent<HTMLDivElement>) => {
+    if (!rootRef.current?.contains(event.relatedTarget as Node | null)) setOpen(false);
+  };
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!open) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setOpen(false);
+      focusToggle();
+      return;
     }
+    const buttons = menuItems();
+    if (!buttons.length) return;
+    const current = buttons.indexOf(document.activeElement as HTMLElement);
+    let next: number;
+    if (event.key === 'ArrowDown') next = (current + 1 + buttons.length) % buttons.length;
+    else if (event.key === 'ArrowUp') next = (current - 1 + buttons.length) % buttons.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = buttons.length - 1;
+    else return;
     event.preventDefault();
     buttons[next]?.focus();
   };
 
+  const pick = (value: string) => {
+    onSelect(value);
+    setOpen(false);
+    focusToggle();
+  };
+
   return (
-    <div ref={rootRef} className={clsx('v4-dropdown', className, { 'is-open': open })}>
+    <div
+      ref={rootRef}
+      className={clsx('v4-dropdown', `v4-${name}`, { 'is-open': open })}
+      onMouseDown={onMouseDown}
+      onBlur={onFocusOut}
+      onKeyDown={onKeyDown}
+    >
       <button
         ref={toggleRef}
         id={toggleId}
@@ -136,38 +172,47 @@ export const Dropdown: React.FC<DropdownProps> = ({
         aria-controls={menuId}
         aria-expanded={open}
         aria-label={toggleLabel}
-        onClick={() => setOpen((value) => !value)}
-        onKeyDown={onToggleKeyDown}
+        onClick={onToggleClick}
+        onBlur={(event) => event.currentTarget.removeAttribute('data-pointer-focus')}
       >
         {toggleChildren}
       </button>
-      <div
-        id={menuId}
-        className={clsx('v4-menu', menuClassName)}
-        role="menu"
-        aria-labelledby={toggleId}
-        onKeyDown={onMenuKeyDown}
-      >
-        {items.map((item, index) => (
-          <button
-            key={item.value}
-            ref={(el) => {
-              itemRefs.current[index] = el;
-            }}
-            type="button"
-            className="v4-menu-item"
-            role="menuitemradio"
-            aria-checked={item.checked}
-            lang={item.lang}
-            tabIndex={open ? 0 : -1}
-            onClick={() => {
-              onSelect(item.value);
-              close(true);
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
+      <div ref={menuRef} id={menuId} className={clsx('v4-menu', menuClassName)} role="menu" aria-labelledby={toggleId}>
+        {items.map((item) =>
+          item.href ? (
+            <a
+              key={item.value}
+              className={clsx('v4-menu-item', itemClassName)}
+              role="menuitemradio"
+              aria-checked={item.checked}
+              href={item.href}
+              hrefLang={item.lang}
+              lang={item.lang}
+              onClick={(event) => {
+                // A plain click switches in place, so a loaded photo stays; a modified one
+                // (new tab, new window) is the link it looks like.
+                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                pick(item.value);
+              }}
+            >
+              {item.label}
+            </a>
+          ) : (
+            <button
+              key={item.value}
+              type="button"
+              className={clsx('v4-menu-item', itemClassName)}
+              role="menuitemradio"
+              data-theme-value={name === 'theme' ? item.value : undefined}
+              aria-checked={item.checked}
+              lang={item.lang}
+              onClick={() => pick(item.value)}
+            >
+              {item.label}
+            </button>
+          )
+        )}
       </div>
     </div>
   );
