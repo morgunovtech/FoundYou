@@ -1,6 +1,6 @@
 # Found You
 
-A web app for anyone about to share a photo: it shows what the picture gives away about place, time, device and the people in it, and makes a cleaned copy without uploading the file anywhere.
+Before you post a photo, see what it gives away: the place, the time, your phone and the people in it. The app makes a clean copy, and the file never leaves your device.
 
 **Live:** https://foundyou.morgunov.tech · **License:** [MIT](LICENSE) (code; see [`NOTICE`](NOTICE) for the sample photo and the cards) · **Русская версия:** [README.ru.md](README.ru.md)
 
